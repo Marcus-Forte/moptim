@@ -1,9 +1,16 @@
 ---
 Checks: '-*,
+  clang-diagnostic-*,clang-analyzer-*,
   modernize-*,
   performance-*,
+  readability-*,
+  -readability-magic-numbers,
   -performance-avoid-endl,
-  -modernize-use-trailing-return-type'
-  
-WarningsAsErrors: '*'
+  -modernize-use-trailing-return-type,
+  -modernize-use-nodiscard,
+  -modernize-avoid-c-arrays'
 
+WarningsAsErrors: '*'
+CheckOptions: 
+  - key: readability-identifier-length.IgnoredParameterNames
+    value: '(x|x0)'

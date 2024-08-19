@@ -9,5 +9,6 @@ RUN apt-get update && apt-get install -y \
     clang-tidy \
     clang-format \
     libgtest-dev \
+    gdb \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* 
