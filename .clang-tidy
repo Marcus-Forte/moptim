@@ -1,0 +1,9 @@
+---
+Checks: '-*,
+  modernize-*,
+  performance-*,
+  -performance-avoid-endl,
+  -modernize-use-trailing-return-type'
+  
+WarningsAsErrors: '*'
+

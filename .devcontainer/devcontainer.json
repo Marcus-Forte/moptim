@@ -1,0 +1,18 @@
+{
+    "name": "moptim",
+    "build": 
+    {
+        "dockerfile": "Dockerfile"
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.cpptools-extension-pack",
+                "llvm-vs-code-extensions.vscode-clangd"
+            ]
+        }
+    },
+    "mounts": [
+        "source=moptim-build-cache,target=/workspaces/moptim/build,type=volume"
+    ]
+}
