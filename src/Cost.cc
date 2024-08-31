@@ -1,11 +1,8 @@
 #include "Cost.hh"
 
-#include <algorithm>
 #include <numeric>
 
-double Cost::sum(const double* x) const {
-  double sum = 0;
-  double* input;
-  double* output;
-  return sum;
-}
+// double Cost::computeSum() const {
+//   return std::transform_reduce(input_, input_ + 10, measurements_, 0.0, std::plus<>(),
+//                                [](double a, double b) { return a + b; });
+// }

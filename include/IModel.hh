@@ -2,7 +2,8 @@
 
 class IModel {
  public:
-  virtual void f_x() = 0;
+  IModel(const double* x0) : x_(x0){};
 
- private:
+ protected:
+  const double* x_;
 };

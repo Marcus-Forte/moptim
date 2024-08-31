@@ -8,7 +8,8 @@ Checks: '-*,
   -performance-avoid-endl,
   -modernize-use-trailing-return-type,
   -modernize-use-nodiscard,
-  -modernize-avoid-c-arrays'
+  -modernize-avoid-c-arrays,
+  -readability-identifier-length'
 
 WarningsAsErrors: '*'
 CheckOptions: 

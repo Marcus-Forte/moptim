@@ -10,7 +10,12 @@
                 "ms-vscode.cpptools-extension-pack",
                 "llvm-vs-code-extensions.vscode-clangd",
                 "cschlosser.doxdocgen"
-            ]
+            ],
+            "settings": {
+                "clangd.arguments": [
+                     "-header-insertion=never"
+                ]
+            }
         }
     },
     "mounts": [
