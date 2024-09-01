@@ -8,18 +8,22 @@ find_program(FORMATTER clang-format)
 if(FORMATTER)
   message(STATUS "Code formatter found.")
   file(GLOB_RECURSE SRC_FILES
-  ${CMAKE_SOURCE_DIR}/src/*.cc
-  ${CMAKE_SOURCE_DIR}/include/*.hh
-  ${CMAKE_SOURCE_DIR}/test/*.cc)
+    ${CMAKE_SOURCE_DIR}/src/*.cc
+    ${CMAKE_SOURCE_DIR}/include/*.hh
+    ${CMAKE_SOURCE_DIR}/test/*.cc
+    ${CMAKE_SOURCE_DIR}/utils/*.cc
+    ${CMAKE_SOURCE_DIR}/utils/*.hh)
   message(STATUS "SRC: ${SRC_FILES}")
   add_custom_target(code-format ALL
   clang-format -i ${SRC_FILES})
 endif()
 
+add_subdirectory(utils)
+
 add_library(moptim 
 src/Cost.cc)
 target_include_directories(moptim PUBLIC include)
-target_link_libraries(moptim Eigen3::Eigen)
+target_link_libraries(moptim utils Eigen3::Eigen)
 
 include(CTest)
 if(BUILD_TESTING)

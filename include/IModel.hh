@@ -1,9 +1,10 @@
 #pragma once
 
+#include <Eigen/Dense>
 class IModel {
  public:
-  IModel(const double* x0) : x_(x0){};
+  IModel(const Eigen::VectorXd& x0) : x_(x0){};
 
  protected:
-  const double* x_;
+  const Eigen::VectorXd x_;
 };

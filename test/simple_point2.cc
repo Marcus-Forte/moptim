@@ -22,8 +22,4 @@ struct Point2 {
 Point2 points[] = {{0, 0}, {1, 1}};
 Point2 measured[] = {{0, 0}, {1, 1}};
 
-struct Model : IModel {
-  Model(const double* x0) : IModel(x0) {}
-};
-
 TEST(test_simple, test_simple) { double x0[2] = {1.0, 1.0}; }

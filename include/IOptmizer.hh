@@ -5,7 +5,7 @@
 
 #include "ICost.hh"
 
-class IOptimize {
+class IOptimizer {
  public:
   virtual void optimize(double* x) const = 0;
 
