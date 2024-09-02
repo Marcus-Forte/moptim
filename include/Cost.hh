@@ -2,12 +2,11 @@
 
 #include <Eigen/Dense>
 #include <algorithm>
-#include <functional>
-#include <iostream>
 #include <numeric>
 
 #include "ICost.hh"
-#include "ILog.hh"
+
+const double g_step = std::sqrt(std::numeric_limits<double>::epsilon());
 
 template <class InputT, class OutputT, class Model>
 class Cost : public ICost {
@@ -19,14 +18,16 @@ class Cost : public ICost {
   }
 
   ~Cost() = default;
-  // {
-  // delete[] error_plus_;
-  // delete[] error_;
-  // }
 
+  // TODO
   double computeError(const Eigen::VectorXd& x) const override {
-    return std::transform_reduce(
-        input_, input_ + num_elements_, measurements_, 0.0, [](double a, double b) { return a * a + b * b; }, Model(x));
+    return 0;
+    // std::transform_reduce(
+    //     input_, input_ + num_elements_, measurements_, 0.0,
+    //     // Reduce
+    //     [](OutputT a,  OutputT b)-> double { return 0; },
+    //     // Transform
+    //     Model(x));
   }
 
   Eigen::VectorXd computeResidual(const Eigen::VectorXd& x) const override {
@@ -35,19 +36,18 @@ class Cost : public ICost {
     return residual_;
   }
 
+  // Note: OutputT operator- and operator/ must be implemented.
   Eigen::MatrixXd computeJacobian(const Eigen::VectorXd& x) const override {
     Model model(x);
-    const double step = std::sqrt(std::numeric_limits<double>::epsilon());
 
     for (size_t i = 0; i < param_dim_; ++i) {
       Eigen::VectorXd x_plus(x);
 
-      x_plus[i] += step;
+      x_plus[i] += g_step;
       Model model_plus(x_plus);
 
-      const auto model_diff = [&model, &model_plus, step](InputT input, OutputT measurement) {
-        const auto err = (model_plus(input, measurement) - model(input, measurement)) / step;
-        return err;
+      const auto model_diff = [&](InputT input, OutputT measurement) -> OutputT {
+        return (model_plus(input, measurement) - model(input, measurement)) / g_step;
       };
 
       // Assume column major mem. layout.
@@ -56,6 +56,14 @@ class Cost : public ICost {
     }
 
     return jacobian_;
+  }
+
+  // JTJ, JTb
+  SolveRhs computeHessian(const Eigen::VectorXd& x) const override {
+    const auto jacobian = computeJacobian(x);
+    const auto residual = computeResidual(x);
+
+    return {jacobian.transpose() * jacobian, jacobian.transpose() * residual};
   }
 
  private:

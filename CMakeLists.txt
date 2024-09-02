@@ -21,16 +21,19 @@ endif()
 add_subdirectory(utils)
 
 add_library(moptim 
-src/Cost.cc)
+  src/Cost.cc
+  src/GaussNewton.cc)
 target_include_directories(moptim PUBLIC include)
 target_link_libraries(moptim utils Eigen3::Eigen)
 
 include(CTest)
 if(BUILD_TESTING)
 find_package(GTest REQUIRED)
-add_executable(simple_test test/simple.cc)
-add_executable(simple_point2 test/simple_point2.cc)
-target_link_libraries(simple_test moptim gtest)
-target_link_libraries(simple_point2 moptim gtest)
-gtest_discover_tests(simple_test)
+add_executable(moptim_tests
+  test/test_main.cc
+  test/test_simple_model.cc
+  test/test_models.cc
+  test/test_2dtransform.cc)
+target_link_libraries(moptim_tests moptim gtest)
+gtest_discover_tests(moptim_tests)
 endif()
