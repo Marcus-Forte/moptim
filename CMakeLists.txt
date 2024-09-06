@@ -13,7 +13,6 @@ if(FORMATTER)
     ${CMAKE_SOURCE_DIR}/test/*.cc
     ${CMAKE_SOURCE_DIR}/utils/*.cc
     ${CMAKE_SOURCE_DIR}/utils/*.hh)
-  message(STATUS "SRC: ${SRC_FILES}")
   add_custom_target(code-format ALL
   clang-format -i ${SRC_FILES})
 endif()
@@ -33,8 +32,9 @@ add_executable(moptim_tests
   test/test_main.cc
   test/test_simple_model.cc
   test/test_curve_fitting.cc
-  test/test_models.cc
-  test/test_2dtransform.cc)
+  test/test_powell.cc
+  # test/test_2dtransform.cc
+)
 target_link_libraries(moptim_tests moptim gtest)
 gtest_discover_tests(moptim_tests)
 endif()

@@ -2,7 +2,6 @@
 
 #include <Eigen/Dense>
 #include <algorithm>
-#include <numeric>
 
 #include "ICost.hh"
 

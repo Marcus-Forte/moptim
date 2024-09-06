@@ -2,7 +2,13 @@
 
 #include "Cost.hh"
 #include "GaussNewton.hh"
-#include "test_models.hh"
+#include "IModel.hh"
+
+struct Model : IModel {
+  Model(const Eigen::VectorXd& x0) : IModel(x0) {}
+
+  double operator()(double input, double measurement) const { return measurement - x_[0] * input / (x_[1] + input); }
+};
 
 class TestSimpleModel : public ::testing::Test {
  protected:
@@ -13,7 +19,7 @@ class TestSimpleModel : public ::testing::Test {
 TEST_F(TestSimpleModel, cost) {
   Eigen::VectorXd x0{{0.9, 0.2}};
 
-  Cost<double, double, SimpleModel> cost(x_data_, y_data_, 7, 2);
+  Cost<double, double, Model> cost(x_data_, y_data_, 7, 2);
 
   const auto jacobian = cost.computeJacobian(x0);
   const auto residual = cost.computeResidual(x0);
@@ -28,17 +34,15 @@ TEST_F(TestSimpleModel, cost) {
 }
 
 TEST_F(TestSimpleModel, gauss_newton) {
-  Eigen::VectorXd x0{{0.9, 0.2}};
-  GaussNewton optimizer;
+  Eigen::VectorXd x{{0.9, 0.2}};
+  GaussNewton solver;
 
-  auto cost = std::make_shared<Cost<double, double, SimpleModel>>(x_data_, y_data_, 7, 2);
+  auto cost = std::make_shared<Cost<double, double, Model>>(x_data_, y_data_, 7, 2);
 
-  optimizer.addCost(cost);
+  solver.addCost(cost);
 
-  for (int i = 0; i < 5; ++i) {
-    optimizer.step(x0);
-  }
+  solver.optimize(x);
 
-  EXPECT_NEAR(x0[0], 0.362, 0.01);
-  EXPECT_NEAR(x0[1], 0.556, 0.01);
+  EXPECT_NEAR(x[0], 0.362, 0.01);
+  EXPECT_NEAR(x[1], 0.556, 0.01);
 }

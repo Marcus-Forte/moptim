@@ -18,5 +18,14 @@ void GaussNewton::step(Eigen::VectorXd& x) const {
 }
 
 // Automate steps:
-// Verify: rel_tolerance, abs_tolerance, max iterations
-void GaussNewton::optimize(Eigen::VectorXd& x) const {}
+// Verify: rel_tolerance, abs_tolerance, max iterations, cost
+IOptimizer::Status GaussNewton::optimize(Eigen::VectorXd& x) const {
+  for (int i = 0; i < max_iterations_; i++) {
+    step(x);
+
+    if (isSmall(x)) {
+      return IOptimizer::Status::SMALL_DELTA;
+    }
+  }
+  return IOptimizer::Status::MAX_ITERATIONS_REACHED;
+}

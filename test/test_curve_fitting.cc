@@ -27,22 +27,20 @@ const double data[] = {0.000000e+00, 7.500000e-02, 1.500000e-01, 2.250000e-01, 3
                        4.200000e+00, 4.275000e+00, 4.350000e+00, 4.425000e+00, 4.500000e+00, 4.575000e+00, 4.650000e+00,
                        4.725000e+00, 4.800000e+00, 4.875000e+00, 4.950000e+00};
 
-struct Model : public IModel {
-  Model(const Eigen::VectorXd& x0) : IModel(x0) {}
+struct CuveFittingModel : public IModel {
+  CuveFittingModel(const Eigen::VectorXd& x0) : IModel(x0) {}
 
   double operator()(double input, double measurement) const { return measurement - exp(x_[0] * input + x_[1]); }
 };
 
 TEST(CurveFitting, CurveFitting) {
-  auto cost = std::make_shared<Cost<double, double, Model>>(data, observations, 67, 2);
+  auto cost = std::make_shared<Cost<double, double, CuveFittingModel>>(data, observations, 67, 2);
 
   GaussNewton solver;
   solver.addCost(cost);
   Eigen::VectorXd x{{0.0, 0.0}};
 
-  for (int i = 0; i < 10; ++i) {
-    solver.step(x);
-  }
+  solver.optimize(x);
 
   EXPECT_NEAR(x[0], 0.291861, 5e-5);
   EXPECT_NEAR(x[1], 0.131439, 5e-5);
