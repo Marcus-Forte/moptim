@@ -32,6 +32,7 @@ find_package(GTest REQUIRED)
 add_executable(moptim_tests
   test/test_main.cc
   test/test_simple_model.cc
+  test/test_curve_fitting.cc
   test/test_models.cc
   test/test_2dtransform.cc)
 target_link_libraries(moptim_tests moptim gtest)

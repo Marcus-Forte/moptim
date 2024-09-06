@@ -17,4 +17,6 @@ void GaussNewton::step(Eigen::VectorXd& x) const {
   x += x_plus;
 }
 
+// Automate steps:
+// Verify: rel_tolerance, abs_tolerance, max iterations
 void GaussNewton::optimize(Eigen::VectorXd& x) const {}

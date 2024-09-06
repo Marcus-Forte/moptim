@@ -9,7 +9,8 @@ Checks: '-*,
   -modernize-use-trailing-return-type,
   -modernize-use-nodiscard,
   -modernize-avoid-c-arrays,
-  -readability-identifier-length'
+  -modernize-use-std-numbers,
+  -readability-identifier-length,'
 
 WarningsAsErrors: '*'
 CheckOptions: 
