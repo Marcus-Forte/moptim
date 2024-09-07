@@ -3,6 +3,6 @@
 #include "ILog.hh"
 
 class ConsoleLogger : public ILog {
- public:
+ private:
   void log_impl(ILog::Level level, const std::string& message) const override;
 };

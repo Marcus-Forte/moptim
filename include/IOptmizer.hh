@@ -4,11 +4,14 @@
 #include <vector>
 
 #include "ICost.hh"
+#include "ILog.hh"
 
 class IOptimizer {
  public:
-  enum class Status { CONVERGED, SMALL_DELTA, SMALL_COST, MAX_ITERATIONS_REACHED };
-  virtual void step(Eigen::VectorXd& x) const = 0;
+  IOptimizer() = default;
+  IOptimizer(const std::shared_ptr<ILog>& logger) : logger_(logger) {}
+  enum class Status { CONVERGED, SMALL_DELTA, MAX_ITERATIONS_REACHED };
+  virtual double step(Eigen::VectorXd& x) const = 0;
   virtual Status optimize(Eigen::VectorXd& x) const = 0;
 
   inline void setMaxIterations(size_t max_iterations) { max_iterations_ = max_iterations; }
@@ -21,6 +24,7 @@ class IOptimizer {
   }
 
  protected:
+  std::shared_ptr<ILog> logger_;
   std::vector<std::shared_ptr<ICost>> costs_;
   size_t max_iterations_ = 10;
 };

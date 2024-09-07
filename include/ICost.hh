@@ -4,9 +4,9 @@
 
 class ICost {
  public:
-  using SolveRhs = std::pair<Eigen::MatrixXd, Eigen::VectorXd>;
+  using SolveRhs = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, double>;
 
-  virtual double computeError(const Eigen::VectorXd& x) const = 0;
+  virtual double getCost(const Eigen::VectorXd& x) const = 0;
   virtual Eigen::MatrixXd computeJacobian(const Eigen::VectorXd& x) const = 0;
   virtual Eigen::VectorXd computeResidual(const Eigen::VectorXd& x) const = 0;
 

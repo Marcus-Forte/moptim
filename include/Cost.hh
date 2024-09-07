@@ -2,6 +2,7 @@
 
 #include <Eigen/Dense>
 #include <algorithm>
+#include <numeric>
 
 #include "ICost.hh"
 
@@ -10,28 +11,28 @@ const double g_step = std::sqrt(std::numeric_limits<double>::epsilon());
 template <class InputT, class OutputT, class Model>
 class Cost : public ICost {
  public:
-  Cost(const InputT* input, const OutputT* measurements, size_t num_elements, size_t param_dim)
-      : input_(input), measurements_(measurements), num_elements_(num_elements), param_dim_(param_dim) {
-    jacobian_.resize(num_elements_ * sizeof(OutputT) / sizeof(double), param_dim_);
-    residual_.resize(num_elements_ * sizeof(OutputT) / sizeof(double));
+  // No dataset: parameter only optimization.
+  Cost(size_t param_dim) : param_dim_(param_dim), input_{{}}, measurements_{{}} {
+    jacobian_.resize(sizeof(OutputT) / sizeof(double), param_dim_);
+    residual_.resize(sizeof(OutputT) / sizeof(double));
+  }
+  Cost(const std::vector<InputT>& input, const std::vector<OutputT>& measurements, size_t param_dim)
+      : input_(input), measurements_(measurements), param_dim_(param_dim) {
+    jacobian_.resize(input_.size() * sizeof(OutputT) / sizeof(double), param_dim_);
+    residual_.resize(input_.size() * sizeof(OutputT) / sizeof(double));
   }
 
   ~Cost() = default;
 
   // TODO
-  double computeError(const Eigen::VectorXd& x) const override {
-    return 0;
-    // std::transform_reduce(
-    //     input_, input_ + num_elements_, measurements_, 0.0,
-    //     // Reduce
-    //     [](OutputT a,  OutputT b)-> double { return 0; },
-    //     // Transform
-    //     Model(x));
+  double getCost(const Eigen::VectorXd& x) const override {
+    // squared errors
+    return std::reduce(residual_.begin(), residual_.end(), 0.0, [](double a, double b) { return a * a + b * b; });
   }
 
   Eigen::VectorXd computeResidual(const Eigen::VectorXd& x) const override {
     auto* residual_ptr = reinterpret_cast<OutputT*>(residual_.data());
-    std::transform(input_, input_ + num_elements_, measurements_, residual_ptr, Model(x));
+    std::transform(input_.begin(), input_.end(), measurements_.begin(), residual_ptr, Model(x));
     return residual_;
   }
 
@@ -41,7 +42,6 @@ class Cost : public ICost {
 
     for (size_t i = 0; i < param_dim_; ++i) {
       Eigen::VectorXd x_plus(x);
-
       x_plus[i] += g_step;
       Model model_plus(x_plus);
 
@@ -51,7 +51,7 @@ class Cost : public ICost {
 
       // Assume column major mem. layout.
       auto* jacobian_col = reinterpret_cast<OutputT*>(jacobian_.col(i).data());
-      std::transform(input_, input_ + num_elements_, measurements_, jacobian_col, model_diff);
+      std::transform(input_.begin(), input_.end(), measurements_.begin(), jacobian_col, model_diff);
     }
 
     return jacobian_;
@@ -61,14 +61,13 @@ class Cost : public ICost {
   SolveRhs computeHessian(const Eigen::VectorXd& x) const override {
     const auto jacobian = computeJacobian(x);
     const auto residual = computeResidual(x);
-
-    return {jacobian.transpose() * jacobian, jacobian.transpose() * residual};
+    const auto cost = getCost(x);
+    return {jacobian.transpose() * jacobian, jacobian.transpose() * residual, cost};
   }
 
  private:
-  const InputT* input_;
-  const OutputT* measurements_;
-  const size_t num_elements_;
+  const std::vector<InputT> input_;
+  const std::vector<OutputT> measurements_;
   const size_t param_dim_;
 
   mutable Eigen::MatrixXd jacobian_;
