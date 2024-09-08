@@ -10,7 +10,7 @@ class IOptimizer {
  public:
   IOptimizer() = default;
   IOptimizer(const std::shared_ptr<ILog>& logger) : logger_(logger) {}
-  enum class Status { CONVERGED, SMALL_DELTA, MAX_ITERATIONS_REACHED };
+  enum class Status { CONVERGED = 0, SMALL_DELTA = 1, MAX_ITERATIONS_REACHED = 2 };
   virtual double step(Eigen::VectorXd& x) const = 0;
   virtual Status optimize(Eigen::VectorXd& x) const = 0;
 
@@ -18,6 +18,7 @@ class IOptimizer {
   inline void addCost(const std::shared_ptr<ICost>& cost) { costs_.push_back(cost); }
   inline void clearCosts() { costs_.clear(); }
 
+ protected:
   static inline bool isSmall(const Eigen::VectorXd& vec) {
     const auto epsilon = vec.array().abs().maxCoeff();
     return epsilon < sqrt(std::numeric_limits<double>::epsilon());

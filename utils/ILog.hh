@@ -5,9 +5,10 @@
 
 class ILog {
  public:
-  ILog();
-  virtual ~ILog();
   enum class Level { DEBUG = 0, INFO = 1, WARNING = 2, ERROR = 3 };
+  ILog();
+  ILog(Level level);
+  virtual ~ILog();
 
   void log(Level level, const std::string& message) const;
   void setLevel(Level level);

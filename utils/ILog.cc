@@ -5,7 +5,8 @@
 #include <ctime>
 #include <format>
 
-ILog::ILog() : level_(ILog::Level::ERROR) {}
+ILog::ILog() : level_(ILog::Level::INFO) {}
+ILog::ILog(ILog::Level level) : level_(level) {}
 
 ILog::~ILog() = default;
 

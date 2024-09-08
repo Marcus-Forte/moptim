@@ -28,7 +28,7 @@ double GaussNewton::step(Eigen::VectorXd& x) const {
 // Verify: rel_tolerance, abs_tolerance, max iterations, cost
 IOptimizer::Status GaussNewton::optimize(Eigen::VectorXd& x) const {
   for (int i = 0; i < max_iterations_; i++) {
-    auto total_error = step(x);
+    const auto total_error = step(x);
 
     if (logger_) {
       logger_->log(ILog::Level::INFO, std::format("Iteration: {}, Cost: {}", i, total_error));

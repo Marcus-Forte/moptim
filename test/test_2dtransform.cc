@@ -2,47 +2,54 @@
 
 #include <Cost.hh>
 #include <GaussNewton.hh>
-#include <iostream>
 
-#include "test_models.hh"
+#include "ConsoleLogger.hh"
 
-// Square
-Point2 point[] = {{1.0, 1.0}, {1.0, -1.0}, {-1.0, -1.0}, {-1.0, 1.0}};
-// Transformed square
-Point2 point_tf[4];
+struct Pt2Dist {
+  Pt2Dist(const Eigen::VectorXd& x) {
+    transform_.setIdentity();
+    transform_.rotate(x[2]);
+    transform_.translate(Eigen::Vector2d{x[0], x[1]});
+  }
 
-Point2 transformPoint(const Point2& p, const Eigen::Matrix3d& T) {
-  Eigen::Vector3d p_{p.x, p.y, 1.0};
-  Eigen::Vector3d p_tf = T * p_;
-  return {p_tf[0], p_tf[1]};
+  Eigen::Vector2d operator()(const Eigen::Vector2d& source, const Eigen::Vector2d& target) const {
+    return target - transform_ * source;
+  }
+
+  Eigen::Affine2d transform_;
+};
+Eigen::Vector2d transformPoint(const Eigen::Vector2d& point, const Eigen::Affine2d& transform) {
+  return transform * point;
 }
+
+const std::vector<Eigen::Vector2d> pointcloud{{1, 1}, {-1, 1}, {-1, -1}, {1, -1}};
 
 class Test2DTransform : public ::testing::Test {
  protected:
 };
 
 TEST(Test2DTransform, test_simple) {
-  // x, y, theta
-  Eigen::VectorXd x0{{0.1, 0.1, 0.1}};
-  // Transform dataset
-  Eigen::Matrix3d t;
-  t << std::cos(x0[2]), -std::sin(x0[2]), x0[0], std::sin(x0[2]), std::cos(x0[2]), x0[1], 0, 0, 1;
+  Eigen::VectorXd x0_ref{{0.1, 0.2, 0.3}};
 
-  std::transform(point, std::end(point), point_tf, [&](const Point2& p) -> Point2 { return transformPoint(p, t); });
+  Eigen::Rotation2D<double> rot(x0_ref[2]);
+  Eigen::Affine2d transform = Eigen::Affine2d::Identity();
+  transform.translate(Eigen::Vector2d{x0_ref[0], x0_ref[1]});
+  transform.rotate(rot);
 
-  auto cost = std::make_shared<Cost<Point2, Point2, Point2Distance>>(point, point_tf, 4, 3);
-  GaussNewton optim;
-  optim.addCost(cost);
+  std::vector<Eigen::Vector2d> transformed_pointcloud;
 
-  // Set initial guess
-  x0[0] = 1.79;
-  x0[1] = -2.3;
-  x0[2] = -0.3;
-  for (int i = 0; i < 5; ++i) {
-    optim.step(x0);
-  }
+  std::transform(pointcloud.begin(), pointcloud.end(), std::back_inserter(transformed_pointcloud),
+                 [&](const Eigen::Vector2d& pt) { return transformPoint(pt, transform); });
 
-  EXPECT_NEAR(x0[0], 0.1, 0.01);
-  EXPECT_NEAR(x0[1], 0.1, 0.01);
-  EXPECT_NEAR(x0[2], 0.1, 0.01);
+  GaussNewton solver(std::make_shared<ConsoleLogger>());
+  auto cost =
+      std::make_shared<Cost<Eigen::Vector2d, Eigen::Vector2d, Pt2Dist>>(&transformed_pointcloud, &pointcloud, 3);
+
+  solver.addCost(cost);
+  Eigen::VectorXd x0{{0, 0, 0}};
+  auto status = solver.optimize(x0);
+
+  EXPECT_NEAR(x0[0], -x0_ref[0], 1e-10);
+  EXPECT_NEAR(x0[1], -x0_ref[1], 1e-10);
+  EXPECT_NEAR(x0[2], -x0_ref[2], 1e-10);
 }
