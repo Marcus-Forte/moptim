@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <IModel.hh>
-
 #include "Cost.hh"
 #include "GaussNewton.hh"
 
@@ -27,10 +25,12 @@ const std::vector<double> data = {
     4.200000e+00, 4.275000e+00, 4.350000e+00, 4.425000e+00, 4.500000e+00, 4.575000e+00, 4.650000e+00, 4.725000e+00,
     4.800000e+00, 4.875000e+00, 4.950000e+00};
 
-struct CuveFittingModel : public IModel {
-  CuveFittingModel(const Eigen::VectorXd& x0) : IModel(x0) {}
+struct CuveFittingModel {
+  CuveFittingModel(const Eigen::VectorXd& x0) : x_(x0) {}
 
   double operator()(double input, double measurement) const { return measurement - exp(x_[0] * input + x_[1]); }
+
+  Eigen::VectorXd x_;
 };
 
 TEST(CurveFitting, CurveFitting) {

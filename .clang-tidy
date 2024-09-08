@@ -10,7 +10,8 @@ Checks: '-*,
   -modernize-use-nodiscard,
   -modernize-avoid-c-arrays,
   -modernize-use-std-numbers,
-  -readability-identifier-length,'
+  -modernize-pass-by-value,
+  -readability-identifier-length'
 
 WarningsAsErrors: '*'
 CheckOptions: 

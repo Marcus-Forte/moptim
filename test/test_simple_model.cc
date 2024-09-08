@@ -2,12 +2,13 @@
 
 #include "Cost.hh"
 #include "GaussNewton.hh"
-#include "IModel.hh"
 
-struct Model : IModel {
-  Model(const Eigen::VectorXd& x0) : IModel(x0) {}
+struct Model {
+  Model(const Eigen::VectorXd& x0) : x_(x0) {}
 
   double operator()(double input, double measurement) const { return measurement - x_[0] * input / (x_[1] + input); }
+
+  const Eigen::VectorXd x_;
 };
 
 class TestSimpleModel : public ::testing::Test {

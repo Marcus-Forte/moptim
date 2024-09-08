@@ -47,7 +47,7 @@ TEST(Test2DTransform, test_simple) {
 
   solver.addCost(cost);
   Eigen::VectorXd x0{{0, 0, 0}};
-  auto status = solver.optimize(x0);
+  solver.optimize(x0);
 
   EXPECT_NEAR(x0[0], -x0_ref[0], 1e-10);
   EXPECT_NEAR(x0[1], -x0_ref[1], 1e-10);

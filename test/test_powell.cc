@@ -3,10 +3,9 @@
 #include "ConsoleLogger.hh"
 #include "Cost.hh"
 #include "GaussNewton.hh"
-#include "IModel.hh"
 
-struct Powell : IModel {
-  Powell(const Eigen::VectorXd& x0) : IModel(x0) {}
+struct Powell {
+  Powell(const Eigen::VectorXd& x0) : x_(x0) {}
 
   double operator()(double a, double b) { return 0; }
   Eigen::Vector4d operator()(double input, const Eigen::Vector4d& /*measurement*/) {
@@ -17,6 +16,8 @@ struct Powell : IModel {
 
     return {f0, f1, f2, f3};
   }
+
+  Eigen::VectorXd x_;
 };
 
 TEST(TestPowell, TestPowell) {
