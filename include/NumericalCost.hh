@@ -17,7 +17,7 @@ class NumericalCost : public BaseCost<InputT, OutputT, Model> {
   NumericalCost(const std::vector<InputT>* input, const std::vector<OutputT>* observations, size_t param_dim)
       : BaseCost<InputT, OutputT, Model>(input, observations, param_dim) {}
 
-  Eigen::MatrixXd computeJacobian(const Eigen::VectorXd& x) override {
+  const Eigen::MatrixXd& computeJacobian(const Eigen::VectorXd& x) override {
     if constexpr (MethodT == DifferentiationMethod::BACKWARD_EULER) {
       EulerDiff(x);
     } else {

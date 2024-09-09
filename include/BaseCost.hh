@@ -2,7 +2,6 @@
 
 #include <Eigen/Dense>
 #include <algorithm>
-#include <numeric>
 
 #include "ICost.hh"
 
@@ -46,8 +45,10 @@ class BaseCost : public ICost {
 
   // TODO covariance
   SolveRhs computeHessian(const Eigen::VectorXd& x) override {
-    const auto [residual, total_cost] = computeResidual(x);
-    const auto jacobian = computeJacobian(x);
+    // Reduce to JTJ
+    // Reduce to JTb
+    const auto& [residual, total_cost] = computeResidual(x);
+    const auto& jacobian = computeJacobian(x);
     hessian_ = jacobian.transpose() * jacobian;
     b_ = jacobian.transpose() * residual;
     return {hessian_, b_, total_cost};

@@ -8,7 +8,7 @@ class ICost {
   using Summation = std::tuple<Eigen::VectorXd, double>;
 
   virtual Summation computeResidual(const Eigen::VectorXd& x) = 0;
-  virtual Eigen::MatrixXd computeJacobian(const Eigen::VectorXd& x) = 0;
+  virtual const Eigen::MatrixXd& computeJacobian(const Eigen::VectorXd& x) = 0;
 
   /**
    * @brief Most efficient API

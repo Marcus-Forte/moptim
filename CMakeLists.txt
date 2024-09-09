@@ -21,7 +21,8 @@ add_subdirectory(utils)
 
 add_library(moptim 
   src/Cost.cc
-  src/GaussNewton.cc)
+  src/GaussNewton.cc
+  src/LevenbergMarquardt.cc)
 target_include_directories(moptim PUBLIC include)
 target_link_libraries(moptim utils Eigen3::Eigen)
 

@@ -1,12 +1,14 @@
-#include "GaussNewton.hh"
+#include "LevenbergMarquardt.hh"
 
 constexpr double g_small_cost = 1e-80;
 
-GaussNewton::GaussNewton() = default;
-GaussNewton::GaussNewton(const std::shared_ptr<ILog>& logger) : IOptimizer(logger) {}
+LevenbergMarquardt::LevenbergMarquardt() = default;
 
-double GaussNewton::step(Eigen::VectorXd& x) const {
+LevenbergMarquardt::LevenbergMarquardt(const std::shared_ptr<ILog>& logger) : IOptimizer(logger) {}
+
+double LevenbergMarquardt::step(Eigen::VectorXd& x) const {
   Eigen::MatrixXd Hessian = Eigen::MatrixXd::Zero(x.size(), x.size());
+  Eigen::MatrixXd HessianDiagnonal(x.size(), x.size());
   Eigen::VectorXd BVec = Eigen::VectorXd::Zero(x.size());
 
   double totalCost = 0.0;
@@ -17,6 +19,11 @@ double GaussNewton::step(Eigen::VectorXd& x) const {
     totalCost += cost_val;
   }
 
+  HessianDiagnonal = Hessian.diagonal().asDiagonal();
+  for (int i = 0; i < lm_iterations_; ++i) {
+    Eigen::LDLT<Eigen::MatrixXd> solver(Hessian + lm_lambda_ * HessianDiagnonal);
+  }
+
   Eigen::LDLT<Eigen::MatrixXd> solver(Hessian);
   const auto x_plus = solver.solve(-BVec);
   x += x_plus;
@@ -24,9 +31,9 @@ double GaussNewton::step(Eigen::VectorXd& x) const {
   return totalCost;
 }
 
-// Automate steps:
-// Verify: rel_tolerance, abs_tolerance, max iterations, cost
-IOptimizer::Status GaussNewton::optimize(Eigen::VectorXd& x) const {
+IOptimizer::Status LevenbergMarquardt::optimize(Eigen::VectorXd& x) const {
+  lm_init_lambda_factor_ = 1e-9;
+  lm_lambda_ = -1.0;
   for (int i = 0; i < max_iterations_; i++) {
     const auto total_error = step(x);
 

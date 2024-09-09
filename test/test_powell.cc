@@ -8,7 +8,7 @@
 struct Powell {
   Powell(const Eigen::VectorXd& x0) : x_(x0) {}
 
-  Eigen::Vector4d operator()(double /*input*/, const Eigen::Vector4d& /*measurement*/) {
+  Eigen::Vector4d operator()(double /*input*/, const Eigen::Vector4d& /* observation */) {
     const auto f0 = x_[0] + 10 * x_[1];
     const auto f1 = sqrt(5) * (x_[2] - x_[3]);
     const auto f2 = (x_[1] - 2 * x_[2]) * (x_[1] - 2 * x_[2]);

@@ -9,14 +9,14 @@ class AnalyticalCost : public BaseCost<InputT, OutputT, Model> {
   // No dataset: parameter only optimization. Initialize dummy iterators.
   AnalyticalCost(size_t param_dim) : BaseCost<InputT, OutputT, Model>(param_dim) {}
 
-  AnalyticalCost(const std::vector<InputT>* input, const std::vector<OutputT>* measurements, size_t param_dim)
-      : BaseCost<InputT, OutputT, Model>(input, measurements, param_dim) {}
+  AnalyticalCost(const std::vector<InputT>* input, const std::vector<OutputT>* observations, size_t param_dim)
+      : BaseCost<InputT, OutputT, Model>(input, observations, param_dim) {}
 
-  Eigen::MatrixXd computeJacobian(const Eigen::VectorXd& x) override {
+  const Eigen::MatrixXd& computeJacobian(const Eigen::VectorXd& x) override {
     using JacobianReturnType = typename std::result_of<decltype (&Model::jacobian)(Model, InputT, OutputT)>::type;
     Model model(x);
-    const auto jacobian = [&model](InputT input, OutputT measurement) -> JacobianReturnType {
-      return model.jacobian(input, measurement);
+    const auto jacobian = [&model](InputT input, OutputT observation) -> JacobianReturnType {
+      return model.jacobian(input, observation);
     };
 
     // // Create a lambda function to map to rowmajor
