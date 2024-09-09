@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "Cost.hh"
 #include "GaussNewton.hh"
+#include "NumericalCost.hh"
 
 const std::vector<double> observations = {
     1.133898e+00, 1.334902e+00, 1.213546e+00, 1.252016e+00, 1.392265e+00, 1.314458e+00, 1.472541e+00, 1.536218e+00,
@@ -34,7 +34,7 @@ struct CuveFittingModel {
 };
 
 TEST(CurveFitting, CurveFitting) {
-  auto cost = std::make_shared<Cost<double, double, CuveFittingModel>>(&data, &observations, 2);
+  auto cost = std::make_shared<NumericalCost<double, double, CuveFittingModel>>(&data, &observations, 2);
 
   GaussNewton solver;
   solver.addCost(cost);

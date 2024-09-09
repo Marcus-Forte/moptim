@@ -9,11 +9,11 @@
 const double g_step = std::sqrt(std::numeric_limits<double>::epsilon());
 
 template <class InputT, class OutputT, class Model>
-class Cost : public ICost {
+class BaseCost : public ICost {
  public:
-  Cost(const Cost&) = delete;
+  BaseCost(const BaseCost&) = delete;
   // No dataset: parameter only optimization. Initialize dummy iterators.
-  Cost(size_t param_dim)
+  BaseCost(size_t param_dim)
       : param_dim_(param_dim),
         input_{new std::vector<InputT>{{}}},
         measurements_{new std::vector<OutputT>{{}}},
@@ -21,13 +21,13 @@ class Cost : public ICost {
     jacobian_.resize(sizeof(OutputT) / sizeof(double), param_dim_);
     residual_.resize(sizeof(OutputT) / sizeof(double));
   }
-  Cost(const std::vector<InputT>* input, const std::vector<OutputT>* measurements, size_t param_dim)
+  BaseCost(const std::vector<InputT>* input, const std::vector<OutputT>* measurements, size_t param_dim)
       : input_(input), measurements_(measurements), param_dim_(param_dim), no_input_(false) {
     jacobian_.resize(input_->size() * sizeof(OutputT) / sizeof(double), param_dim_);
     residual_.resize(input_->size() * sizeof(OutputT) / sizeof(double));
   }
 
-  ~Cost() {
+  ~BaseCost() {
     if (no_input_) {
       delete input_;
       delete measurements_;
@@ -46,25 +46,25 @@ class Cost : public ICost {
   }
 
   // Note: OutputT operator- and operator/ must be implemented.
-  Eigen::MatrixXd computeJacobian(const Eigen::VectorXd& x) const override {
-    Model model(x);
+  // Eigen::MatrixXd computeJacobian(const Eigen::VectorXd& x) const override {
+  //   Model model(x);
 
-    for (size_t i = 0; i < param_dim_; ++i) {
-      Eigen::VectorXd x_plus(x);
-      x_plus[i] += g_step;
-      Model model_plus(x_plus);
+  //   for (size_t i = 0; i < param_dim_; ++i) {
+  //     Eigen::VectorXd x_plus(x);
+  //     x_plus[i] += g_step;
+  //     Model model_plus(x_plus);
 
-      const auto model_diff = [&](InputT input, OutputT measurement) -> OutputT {
-        return (model_plus(input, measurement) - model(input, measurement)) / g_step;
-      };
+  //     const auto model_diff = [&](InputT input, OutputT measurement) -> OutputT {
+  //       return (model_plus(input, measurement) - model(input, measurement)) / g_step;
+  //     };
 
-      // Assume column major mem. layout.
-      auto* jacobian_col = reinterpret_cast<OutputT*>(jacobian_.col(i).data());
-      std::transform(input_->begin(), input_->end(), measurements_->begin(), jacobian_col, model_diff);
-    }
+  //     // Assume column major mem. layout.
+  //     auto* jacobian_col = reinterpret_cast<OutputT*>(jacobian_.col(i).data());
+  //     std::transform(input_->begin(), input_->end(), measurements_->begin(), jacobian_col, model_diff);
+  //   }
 
-    return jacobian_;
-  }
+  //   return jacobian_;
+  // }
 
   // TODO covariance
   SolveRhs computeHessian(const Eigen::VectorXd& x) const override {
@@ -74,7 +74,7 @@ class Cost : public ICost {
     return {jacobian.transpose() * jacobian, jacobian.transpose() * residual, cost};
   }
 
- private:
+ protected:
   const std::vector<InputT>* input_;
   const std::vector<OutputT>* measurements_;
   const size_t param_dim_;

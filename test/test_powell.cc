@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
 #include "ConsoleLogger.hh"
-#include "Cost.hh"
 #include "GaussNewton.hh"
+#include "NumericalCost.hh"
 
 struct Powell {
   Powell(const Eigen::VectorXd& x0) : x_(x0) {}
@@ -23,7 +23,7 @@ struct Powell {
 TEST(TestPowell, TestPowell) {
   Eigen::VectorXd x{{3.0, -1.0, 0.0, 4.0}};
 
-  auto cost = std::make_shared<Cost<double, Eigen::Vector4d, Powell>>(4);
+  auto cost = std::make_shared<NumericalCost<double, Eigen::Vector4d, Powell>>(4);
   auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::INFO);
   GaussNewton solver(logger);
