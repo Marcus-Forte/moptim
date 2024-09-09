@@ -5,12 +5,16 @@
 class ICost {
  public:
   using SolveRhs = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, double>;
+  using Summation = std::tuple<Eigen::VectorXd, double>;
 
-  virtual double getCost(const Eigen::VectorXd& x) const = 0;
-  virtual Eigen::MatrixXd computeJacobian(const Eigen::VectorXd& x) const = 0;
-  virtual Eigen::VectorXd computeResidual(const Eigen::VectorXd& x) const = 0;
+  virtual Summation computeResidual(const Eigen::VectorXd& x) = 0;
+  virtual Eigen::MatrixXd computeJacobian(const Eigen::VectorXd& x) = 0;
 
-  virtual SolveRhs computeHessian(const Eigen::VectorXd& x) const = 0;
-
- protected:
+  /**
+   * @brief Most efficient API
+   *
+   * @param x
+   * @return SolveRhs
+   */
+  virtual SolveRhs computeHessian(const Eigen::VectorXd& x) = 0;
 };

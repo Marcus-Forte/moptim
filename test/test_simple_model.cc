@@ -13,8 +13,8 @@ class TestSimpleModel : public ::testing::Test {
 TEST_F(TestSimpleModel, cost) {
   Eigen::VectorXd x0{{0.9, 0.2}};
   NumericalCost<double, double, SimpleModel> cost(&x_data_, &y_data_, 2);
-  const auto jacobian = cost.computeJacobian(x0);
-  const auto residual = cost.computeResidual(x0);
+  const auto& jacobian = cost.computeJacobian(x0);
+  const auto& [residual, total_cost] = cost.computeResidual(x0);
 
   const auto Jtj = jacobian.transpose() * jacobian;
   auto Jtb = jacobian.transpose() * residual;

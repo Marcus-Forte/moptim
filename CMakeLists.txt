@@ -34,6 +34,7 @@ add_executable(moptim_tests
   test/test_curve_fitting.cc
   test/test_powell.cc
   test/test_2dtransform.cc
+  test/test_cost.cc
 )
 target_link_libraries(moptim_tests moptim gtest)
 gtest_discover_tests(moptim_tests)

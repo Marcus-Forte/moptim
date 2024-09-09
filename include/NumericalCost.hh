@@ -12,7 +12,7 @@ class NumericalCost : public BaseCost<InputT, OutputT, Model> {
   NumericalCost(const std::vector<InputT>* input, const std::vector<OutputT>* measurements, size_t param_dim)
       : BaseCost<InputT, OutputT, Model>(input, measurements, param_dim) {}
 
-  Eigen::MatrixXd computeJacobian(const Eigen::VectorXd& x) const override {
+  Eigen::MatrixXd computeJacobian(const Eigen::VectorXd& x) override {
     Model model(x);
 
     for (size_t i = 0; i < this->param_dim_; ++i) {
@@ -20,7 +20,7 @@ class NumericalCost : public BaseCost<InputT, OutputT, Model> {
       x_plus[i] += g_step;
       Model model_plus(x_plus);
 
-      const auto model_diff = [&](InputT input, OutputT measurement) -> OutputT {
+      const auto model_diff = [&model, &model_plus](InputT input, OutputT measurement) -> OutputT {
         return (model_plus(input, measurement) - model(input, measurement)) / g_step;
       };
 
