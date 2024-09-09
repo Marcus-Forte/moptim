@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "AnalyticalCost.hh"
 #include "ConsoleLogger.hh"
 #include "GaussNewton.hh"
 #include "NumericalCost.hh"
@@ -16,8 +17,49 @@ struct Powell {
     return {f0, f1, f2, f3};
   }
 
+  Eigen::Matrix<double, 4, 4> jacobian(double /* input */, const Eigen::Vector4d& /* observation */) {
+    Eigen::Matrix4d jac;
+    // Df / dx0
+    jac(0) = 1;
+    jac(4) = 0;
+    jac(8) = 0;
+    jac(12) = sqrt(10) * 2 * (x_[0] - x_[3]);
+
+    // Df / dx1
+    jac(1) = 10;
+    jac(5) = 0;
+    jac(9) = 2 * (x_[1] + 2 * x_[2]);
+    jac(13) = 0;
+
+    // Df / dx2
+    jac(2) = 0;
+    jac(6) = sqrt(5);
+    jac(10) = 2 * (x_[1] + 2 * x_[2]) * (-2);
+    jac(14) = 0;
+
+    // Df / dx3
+    jac(3) = 0;
+    jac(7) = -sqrt(5);
+    jac(11) = 0;
+    jac(15) = sqrt(10) * 2 * (x_[0] - x_[3]) * (-1);
+    return jac;
+  }
+
   const Eigen::VectorXd x_;
 };
+
+TEST(TestPowell, PowellJacobian) {
+  Eigen::VectorXd x{{3.0, -1.0, 0.0, 4.0}};
+  auto an_cost = std::make_shared<AnalyticalCost<double, Eigen::Vector4d, Powell>>(4);
+  auto num_cost = std::make_shared<NumericalCost<double, Eigen::Vector4d, Powell>>(4);
+
+  auto num_jac = num_cost->computeJacobian(x);
+  auto an_jac = an_cost->computeJacobian(x);
+
+  for (int i = 0; i < num_jac.size(); ++i) {
+    EXPECT_NEAR(num_jac(i), an_jac(i), 1e-6);
+  }
+}
 
 TEST(TestPowell, TestPowell) {
   Eigen::VectorXd x{{3.0, -1.0, 0.0, 4.0}};

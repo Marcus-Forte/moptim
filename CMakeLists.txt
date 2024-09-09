@@ -36,6 +36,7 @@ add_executable(moptim_tests
   test/test_2dtransform.cc
   test/test_cost.cc
 )
+add_subdirectory(test/nist)
 target_link_libraries(moptim_tests moptim gtest)
 gtest_discover_tests(moptim_tests)
 endif()
