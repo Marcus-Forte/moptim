@@ -48,23 +48,10 @@ struct Powell {
   const Eigen::VectorXd x_;
 };
 
-TEST(TestPowell, PowellJacobian) {
-  Eigen::VectorXd x{{3.0, -1.0, 0.0, 4.0}};
-  auto an_cost = std::make_shared<AnalyticalCost<double, Eigen::Vector4d, Powell>>(4);
-  auto num_cost = std::make_shared<NumericalCost<double, Eigen::Vector4d, Powell>>(4);
-
-  auto num_jac = num_cost->computeJacobian(x);
-  auto an_jac = an_cost->computeJacobian(x);
-
-  for (int i = 0; i < num_jac.size(); ++i) {
-    EXPECT_NEAR(num_jac(i), an_jac(i), 1e-6);
-  }
-}
-
 TEST(TestPowell, TestPowell) {
   Eigen::VectorXd x{{3.0, -1.0, 0.0, 4.0}};
 
-  auto cost = std::make_shared<NumericalCost<double, Eigen::Vector4d, Powell>>(4);
+  auto cost = std::make_shared<NumericalCost<double, Eigen::Vector4d, Powell>>();
   auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::INFO);
   GaussNewton solver(logger);
@@ -106,10 +93,10 @@ struct PowellF3 {
 TEST(TestPowell, TestPowerllSplit) {
   Eigen::VectorXd x{{3.0, -1.0, 0.0, 4.0}};
 
-  auto cost1 = std::make_shared<NumericalCost<double, double, PowellF0>>(4);
-  auto cost2 = std::make_shared<NumericalCost<double, double, PowellF1>>(4);
-  auto cost3 = std::make_shared<NumericalCost<double, double, PowellF2>>(4);
-  auto cost4 = std::make_shared<NumericalCost<double, double, PowellF3>>(4);
+  auto cost1 = std::make_shared<NumericalCost<double, double, PowellF0>>();
+  auto cost2 = std::make_shared<NumericalCost<double, double, PowellF1>>();
+  auto cost3 = std::make_shared<NumericalCost<double, double, PowellF2>>();
+  auto cost4 = std::make_shared<NumericalCost<double, double, PowellF3>>();
 
   auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::INFO);

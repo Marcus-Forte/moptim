@@ -1,6 +1,6 @@
 #pragma once
 
-#include "BaseCost.hh"
+#include "ICost.hh"
 
 const double g_step = std::sqrt(std::numeric_limits<double>::epsilon());
 
@@ -8,29 +8,64 @@ enum class DifferentiationMethod { BACKWARD_EULER = 0, CENTRAL = 1 };
 
 template <class InputT, class OutputT, class Model,
           DifferentiationMethod MethodT = DifferentiationMethod::BACKWARD_EULER>
-class NumericalCost : public BaseCost<InputT, OutputT, Model> {
+class NumericalCost : public ICost {
  public:
   NumericalCost(const NumericalCost&) = delete;
   // No dataset: parameter only optimization. Initialize dummy iterators.
-  NumericalCost(size_t param_dim) : BaseCost<InputT, OutputT, Model>(param_dim) {}
+  NumericalCost() : input_{new std::vector<InputT>{{}}}, observations_{new std::vector<OutputT>{{}}}, no_input_(true) {}
+  NumericalCost(const std::vector<InputT>* input, const std::vector<OutputT>* observations)
+      : input_{input}, observations_{observations}, no_input_(false) {}
 
-  NumericalCost(const std::vector<InputT>* input, const std::vector<OutputT>* observations, size_t param_dim)
-      : BaseCost<InputT, OutputT, Model>(input, observations, param_dim) {}
+  ~NumericalCost() {
+    if (no_input_) {
+      delete input_;
+      delete observations_;
+    }
+  }
 
-  const Eigen::MatrixXd& computeJacobian(const Eigen::VectorXd& x) override {
+  SolveRhs computeLinearSystem(const Eigen::VectorXd& x) override {
+    jacobian_.resize(input_->size() * sizeof(OutputT) / sizeof(double), x.size());
+    residuals_.resize(input_->size() * sizeof(OutputT) / sizeof(double));
+
+    Model model(x);
+
+    std::transform(input_->begin(), input_->end(), observations_->begin(),
+                   reinterpret_cast<OutputT*>(residuals_.data()), model);
+
     if constexpr (MethodT == DifferentiationMethod::BACKWARD_EULER) {
-      EulerDiff(x);
+      applyEulerDiff(x);
     } else {
-      CentralDiff(x);
+      applyCentralDiff(x);
     }
 
-    return this->jacobian_;
+    // Reduce
+    const auto JTJ = jacobian_.transpose() * jacobian_;
+    const auto JTb = jacobian_.transpose() * residuals_;
+    const auto totalCost = residuals_.squaredNorm();
+    return {JTJ, JTb, totalCost};
   }
 
  private:
-  inline void CentralDiff(const Eigen::VectorXd& x) {
+  inline void applyEulerDiff(const Eigen::VectorXd& x) {
     Model model(x);
-    for (size_t i = 0; i < this->param_dim_; ++i) {
+    for (size_t i = 0; i < x.size(); ++i) {
+      Eigen::VectorXd x_plus(x);
+      x_plus[i] += g_step;
+      Model model_plus(x_plus);
+
+      const auto model_diff = [&](InputT input, OutputT measurement) -> OutputT {
+        return (model_plus(input, measurement) - model(input, measurement)) / g_step;
+      };
+
+      // Assume column major mem. layout.
+      std::transform(input_->begin(), input_->end(), observations_->begin(),
+                     reinterpret_cast<OutputT*>(this->jacobian_.col(i).data()), model_diff);
+    }
+  }
+
+  inline void applyCentralDiff(const Eigen::VectorXd& x) {
+    Model model(x);
+    for (size_t i = 0; i < x.size(); ++i) {
       Eigen::VectorXd x_plus(x);
       Eigen::VectorXd x_minus(x);
       x_plus[i] += g_step;
@@ -44,27 +79,14 @@ class NumericalCost : public BaseCost<InputT, OutputT, Model> {
       };
 
       // Assume column major mem. layout.
-      auto* jacobian_col = reinterpret_cast<OutputT*>(this->jacobian_.col(i).data());
-      std::transform(this->input_->begin(), this->input_->end(), this->observations_->begin(), jacobian_col,
-                     model_diff);
+      std::transform(input_->begin(), input_->end(), observations_->begin(),
+                     reinterpret_cast<OutputT*>(this->jacobian_.col(i).data()), model_diff);
     }
   }
-  inline void EulerDiff(const Eigen::VectorXd& x) {
-    Model model(x);
 
-    for (size_t i = 0; i < this->param_dim_; ++i) {
-      Eigen::VectorXd x_plus(x);
-      x_plus[i] += g_step;
-      Model model_plus(x_plus);
-
-      const auto model_diff = [&](InputT input, OutputT measurement) -> OutputT {
-        return (model_plus(input, measurement) - model(input, measurement)) / g_step;
-      };
-
-      // Assume column major mem. layout.
-      auto* jacobian_col = reinterpret_cast<OutputT*>(this->jacobian_.col(i).data());
-      std::transform(this->input_->begin(), this->input_->end(), this->observations_->begin(), jacobian_col,
-                     model_diff);
-    }
-  }
+  const std::vector<InputT>* input_;
+  const std::vector<OutputT>* observations_;
+  Eigen::MatrixXd jacobian_;
+  Eigen::VectorXd residuals_;
+  bool no_input_;
 };

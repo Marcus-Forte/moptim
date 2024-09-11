@@ -11,14 +11,14 @@ double GaussNewton::step(Eigen::VectorXd& x) const {
 
   double totalCost = 0.0;
   for (const auto& cost : costs_) {
-    const auto& [JtJ_, Jtb_, cost_val] = cost->computeHessian(x);
+    const auto& [JtJ_, Jtb_, cost_val] = cost->computeLinearSystem(x);
     Hessian += JtJ_;
     BVec += Jtb_;
     totalCost += cost_val;
   }
 
   Eigen::LDLT<Eigen::MatrixXd> solver(Hessian);
-  const auto x_plus = solver.solve(-BVec);
+  const Eigen::VectorXd x_plus = solver.solve(-BVec);
   x += x_plus;
 
   return totalCost;

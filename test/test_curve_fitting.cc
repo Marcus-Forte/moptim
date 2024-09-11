@@ -34,7 +34,7 @@ struct CuveFittingModel {
 };
 
 TEST(CurveFitting, CurveFitting) {
-  auto cost = std::make_shared<NumericalCost<double, double, CuveFittingModel>>(&data, &observations, 2);
+  auto cost = std::make_shared<NumericalCost<double, double, CuveFittingModel>>(&data, &observations);
 
   GaussNewton solver;
   solver.addCost(cost);

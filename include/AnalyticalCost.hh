@@ -1,27 +1,51 @@
 #pragma once
 
-#include "BaseCost.hh"
+#include "ICost.hh"
 
 template <class InputT, class OutputT, class Model>
-class AnalyticalCost : public BaseCost<InputT, OutputT, Model> {
+class AnalyticalCost : public ICost {
  public:
   AnalyticalCost(const AnalyticalCost&) = delete;
   // No dataset: parameter only optimization. Initialize dummy iterators.
-  AnalyticalCost(size_t param_dim) : BaseCost<InputT, OutputT, Model>(param_dim) {}
+  AnalyticalCost()
+      : input_{new std::vector<InputT>{{}}}, observations_{new std::vector<OutputT>{{}}}, no_input_{true} {}
+  AnalyticalCost(const std::vector<InputT>* input, const std::vector<OutputT>* observations)
+      : input_{input}, observations_{observations}, no_input_{false} {}
 
-  AnalyticalCost(const std::vector<InputT>* input, const std::vector<OutputT>* observations, size_t param_dim)
-      : BaseCost<InputT, OutputT, Model>(input, observations, param_dim) {}
+  ~AnalyticalCost() {
+    if (no_input_) {
+      delete input_;
+      delete observations_;
+    }
+  }
 
-  const Eigen::MatrixXd& computeJacobian(const Eigen::VectorXd& x) override {
+  SolveRhs computeLinearSystem(const Eigen::VectorXd& x) override {
     using JacobianReturnType = typename std::result_of<decltype (&Model::jacobian)(Model, InputT, OutputT)>::type;
+    jacobian_.resize(input_->size() * sizeof(OutputT) / sizeof(double), x.size());
+    residuals_.resize(input_->size() * sizeof(OutputT) / sizeof(double));
+
     Model model(x);
+
+    std::transform(input_->begin(), input_->end(), observations_->begin(),
+                   reinterpret_cast<OutputT*>(residuals_.data()), model);
+
     const auto jacobian = [&model](InputT input, OutputT observation) -> JacobianReturnType {
       return model.jacobian(input, observation);
     };
 
-    // // Create a lambda function to map to rowmajor
-    auto* jacobian_row = reinterpret_cast<JacobianReturnType*>(this->jacobian_.data());
-    std::transform(this->input_->begin(), this->input_->end(), this->observations_->begin(), jacobian_row, jacobian);
-    return this->jacobian_;
+    std::transform(input_->begin(), input_->end(), observations_->begin(),
+                   reinterpret_cast<JacobianReturnType*>(jacobian_.data()), jacobian);
+
+    // Reduce
+    const auto JTJ = jacobian_.transpose() * jacobian_;
+    const auto JTb = jacobian_.transpose() * residuals_;
+    const auto totalCost = residuals_.squaredNorm();
+    return {JTJ, JTb, totalCost};
   }
+
+  const std::vector<InputT>* input_;
+  const std::vector<OutputT>* observations_;
+  Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> jacobian_;
+  Eigen::VectorXd residuals_;
+  bool no_input_;
 };

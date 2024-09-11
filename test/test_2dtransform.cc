@@ -42,8 +42,8 @@ TEST(Test2DTransform, test_simple) {
                  [&](const Eigen::Vector2d& pt) { return transformPoint(pt, transform); });
 
   GaussNewton solver(std::make_shared<ConsoleLogger>());
-  auto cost = std::make_shared<NumericalCost<Eigen::Vector2d, Eigen::Vector2d, Pt2Dist>>(&transformed_pointcloud,
-                                                                                         &pointcloud, 3);
+  auto cost =
+      std::make_shared<NumericalCost<Eigen::Vector2d, Eigen::Vector2d, Pt2Dist>>(&transformed_pointcloud, &pointcloud);
 
   solver.addCost(cost);
   Eigen::VectorXd x0{{0, 0, 0}};

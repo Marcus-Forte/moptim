@@ -24,7 +24,6 @@ class IOptimizer {
     return epsilon < sqrt(std::numeric_limits<double>::epsilon());
   }
 
- protected:
   std::shared_ptr<ILog> logger_;
   std::vector<std::shared_ptr<ICost>> costs_;
   size_t max_iterations_ = 10;
