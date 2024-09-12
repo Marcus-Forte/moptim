@@ -10,14 +10,25 @@ class ILog {
   ILog(Level level);
   virtual ~ILog();
 
-  void log(Level level, const std::string& message) const;
+  template <typename... Args>
+  void log(Level level, std::format_string<Args...> fmt, Args&&... args) const {
+    if (level < level_) {
+      return;
+    }
+
+    auto&& time = getTimeString();
+    auto&& levelstr = toString(level);
+    auto&& fmt_msg = std::format(fmt, std::forward<Args>(args)...);
+    const auto msg = std::format("[{}][{}]: {}", time, levelstr, fmt_msg);
+    log_impl(level, msg);
+  }
   void setLevel(Level level);
 
   virtual void log_impl(ILog::Level level, const std::string& message) const = 0;
 
- protected:
+ private:
   static std::string toString(Level level);
-  static std::string getTime();
+  static std::string getTimeString();
 
   Level level_;
 };

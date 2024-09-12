@@ -23,6 +23,14 @@ class NumericalCost : public ICost {
     }
   }
 
+  double computeCost(const Eigen::VectorXd& x) override {
+    residuals_.resize(input_->size() * sizeof(OutputT) / sizeof(double));
+    Model model(x);
+    std::transform(input_->begin(), input_->end(), observations_->begin(),
+                   reinterpret_cast<OutputT*>(residuals_.data()), model);
+    return residuals_.squaredNorm();
+  }
+
   SolveRhs computeLinearSystem(const Eigen::VectorXd& x) override {
     jacobian_.resize(input_->size() * sizeof(OutputT) / sizeof(double), x.size());
     residuals_.resize(input_->size() * sizeof(OutputT) / sizeof(double));

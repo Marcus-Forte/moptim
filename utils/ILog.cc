@@ -5,18 +5,10 @@
 #include <ctime>
 #include <format>
 
-ILog::ILog() : level_(ILog::Level::INFO) {}
+ILog::ILog() : level_(ILog::Level::DEBUG) {}
 ILog::ILog(ILog::Level level) : level_(level) {}
 
 ILog::~ILog() = default;
-
-void ILog::log(Level level, const std::string& message) const {
-  if (level < level_) {
-    return;
-  }
-
-  log_impl(level, message);
-}
 
 void ILog::setLevel(ILog::Level level) { level_ = level; }
 
@@ -35,7 +27,7 @@ std::string ILog::toString(ILog::Level level) {
   }
 }
 
-std::string ILog::getTime() {
+std::string ILog::getTimeString() {
   std::time_t time;
   std::time(&time);
   const auto* timestamp = std::localtime(&time);

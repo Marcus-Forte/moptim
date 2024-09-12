@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
+#include "ConsoleLogger.hh"
 #include "GaussNewton.hh"
+#include "LevenbergMarquardt.hh"
 #include "NumericalCost.hh"
 
 const std::vector<double> observations = {
@@ -36,7 +38,20 @@ struct CuveFittingModel {
 TEST(CurveFitting, CurveFitting) {
   auto cost = std::make_shared<NumericalCost<double, double, CuveFittingModel>>(&data, &observations);
 
-  GaussNewton solver;
+  GaussNewton solver(std::make_shared<ConsoleLogger>());
+  solver.addCost(cost);
+  Eigen::VectorXd x{{0.0, 0.0}};
+
+  solver.optimize(x);
+
+  EXPECT_NEAR(x[0], 0.291861, 5e-5);
+  EXPECT_NEAR(x[1], 0.131439, 5e-5);
+}
+
+TEST(CurveFitting, CurveFittingLM) {
+  auto cost = std::make_shared<NumericalCost<double, double, CuveFittingModel>>(&data, &observations);
+
+  LevenbergMarquardt solver(std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
   Eigen::VectorXd x{{0.0, 0.0}};
 

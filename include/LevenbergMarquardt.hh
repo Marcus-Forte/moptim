@@ -6,7 +6,8 @@ class LevenbergMarquardt : public IOptimizer {
  public:
   LevenbergMarquardt();
   LevenbergMarquardt(const std::shared_ptr<ILog>& logger);
-  double step(Eigen::VectorXd& x) const override;
+
+  Status step(Eigen::VectorXd& x) const override;
   Status optimize(Eigen::VectorXd& x) const override;
 
  private:

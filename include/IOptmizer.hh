@@ -10,8 +10,10 @@ class IOptimizer {
  public:
   IOptimizer() = default;
   IOptimizer(const std::shared_ptr<ILog>& logger) : logger_(logger) {}
-  enum class Status { CONVERGED = 0, SMALL_DELTA = 1, MAX_ITERATIONS_REACHED = 2 };
-  virtual double step(Eigen::VectorXd& x) const = 0;
+
+  enum class Status { STEP_OK = 0, CONVERGED = 1, SMALL_DELTA = 2, MAX_ITERATIONS_REACHED = 3, NUMERIC_ERROR = 4 };
+
+  virtual Status step(Eigen::VectorXd& x) const = 0;
   virtual Status optimize(Eigen::VectorXd& x) const = 0;
 
   inline void setMaxIterations(size_t max_iterations) { max_iterations_ = max_iterations; }

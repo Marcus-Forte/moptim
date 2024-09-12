@@ -6,10 +6,8 @@ class ICost {
  public:
   // JTJ, JTb, cost
   using SolveRhs = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, double>;
-  using Summation = std::tuple<Eigen::VectorXd, double>;
 
-  // virtual Summation computeResidual(const Eigen::VectorXd& x) = 0;
-  // virtual Eigen::MatrixXd computeJacobian(const Eigen::VectorXd& x) = 0;
+  virtual double computeCost(const Eigen::VectorXd& x) = 0;
 
   /**
    * @brief Most efficient API

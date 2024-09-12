@@ -5,11 +5,12 @@ constexpr double g_small_cost = 1e-80;
 GaussNewton::GaussNewton() = default;
 GaussNewton::GaussNewton(const std::shared_ptr<ILog>& logger) : IOptimizer(logger) {}
 
-double GaussNewton::step(Eigen::VectorXd& x) const {
+IOptimizer::Status GaussNewton::step(Eigen::VectorXd& x) const {
   Eigen::MatrixXd Hessian = Eigen::MatrixXd::Zero(x.size(), x.size());
   Eigen::VectorXd BVec = Eigen::VectorXd::Zero(x.size());
-
+  Eigen::VectorXd delta(x.size());
   double totalCost = 0.0;
+
   for (const auto& cost : costs_) {
     const auto& [JtJ_, Jtb_, cost_val] = cost->computeLinearSystem(x);
     Hessian += JtJ_;
@@ -18,27 +19,33 @@ double GaussNewton::step(Eigen::VectorXd& x) const {
   }
 
   Eigen::LDLT<Eigen::MatrixXd> solver(Hessian);
-  const Eigen::VectorXd x_plus = solver.solve(-BVec);
-  x += x_plus;
+  delta = solver.solve(-BVec);
+  x += delta;
 
-  return totalCost;
+  if (logger_) {
+    std::stringstream delta_str;
+    delta_str << delta.transpose();
+    logger_->log(ILog::Level::DEBUG, "delta: [{}], Cost: {} ", delta_str.str(), totalCost);
+  }
+
+  if (totalCost < g_small_cost) {
+    return IOptimizer::Status::CONVERGED;
+  }
+
+  return Status::STEP_OK;
 }
 
 // Automate steps:
 // Verify: rel_tolerance, abs_tolerance, max iterations, cost
 IOptimizer::Status GaussNewton::optimize(Eigen::VectorXd& x) const {
   for (int i = 0; i < max_iterations_; i++) {
-    const auto total_error = step(x);
-
     if (logger_) {
-      logger_->log(ILog::Level::INFO, std::format("Iteration: {}, Cost: {}", i, total_error));
+      logger_->log(ILog::Level::DEBUG, "GN Iteration: {}/{}", i, max_iterations_);
     }
-    if (isSmall(x)) {
-      return IOptimizer::Status::SMALL_DELTA;
-    }
+    const auto status = step(x);
 
-    if (total_error < g_small_cost) {
-      return IOptimizer::Status::CONVERGED;
+    if (status != Status::STEP_OK) {
+      return status;
     }
   }
   return IOptimizer::Status::MAX_ITERATIONS_REACHED;

@@ -1,8 +1,9 @@
 #include <gtest/gtest.h>
 
-#include <iostream>
+#include <Timer.hh>
 
 #include "AnalyticalCost.hh"
+#include "ConsoleLogger.hh"
 #include "NumericalCost.hh"
 #include "models.hh"
 
@@ -27,4 +28,7 @@ TEST(TestCost, Jacobian) {
   }
 
   EXPECT_NEAR(an_total, num_total, 1e-5);
+
+  ConsoleLogger logg;
+  logg.log(ILog::Level::INFO, "number: {}", 25);
 }

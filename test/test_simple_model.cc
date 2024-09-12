@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "ConsoleLogger.hh"
 #include "GaussNewton.hh"
 #include "LevenbergMarquardt.hh"
 #include "NumericalCost.hh"
@@ -11,9 +12,10 @@ class TestSimpleModel : public ::testing::Test {
   const std::vector<double> y_data_{0.05, 0.127, 0.094, 0.2122, 0.2729, 0.2665, 0.3317};  // measurement
 };
 
-TEST_F(TestSimpleModel, gauss_newton) {
+TEST_F(TestSimpleModel, GaussNewton) {
   Eigen::VectorXd x{{0.9, 0.2}};
-  GaussNewton solver;
+
+  GaussNewton solver(std::make_shared<ConsoleLogger>());
 
   auto cost =
       std::make_shared<NumericalCost<double, double, SimpleModel, DifferentiationMethod::CENTRAL>>(&x_data_, &y_data_);
@@ -27,17 +29,16 @@ TEST_F(TestSimpleModel, gauss_newton) {
 }
 
 TEST_F(TestSimpleModel, LevenbergMarquardt) {
-  // Eigen::VectorXd x{{0.9, 0.2}};
-  // LevenbergMarquardt solver;
+  Eigen::VectorXd x{{0.9, 0.2}};
+  LevenbergMarquardt solver(std::make_shared<ConsoleLogger>());
 
-  // auto cost =
-  //     std::make_shared<NumericalCost<double, double, SimpleModel, DifferentiationMethod::CENTRAL>>(&x_data_,
-  //     &y_data_);
+  auto cost =
+      std::make_shared<NumericalCost<double, double, SimpleModel, DifferentiationMethod::CENTRAL>>(&x_data_, &y_data_);
 
-  // solver.addCost(cost);
+  solver.addCost(cost);
 
-  // solver.optimize(x);
+  solver.optimize(x);
 
-  // EXPECT_NEAR(x[0], 0.362, 0.01);
-  // EXPECT_NEAR(x[1], 0.556, 0.01);
+  EXPECT_NEAR(x[0], 0.362, 0.01);
+  EXPECT_NEAR(x[1], 0.556, 0.01);
 }
