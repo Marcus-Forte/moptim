@@ -21,12 +21,12 @@ class IOptimizer {
   inline void clearCosts() { costs_.clear(); }
 
  protected:
-  static inline bool isSmall(const Eigen::VectorXd& vec) {
+  static inline bool isDeltaSmall(const Eigen::VectorXd& vec) {
     const auto epsilon = vec.array().abs().maxCoeff();
     return epsilon < sqrt(std::numeric_limits<double>::epsilon());
   }
 
   std::shared_ptr<ILog> logger_;
   std::vector<std::shared_ptr<ICost>> costs_;
-  size_t max_iterations_ = 10;
+  size_t max_iterations_ = 15;
 };

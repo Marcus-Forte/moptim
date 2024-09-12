@@ -29,7 +29,11 @@ IOptimizer::Status GaussNewton::step(Eigen::VectorXd& x) const {
   }
 
   if (totalCost < g_small_cost) {
-    return IOptimizer::Status::CONVERGED;
+    return Status::CONVERGED;
+  }
+
+  if (isDeltaSmall(delta)) {
+    return Status::SMALL_DELTA;
   }
 
   return Status::STEP_OK;
