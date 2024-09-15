@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <AnalyticalCost.hh>
+
 #include "ConsoleLogger.hh"
 #include "GaussNewton.hh"
 #include "LevenbergMarquardt.hh"
@@ -19,6 +21,21 @@ TEST_F(TestSimpleModel, GaussNewton) {
 
   auto cost =
       std::make_shared<NumericalCost<double, double, SimpleModel, DifferentiationMethod::CENTRAL>>(&x_data_, &y_data_);
+
+  solver.addCost(cost);
+
+  solver.optimize(x);
+
+  EXPECT_NEAR(x[0], 0.362, 0.01);
+  EXPECT_NEAR(x[1], 0.556, 0.01);
+}
+
+TEST_F(TestSimpleModel, GaussNewtonAnalytical) {
+  Eigen::VectorXd x{{0.9, 0.2}};
+
+  GaussNewton solver(std::make_shared<ConsoleLogger>());
+
+  auto cost = std::make_shared<AnalyticalCost<double, double, SimpleModel>>(&x_data_, &y_data_);
 
   solver.addCost(cost);
 

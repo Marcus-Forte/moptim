@@ -1,5 +1,0 @@
-{
-    "cmake.debugConfig": {
-        "args": ["--gtest_filter=*"]
-    }
-}

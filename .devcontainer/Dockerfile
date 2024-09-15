@@ -10,5 +10,6 @@ RUN apt-get update && apt-get install -y \
     clang-format \
     libgtest-dev \
     gdb \
+    libtbb-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* 

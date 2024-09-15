@@ -3,8 +3,10 @@ project(moptim)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_CLANG_TIDY "")
 
+find_package(TBB REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_program(FORMATTER clang-format)
+
 if(FORMATTER)
   message(STATUS "Code formatter found.")
   file(GLOB_RECURSE SRC_FILES
@@ -24,7 +26,7 @@ add_library(moptim
   src/GaussNewton.cc
   src/LevenbergMarquardt.cc)
 target_include_directories(moptim PUBLIC include)
-target_link_libraries(moptim utils Eigen3::Eigen)
+target_link_libraries(moptim utils Eigen3::Eigen tbb)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -37,7 +39,7 @@ add_executable(moptim_tests
   test/test_2dtransform.cc
   test/test_cost.cc
 )
-# add_subdirectory(test/nist)
+add_subdirectory(test/nist)
 target_link_libraries(moptim_tests moptim gtest)
 gtest_discover_tests(moptim_tests)
 endif()

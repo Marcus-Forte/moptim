@@ -1,3 +1,7 @@
-link_libraries(moptim gtest)
-add_executable(kirby2 kirby2.cc)
+link_libraries(moptim gtest gtest_main)
+
+add_executable(nist
+ chwirut1.cc
+ kirby2.cc
+ nelson.cc)
 
