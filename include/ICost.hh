@@ -16,4 +16,15 @@ class ICost {
    * @return SolveRhs
    */
   virtual SolveRhs computeLinearSystem(const Eigen::VectorXd& x) = 0;
+
+ protected:
+  inline static SolveRhs Reduction(SolveRhs a, const SolveRhs& b) {
+    auto& [JTJ_a, JTb_a, residual_a] = a;
+    const auto& [JTJ_b, JTb_b, residual_b] = b;
+    JTJ_a += JTJ_b;
+    JTb_a += JTb_b;
+    residual_a += residual_b;
+
+    return a;
+  }
 };

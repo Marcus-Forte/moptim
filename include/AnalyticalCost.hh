@@ -6,6 +6,9 @@
 #include "ICost.hh"
 template <class InputT, class OutputT, class Model>
 class AnalyticalCost : public ICost {
+  static constexpr size_t OutputDim = sizeof(OutputT) / sizeof(double);
+  using ResidualVectorT = Eigen::Vector<double, OutputDim>;
+
  public:
   AnalyticalCost(const AnalyticalCost&) = delete;
   // No dataset: parameter only optimization. Initialize dummy iterators.
@@ -22,7 +25,7 @@ class AnalyticalCost : public ICost {
   }
 
   double computeCost(const Eigen::VectorXd& x) override {
-    residuals_.resize(input_->size() * sizeof(OutputT) / sizeof(double));
+    residuals_.resize(input_->size() * OutputDim);
     Model model(x);
     std::transform(input_->begin(), input_->end(), observations_->begin(),
                    reinterpret_cast<OutputT*>(residuals_.data()), model);
@@ -31,7 +34,6 @@ class AnalyticalCost : public ICost {
 
   SolveRhs computeLinearSystem(const Eigen::VectorXd& x) override {
     using JacobianReturnType = typename std::result_of<decltype (&Model::jacobian)(Model, InputT, OutputT)>::type;
-    using ResidualVectorT = Eigen::Vector<double, sizeof(OutputT) / sizeof(double)>;
 
     SolveRhs init{Eigen::MatrixXd::Zero(x.size(), x.size()), Eigen::VectorXd::Zero(x.size()), 0.0};
 
@@ -50,18 +52,8 @@ class AnalyticalCost : public ICost {
       return {JTJ, JTb, residual_map.squaredNorm()};
     };
 
-    const auto reduction = [](SolveRhs a, const SolveRhs& b) -> SolveRhs {
-      auto& [JTJ_a, JTb_a, residual_a] = a;
-      const auto& [JTJ_b, JTb_b, residual_b] = b;
-      JTJ_a += JTJ_b;
-      JTb_a += JTb_b;
-      residual_a += residual_b;
-
-      return a;
-    };
-
     return std::transform_reduce(std::execution::seq, input_->begin(), input_->end(), observations_->begin(), init,
-                                 reduction, jacobian);
+                                 ICost::Reduction, jacobian);
   }
 
   const std::vector<InputT>* input_;
