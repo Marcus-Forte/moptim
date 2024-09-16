@@ -36,6 +36,7 @@ add_executable(moptim_tests
   test/test_simple_model.cc
   test/test_curve_fitting.cc
   test/test_powell.cc
+  test/test_rosenbrock.cc
   test/test_2dtransform.cc
   test/test_cost.cc
 )

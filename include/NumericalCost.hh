@@ -60,7 +60,7 @@ class NumericalCost : public ICost {
       models_plus[i] = std::make_shared<Model>(x_plus);
     }
 
-    const auto jacobian = [&](InputT input, OutputT observation) -> SolveRhs {
+    const auto jacobian = [&](const InputT& input, const OutputT& observation) -> SolveRhs {
       Eigen::MatrixXd JTJ(x.size(), x.size());
       Eigen::VectorXd JTb(x.size());
       Eigen::MatrixXd jacobian_matrix(OutputDim, x.size());
@@ -95,7 +95,7 @@ class NumericalCost : public ICost {
       models_minus[i] = std::make_shared<Model>(x_minus);
     }
 
-    const auto jacobian = [&](InputT input, OutputT observation) -> SolveRhs {
+    const auto jacobian = [&](const InputT& input, const OutputT& observation) -> SolveRhs {
       Eigen::MatrixXd JTJ(x.size(), x.size());
       Eigen::VectorXd JTb(x.size());
       Eigen::MatrixXd jacobian_matrix(OutputDim, x.size());

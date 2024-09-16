@@ -49,7 +49,7 @@ IOptimizer::Status LevenbergMarquardt::step(Eigen::VectorXd& x) const {
                    totalCost);
     }
 
-    if (rho < 0) {
+    if (rho < 0 || std::isnan(rho)) {
       if (isDeltaSmall(delta)) {
         if (totalCost < g_small_cost) {
           return Status::CONVERGED;
