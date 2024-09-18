@@ -25,11 +25,15 @@ class AnalyticalCost : public ICost {
   }
 
   double computeCost(const Eigen::VectorXd& x) override {
-    residuals_.resize(input_->size() * OutputDim);
     Model model(x);
-    std::transform(input_->begin(), input_->end(), observations_->begin(),
-                   reinterpret_cast<OutputT*>(residuals_.data()), model);
-    return residuals_.squaredNorm();
+
+    const auto error_norm = [&model](const InputT& input, const OutputT& observation) -> double {
+      const auto&& error = model(input, observation);
+      Eigen::Map<const ResidualVectorT> residual_map(reinterpret_cast<const double*>(&error));
+      return residual_map.squaredNorm();
+    };
+    return std::transform_reduce(input_->begin(), input_->end(), observations_->begin(), 0.0, std::plus<>(),
+                                 error_norm);
   }
 
   SolveRhs computeLinearSystem(const Eigen::VectorXd& x) override {
@@ -39,16 +43,13 @@ class AnalyticalCost : public ICost {
 
     Model model(x);
 
-    const auto jacobian = [&model, &x](InputT input, OutputT observation) -> SolveRhs {
-      Eigen::MatrixXd JTJ(x.size(), x.size());
-      Eigen::VectorXd JTb(x.size());
-
-      JacobianReturnType jacobian_matrix = model.jacobian(input, observation);
-      OutputT residual = model(input, observation);
+    const auto&& jacobian = [&model, &x](InputT input, OutputT observation) -> SolveRhs {
+      JacobianReturnType&& jacobian_matrix = model.jacobian(input, observation);
+      OutputT&& residual = model(input, observation);
 
       Eigen::Map<const ResidualVectorT> residual_map(reinterpret_cast<const double*>(&residual));
-      JTJ = jacobian_matrix.transpose() * jacobian_matrix;
-      JTb = jacobian_matrix.transpose() * residual_map;
+      const auto&& JTJ = jacobian_matrix.transpose() * jacobian_matrix;
+      const auto&& JTb = jacobian_matrix.transpose() * residual_map;
       return {JTJ, JTb, residual_map.squaredNorm()};
     };
 
@@ -58,6 +59,5 @@ class AnalyticalCost : public ICost {
 
   const std::vector<InputT>* input_;
   const std::vector<OutputT>* observations_;
-  Eigen::VectorXd residuals_;
   bool no_input_;
 };

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "AnalyticalCost.hh"
 #include "ConsoleLogger.hh"
 #include "GaussNewton.hh"
 #include "LevenbergMarquardt.hh"
@@ -31,14 +32,19 @@ struct CuveFittingModel {
   CuveFittingModel(const Eigen::VectorXd& x0) : x_(x0) {}
 
   double operator()(double input, double measurement) const { return measurement - exp(x_[0] * input + x_[1]); }
+  Eigen::Matrix<double, 1, 2> jacobian(double input, double measurement) const {
+    const auto&& j1 = -input * std::exp(x_[0] * input + x_[1]);
+    const auto&& j2 = -std::exp(x_[0] * input + x_[1]);
+    return {j1, j2};
+  }
 
   Eigen::VectorXd x_;
 };
 
-TEST(CurveFitting, CurveFitting) {
+TEST(CurveFitting, AA) {
   auto cost = std::make_shared<NumericalCost<double, double, CuveFittingModel>>(&data, &observations);
 
-  GaussNewton solver(std::make_shared<ConsoleLogger>());
+  LevenbergMarquardt solver(std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
   Eigen::VectorXd x{{0.0, 0.0}};
 
@@ -48,8 +54,8 @@ TEST(CurveFitting, CurveFitting) {
   EXPECT_NEAR(x[1], 0.131439, 5e-5);
 }
 
-TEST(CurveFitting, CurveFittingLM) {
-  auto cost = std::make_shared<NumericalCost<double, double, CuveFittingModel>>(&data, &observations);
+TEST(CurveFitting, AB) {
+  auto cost = std::make_shared<AnalyticalCost<double, double, CuveFittingModel>>(&data, &observations);
 
   LevenbergMarquardt solver(std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
@@ -57,6 +63,48 @@ TEST(CurveFitting, CurveFittingLM) {
 
   solver.optimize(x);
 
+  EXPECT_NEAR(x[0], 0.291861, 5e-5);
+  EXPECT_NEAR(x[1], 0.131439, 5e-5);
+}
+
+TEST(CurveFitting, CurveFittingLMNumerical) {
+  Eigen::VectorXd x{{0.0, 0.0}};
+  size_t total = 0;
+  for (int i = 0; i < 10000; ++i) {
+    const auto startTime = std::chrono::high_resolution_clock::now();
+    auto cost = std::make_shared<NumericalCost<double, double, CuveFittingModel>>(&data, &observations);
+
+    LevenbergMarquardt solver;
+    solver.addCost(cost);
+
+    solver.optimize(x);
+    const auto deltaTime =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now() - startTime)
+            .count();
+    total += deltaTime;
+  }
+  std::cout << "Avg: " << total / 10000 << " ns" << std::endl;
+  EXPECT_NEAR(x[0], 0.291861, 5e-5);
+  EXPECT_NEAR(x[1], 0.131439, 5e-5);
+}
+
+TEST(CurveFitting, CurveFittingLMAnalytical) {
+  Eigen::VectorXd x{{0.0, 0.0}};
+  size_t total = 0;
+  for (int i = 0; i < 10000; ++i) {
+    const auto startTime = std::chrono::high_resolution_clock::now();
+    auto cost = std::make_shared<AnalyticalCost<double, double, CuveFittingModel>>(&data, &observations);
+
+    LevenbergMarquardt solver;
+    solver.addCost(cost);
+
+    solver.optimize(x);
+    const auto deltaTime =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now() - startTime)
+            .count();
+    total += deltaTime;
+  }
+  std::cout << "Avg: " << total / 10000 << " ns" << std::endl;
   EXPECT_NEAR(x[0], 0.291861, 5e-5);
   EXPECT_NEAR(x[1], 0.131439, 5e-5);
 }

@@ -1,11 +1,13 @@
 cmake_minimum_required(VERSION 3.20)
 project(moptim)
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_CLANG_TIDY "")
+set(CMAKE_CXX_CLANG_TIDY "clang-tidy")
 
 find_package(TBB REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_program(FORMATTER clang-format)
+
+# add_compile_options("-march=native")
 
 if(FORMATTER)
   message(STATUS "Code formatter found.")
