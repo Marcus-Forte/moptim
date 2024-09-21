@@ -6,6 +6,10 @@
 #include "ICost.hh"
 #include "ILog.hh"
 
+namespace moptim::constants {
+constexpr double g_small_cost = 1e-80;
+}
+
 class IOptimizer {
  public:
   IOptimizer() = default;

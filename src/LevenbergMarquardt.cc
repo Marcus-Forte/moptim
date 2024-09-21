@@ -1,6 +1,6 @@
 #include "LevenbergMarquardt.hh"
 
-constexpr double g_small_cost = 1e-80;
+#include "Timer.hh"
 
 LevenbergMarquardt::LevenbergMarquardt() = default;
 LevenbergMarquardt::LevenbergMarquardt(const std::shared_ptr<ILog>& logger) : IOptimizer(logger) {}
@@ -51,7 +51,7 @@ IOptimizer::Status LevenbergMarquardt::step(Eigen::VectorXd& x) const {
 
     if (rho < 0 || std::isnan(rho)) {
       if (isDeltaSmall(delta)) {
-        if (totalCost < g_small_cost) {
+        if (totalCost < moptim::constants::g_small_cost) {
           return Status::CONVERGED;
         }
         return Status::SMALL_DELTA;
@@ -75,8 +75,12 @@ IOptimizer::Status LevenbergMarquardt::optimize(Eigen::VectorXd& x) const {
   lm_lambda_ = -1.0;
   for (int i = 0; i < max_iterations_; i++) {
     if (logger_) {
-      logger_->log(ILog::Level::DEBUG, "LM Iteration: {}/{}", i + 1, max_iterations_);
+      static Timer timer;
+      const auto delta = timer.stop();
+      logger_->log(ILog::Level::DEBUG, "LM Iteration: {}/{} (took: {} us)", i + 1, max_iterations_, delta);
+      timer.start();
     }
+
     const auto status = step(x);
 
     if (status != Status::STEP_OK) {

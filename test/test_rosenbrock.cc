@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include "ConsoleLogger.hh"
 #include "LevenbergMarquardt.hh"
 #include "NumericalCost.hh"
 
@@ -17,12 +16,10 @@ struct Rosenbrock {
   const Eigen::VectorXd x_;
 };
 
-// It is also possible to split a multi-dimensional function into multiple functions.
 TEST(TestRosenbrock, TestRosenbrock) {
   Eigen::VectorXd x{{3.0, -1.0}};
   auto cost = std::make_shared<NumericalCost<double, Eigen::Vector2d, Rosenbrock>>();
-  auto logger = std::make_shared<ConsoleLogger>();
-  LevenbergMarquardt solver(logger);
+  LevenbergMarquardt solver;
   solver.addCost(cost);
 
   solver.optimize(x);

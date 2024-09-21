@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include "AnalyticalCost.hh"
 #include "ConsoleLogger.hh"
 #include "GaussNewton.hh"
 #include "NumericalCost.hh"
@@ -52,9 +51,7 @@ TEST(TestPowell, TestPowell) {
   Eigen::VectorXd x{{3.0, -1.0, 0.0, 4.0}};
 
   auto cost = std::make_shared<NumericalCost<double, Eigen::Vector4d, Powell>>();
-  auto logger = std::make_shared<ConsoleLogger>();
-  logger->setLevel(ILog::Level::INFO);
-  GaussNewton solver(logger);
+  GaussNewton solver;
   solver.setMaxIterations(20);
   solver.addCost(cost);
 

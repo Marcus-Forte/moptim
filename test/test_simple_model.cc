@@ -2,7 +2,6 @@
 
 #include <AnalyticalCost.hh>
 
-#include "ConsoleLogger.hh"
 #include "GaussNewton.hh"
 #include "LevenbergMarquardt.hh"
 #include "NumericalCost.hh"
@@ -17,10 +16,10 @@ class TestSimpleModel : public ::testing::Test {
 TEST_F(TestSimpleModel, GaussNewton) {
   Eigen::VectorXd x{{0.9, 0.2}};
 
-  GaussNewton solver(std::make_shared<ConsoleLogger>());
+  GaussNewton solver;
 
-  auto cost =
-      std::make_shared<NumericalCost<double, double, SimpleModel, DifferentiationMethod::CENTRAL>>(&x_data_, &y_data_);
+  auto cost = std::make_shared<NumericalCost<double, double, SimpleModel, DifferentiationMethod::BACKWARD_EULER>>(
+      &x_data_, &y_data_);
 
   solver.addCost(cost);
 
@@ -33,7 +32,7 @@ TEST_F(TestSimpleModel, GaussNewton) {
 TEST_F(TestSimpleModel, GaussNewtonAnalytical) {
   Eigen::VectorXd x{{0.9, 0.2}};
 
-  GaussNewton solver(std::make_shared<ConsoleLogger>());
+  GaussNewton solver;
 
   auto cost = std::make_shared<AnalyticalCost<double, double, SimpleModel>>(&x_data_, &y_data_);
 
@@ -47,10 +46,24 @@ TEST_F(TestSimpleModel, GaussNewtonAnalytical) {
 
 TEST_F(TestSimpleModel, LevenbergMarquardt) {
   Eigen::VectorXd x{{0.9, 0.2}};
-  LevenbergMarquardt solver(std::make_shared<ConsoleLogger>());
+  LevenbergMarquardt solver;
 
-  auto cost =
-      std::make_shared<NumericalCost<double, double, SimpleModel, DifferentiationMethod::CENTRAL>>(&x_data_, &y_data_);
+  auto cost = std::make_shared<NumericalCost<double, double, SimpleModel, DifferentiationMethod::BACKWARD_EULER>>(
+      &x_data_, &y_data_);
+
+  solver.addCost(cost);
+
+  solver.optimize(x);
+
+  EXPECT_NEAR(x[0], 0.362, 0.01);
+  EXPECT_NEAR(x[1], 0.556, 0.01);
+}
+
+TEST_F(TestSimpleModel, LevenbergMarquardtAnalytical) {
+  Eigen::VectorXd x{{0.9, 0.2}};
+  LevenbergMarquardt solver;
+
+  auto cost = std::make_shared<AnalyticalCost<double, double, SimpleModel>>(&x_data_, &y_data_);
 
   solver.addCost(cost);
 

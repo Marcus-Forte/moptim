@@ -1,5 +1,7 @@
 #include "Timer.hh"
 
+Timer::Timer() { start(); }
+
 void Timer::start() { start_ = std::chrono::high_resolution_clock::now(); }
 
 uint64_t Timer::stop() {

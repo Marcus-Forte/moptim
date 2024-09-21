@@ -1,6 +1,6 @@
 #include "GaussNewton.hh"
 
-constexpr double g_small_cost = 1e-80;
+#include "Timer.hh"
 
 GaussNewton::GaussNewton() = default;
 GaussNewton::GaussNewton(const std::shared_ptr<ILog>& logger) : IOptimizer(logger) {}
@@ -28,7 +28,7 @@ IOptimizer::Status GaussNewton::step(Eigen::VectorXd& x) const {
     logger_->log(ILog::Level::DEBUG, "delta: [{}], Cost: {} ", delta_str.str(), totalCost);
   }
 
-  if (totalCost < g_small_cost) {
+  if (totalCost < moptim::constants::g_small_cost) {
     return Status::CONVERGED;
   }
 
@@ -44,7 +44,10 @@ IOptimizer::Status GaussNewton::step(Eigen::VectorXd& x) const {
 IOptimizer::Status GaussNewton::optimize(Eigen::VectorXd& x) const {
   for (int i = 0; i < max_iterations_; i++) {
     if (logger_) {
-      logger_->log(ILog::Level::DEBUG, "GN Iteration: {}/{}", i, max_iterations_);
+      static Timer timer;
+      const auto delta = timer.stop();
+      logger_->log(ILog::Level::DEBUG, "GN Iteration: {}/{} (took: {} us)", i + 1, max_iterations_, delta);
+      timer.start();
     }
     const auto status = step(x);
 

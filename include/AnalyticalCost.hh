@@ -32,8 +32,8 @@ class AnalyticalCost : public ICost {
       Eigen::Map<const ResidualVectorT> residual_map(reinterpret_cast<const double*>(&error));
       return residual_map.squaredNorm();
     };
-    return std::transform_reduce(input_->begin(), input_->end(), observations_->begin(), 0.0, std::plus<>(),
-                                 error_norm);
+    return std::transform_reduce(std::execution::seq, input_->begin(), input_->end(), observations_->begin(), 0.0,
+                                 std::plus<>(), error_norm);
   }
 
   SolveRhs computeLinearSystem(const Eigen::VectorXd& x) override {
