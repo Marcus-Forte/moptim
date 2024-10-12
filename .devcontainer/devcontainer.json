@@ -1,9 +1,6 @@
 {
     "name": "moptim",
-    "build": 
-    {
-        "dockerfile": "Dockerfile"
-    },
+    "image": "mdnf1992/cpp-dev",
     "customizations": {
         "vscode": {
             "extensions": [
@@ -14,6 +11,9 @@
             "settings": {
                 "clangd.arguments": [
                      "-header-insertion=never"
+                ],
+                "cmake.configureArgs": [
+                    "-DFORMAT_CODE=ON"
                 ]
             }
         }
