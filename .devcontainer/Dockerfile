@@ -1,15 +1,5 @@
-FROM ubuntu:latest
+FROM mdnf1992/sycl-dev 
 
-RUN apt-get update && apt-get install -y \
-    git \
-    cmake \
-    libeigen3-dev \
-    build-essential \
-    clangd \
-    clang-tidy \
-    clang-format \
-    libgtest-dev \
-    gdb \
-    libtbb-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* 
+RUN apt-get update && apt-get install -y libgtest-dev clang-tidy clang-format && \
+    apt-get clean && apt-get autoremove && \
+    rm -rf /var/lib/apt/lists/*

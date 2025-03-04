@@ -1,0 +1,6 @@
+CompileFlags:
+  Add:
+    - -I/opt/sycl/include/AdaptiveCpp
+Diagnostics:
+  Suppress:
+    - drv_unknown_argument

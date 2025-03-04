@@ -1,2 +1,2 @@
 # Moptim
-Non linear optimization library.
+Non linear optimization library built with SYCL.

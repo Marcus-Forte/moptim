@@ -1,6 +1,8 @@
 {
     "name": "moptim",
-    "image": "mdnf1992/cpp-dev",
+    "build":{
+        "dockerfile": "Dockerfile"
+    },
     "customizations": {
         "vscode": {
             "extensions": [
@@ -14,6 +16,9 @@
                 ],
                 "cmake.configureArgs": [
                     "-DFORMAT_CODE=ON"
+                ],
+                "cmake.additionalKits": [
+                    "/opt/sycl/cmake/cmake-kits.json"
                 ]
             }
         }
