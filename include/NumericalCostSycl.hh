@@ -42,6 +42,8 @@ class NumericalCostSycl : public ICost {
     auto* model_sycl = sycl::malloc_device<Model>(1, queue_);
     queue_.copy<Model>(&model, model_sycl, 1).wait();
 
+    const auto func = [](double input, double measurement) { return measurement - 0.1 * input / (0.1 + input); };
+
     queue_.single_task([=]() { *cost_reduction = 0.0F; }).wait();
 
     queue_
@@ -49,9 +51,13 @@ class NumericalCostSycl : public ICost {
           auto sum = sycl::reduction(cost_reduction, 0.0, sycl::plus<double>{});
 
           cgh.parallel_for(sycl::range<1>(input_->size()), sum, [=](sycl::id<1> id, auto& reduction) {
-            const auto error = (*model_sycl)(input_capture[id], observations_capture[id]);
-            Eigen::Map<const ResidualVectorT> residual_map(reinterpret_cast<const double*>(&error));
+            /// \todo Model objets (model_sycl) won't work in GPU
+            auto error = func(input_capture[id], observations_capture[id]);
 
+            // Following Eigen construct works in NVIDIA GPU! :)
+            Eigen::Map<const ResidualVectorT> residual_map(reinterpret_cast<const double*>(&error));
+            // error = error + 1.0;
+            // *cost_reduction = error;
             reduction += residual_map.squaredNorm();
           });
         })
@@ -59,7 +65,6 @@ class NumericalCostSycl : public ICost {
 
     double result;
     queue_.copy<double>(cost_reduction, &result, 1).wait();
-    std::cout << "Sycl res: " << result << std::endl;
     sycl::free(cost_reduction, queue_);
     return result;
   }
