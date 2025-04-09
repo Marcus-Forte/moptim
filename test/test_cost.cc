@@ -5,6 +5,7 @@
 #include "AnalyticalCost.hh"
 #include "ConsoleLogger.hh"
 #include "NumericalCost.hh"
+#include "NumericalCostSycl.hh"
 #include "models.hh"
 
 const std::vector<double> x_data_{0.038, 0.194, 0.425, 0.626, 1.253, 2.5, 3.70};        // model
@@ -31,4 +32,16 @@ TEST(TestCost, JacobianEquivalence) {
 
   ConsoleLogger logg;
   logg.log(ILog::Level::INFO, "number: {}", 25);
+}
+
+TEST(TestCost, NumericalCostSycl) {
+  NumericalCostSycl<double, double, SimpleModel> num_cost_sycl(&x_data_, &y_data_);
+  NumericalCost<double, double, SimpleModel> num_cost(&x_data_, &y_data_);
+
+  Eigen::VectorXd x{{0.1, 0.1}};
+
+  const auto sycl_cost_result = num_cost_sycl.computeCost(x);
+  const auto cpu_cost_result = num_cost.computeCost(x);
+
+  EXPECT_EQ(sycl_cost_result, cpu_cost_result);
 }

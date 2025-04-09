@@ -6,7 +6,7 @@
 
 #include "ICost.hh"
 
-const double g_step = std::sqrt(std::numeric_limits<double>::epsilon());
+static const double g_step = std::sqrt(std::numeric_limits<double>::epsilon());
 
 enum class DifferentiationMethod { BACKWARD_EULER = 0, CENTRAL = 1 };
 
