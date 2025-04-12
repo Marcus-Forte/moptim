@@ -2,6 +2,8 @@
 
 #include <Eigen/Dense>
 
+enum class DifferentiationMethod { BACKWARD_EULER = 0, CENTRAL = 1 };
+
 class ICost {
  public:
   // JTJ, JTb, cost

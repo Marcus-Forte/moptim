@@ -12,5 +12,5 @@ struct SimpleModel {
     return {-input / den, x_[0] * input / (den * den)};
   }
 
-  const Eigen::VectorXd x_;
+  const Eigen::Vector2d x_;
 };

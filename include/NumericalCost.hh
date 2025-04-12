@@ -8,8 +8,6 @@
 
 static const double g_step = std::sqrt(std::numeric_limits<double>::epsilon());
 
-enum class DifferentiationMethod { BACKWARD_EULER = 0, CENTRAL = 1 };
-
 template <class InputT, class OutputT, class Model,
           DifferentiationMethod MethodT = DifferentiationMethod::BACKWARD_EULER>
 class NumericalCost : public ICost {
