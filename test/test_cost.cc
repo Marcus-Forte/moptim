@@ -36,7 +36,8 @@ TEST(TestCost, JacobianEquivalence) {
 
 /// \todo pipelines with differnet machines
 TEST(TestCost, NumericalCostSycl) {
-  NumericalCostSycl<double, double, SimpleModel> num_cost_sycl(&x_data_, &y_data_);
+  sycl::queue queue{sycl::default_selector_v};
+  NumericalCostSycl<double, double, SimpleModel> num_cost_sycl(&x_data_, &y_data_, queue);
   NumericalCost<double, double, SimpleModel> num_cost(&x_data_, &y_data_);
 
   Eigen::VectorXd x{{0.1, 0.1}};
@@ -48,8 +49,9 @@ TEST(TestCost, NumericalCostSycl) {
 }
 
 TEST(TestCost, NumericalJacobianSycl) {
-  NumericalCostSycl<double, double, SimpleModel, ::DifferentiationMethod::BACKWARD_EULER> num_cost_sycl(&x_data_,
-                                                                                                        &y_data_);
+  sycl::queue queue{sycl::default_selector_v};
+  NumericalCostSycl<double, double, SimpleModel, ::DifferentiationMethod::BACKWARD_EULER> num_cost_sycl(
+      &x_data_, &y_data_, queue);
   NumericalCost<double, double, SimpleModel> num_cost(&x_data_, &y_data_);
 
   Eigen::VectorXd x{{0.1, 0.1}};
@@ -63,7 +65,7 @@ TEST(TestCost, NumericalJacobianSycl) {
     EXPECT_NEAR(num_jtj_sycl(i), num_jtj(i), 1e-5);
   }
 
-  // for (int i = 0; i < num_jtb_sycl.size(); ++i) {
-  //   EXPECT_NEAR(num_jtb_sycl(i), num_jtb(i), 1e-5);
-  // }
+  for (int i = 0; i < num_jtb_sycl.size(); ++i) {
+    EXPECT_NEAR(num_jtb_sycl(i), num_jtb(i), 1e-5);
+  }
 }
