@@ -18,6 +18,7 @@ add_executable(moptim_tests
   test_rosenbrock.cc
   test_transform2d.cc
   test_cost.cc
+  test_cost2.cc #v2
 )
 add_subdirectory(nist)
 target_link_libraries(moptim_tests gtest)

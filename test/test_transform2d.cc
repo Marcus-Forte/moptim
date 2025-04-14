@@ -4,8 +4,27 @@
 #include "ConsoleLogger.hh"
 #include "LevenbergMarquardt.hh"
 #include "NumericalCost.hh"
+#include "NumericalCost2.hh"
 #include "Timer.hh"
 #include "transform2d.hh"
+
+struct Point2Distance2 : public IModel {
+  void setup(const double* x) override {
+    transform_.setIdentity();
+    transform_.rotate(x[2]);
+    transform_.translate(Eigen::Vector2d{x[0], x[1]});
+  }
+
+  void f(const double* input, const double* measurement, double* f_x) override {
+    const auto* target = reinterpret_cast<const Eigen::Vector2d*>(measurement);
+    const auto* source = reinterpret_cast<const Eigen::Vector2d*>(input);
+    auto* transformed_point = reinterpret_cast<Eigen::Vector2d*>(f_x);
+
+    *transformed_point = *target - transform_ * (*source);
+  }
+
+  Eigen::Affine2d transform_;
+};
 
 TEST_F(Transform2D, 2DTransformLM) {
   auto g_logging = std::make_shared<ConsoleLogger>();
