@@ -8,6 +8,7 @@ add_executable(moptim_tests
   test_powell.cc
   test_rosenbrock.cc
   test_2dtransform.cc
+  test_3dtransform.cc
   test_cost.cc
 )
 add_subdirectory(nist)

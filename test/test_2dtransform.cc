@@ -11,9 +11,9 @@
 #include "Timer.hh"
 #include "data/parser.hh"
 
-std::shared_ptr<ConsoleLogger> g_logging;
-
 namespace {
+
+std::shared_ptr<ConsoleLogger> g_logging;
 
 Eigen::Vector2d transformPoint(const Eigen::Vector2d& point, const Eigen::Affine2d& transform) {
   return transform * point;
@@ -84,9 +84,7 @@ class Test2DTransform : public ::testing::Test {
 };
 
 TEST_F(Test2DTransform, SyclCost) {
-  Timer t0;
   sycl::queue queue{sycl::default_selector_v};
-  t0.start();
   auto cost = std::make_shared<NumericalCostSycl<Eigen::Vector2d, Eigen::Vector2d, Pt2Dist>>(&transformed_pointcloud_,
                                                                                              &pointcloud_, queue);
   auto known_cost = std::make_shared<NumericalCost<Eigen::Vector2d, Eigen::Vector2d, Pt2Dist>>(&transformed_pointcloud_,
