@@ -5,15 +5,11 @@
 #include "GaussNewton.hh"
 #include "LevenbergMarquardt.hh"
 #include "NumericalCost.hh"
-#include "models.hh"
+#include "test_models.hh"
 
-class TestSimpleModel : public ::testing::Test {
- protected:
-  const std::vector<double> x_data_{0.038, 0.194, 0.425, 0.626, 1.253, 2.5, 3.70};        // model
-  const std::vector<double> y_data_{0.05, 0.127, 0.094, 0.2122, 0.2729, 0.2665, 0.3317};  // measurement
-};
+using namespace test_models;
 
-TEST_F(TestSimpleModel, GaussNewton) {
+TEST(TestSimpleModel, GaussNewton) {
   Eigen::VectorXd x{{0.9, 0.2}};
 
   GaussNewton solver;
@@ -29,7 +25,7 @@ TEST_F(TestSimpleModel, GaussNewton) {
   EXPECT_NEAR(x[1], 0.556, 0.01);
 }
 
-TEST_F(TestSimpleModel, GaussNewtonAnalytical) {
+TEST(TestSimpleModel, GaussNewtonAnalytical) {
   Eigen::VectorXd x{{0.9, 0.2}};
 
   GaussNewton solver;
@@ -44,7 +40,7 @@ TEST_F(TestSimpleModel, GaussNewtonAnalytical) {
   EXPECT_NEAR(x[1], 0.556, 0.01);
 }
 
-TEST_F(TestSimpleModel, LevenbergMarquardt) {
+TEST(TestSimpleModel, LevenbergMarquardt) {
   Eigen::VectorXd x{{0.9, 0.2}};
   LevenbergMarquardt solver;
 
@@ -59,7 +55,7 @@ TEST_F(TestSimpleModel, LevenbergMarquardt) {
   EXPECT_NEAR(x[1], 0.556, 0.01);
 }
 
-TEST_F(TestSimpleModel, LevenbergMarquardtAnalytical) {
+TEST(TestSimpleModel, LevenbergMarquardtAnalytical) {
   Eigen::VectorXd x{{0.9, 0.2}};
   LevenbergMarquardt solver;
 

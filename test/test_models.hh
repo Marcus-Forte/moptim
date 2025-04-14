@@ -2,6 +2,16 @@
 
 #include <Eigen/Dense>
 
+/**
+ * @brief Common model to be used in the tests.
+ *
+ */
+
+namespace test_models {
+
+extern const std::vector<double> x_data_;
+extern const std::vector<double> y_data_;
+
 struct SimpleModel {
   SimpleModel(const Eigen::VectorXd& x0) : x_(x0) {}
 
@@ -14,3 +24,5 @@ struct SimpleModel {
 
   const Eigen::Vector2d x_;
 };
+
+}  // namespace test_models

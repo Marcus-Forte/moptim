@@ -17,26 +17,32 @@ class NumericalCostSycl : public ICost {
   NumericalCostSycl(const std::vector<InputT>* input, const std::vector<OutputT>* observations,
                     const sycl::queue& queue)
       : input_{input}, observations_{observations}, queue_(queue) {
-    /// \todo if device is CPU, no need to copy.
     ConsoleLogger logger;
-    input_sycl_ = sycl::malloc_device<InputT>(input->size(), queue_);
-    observations_sycl_ = sycl::malloc_device<OutputT>(observations->size(), queue_);
-
     logger.log(ILog::Level::INFO, "Sycl Device: {}", queue_.get_device().get_info<sycl::info::device::name>());
 
-    /// \todo Copy data to GPU now?
-    queue_.copy<InputT>(input->data(), input_sycl_, input->size());
-    queue_.copy<OutputT>(observations->data(), observations_sycl_, observations->size());
+    if (!queue_.get_device().is_cpu()) {
+      input_sycl_ = sycl::malloc_device<InputT>(input->size(), queue_);
+      observations_sycl_ = sycl::malloc_device<OutputT>(observations->size(), queue_);
+      queue_.copy<InputT>(input->data(), input_sycl_, input->size());
+      queue_.copy<OutputT>(observations->data(), observations_sycl_, observations->size());
+
+    } else {  // No need to copy data if it already lies in a CPU (host) device
+      input_sycl_ = const_cast<InputT*>(input->data());
+      observations_sycl_ = const_cast<OutputT*>(observations->data());
+    }
   }
 
   virtual ~NumericalCostSycl() {
-    sycl::free(input_sycl_, queue_);
-    sycl::free(observations_sycl_, queue_);
+    if (!queue_.get_device().is_cpu()) {
+      sycl::free(input_sycl_, queue_);
+      sycl::free(observations_sycl_, queue_);
+    }
   }
 
   double computeCost(const Eigen::VectorXd& x) override {
-    auto input_capture = input_sycl_;
-    auto observations_capture = observations_sycl_;
+    const auto input_capture = input_sycl_;
+    const auto observations_capture = observations_sycl_;
+    const auto input_size_capture = input_->size();
 
     Model model(x);
     auto* model_sycl = sycl::malloc_device<Model>(1, queue_);
@@ -48,13 +54,13 @@ class NumericalCostSycl : public ICost {
     queue_.submit([&](sycl::handler& cgh) {
       auto sum = sycl::reduction(cost_reduction, 0.0, sycl::plus<double>{});
 
-      cgh.parallel_for(sycl::range<1>(input_->size()), sum, [=](sycl::id<1> id, auto& reduction) {
-        const OutputT&& error = (*model_sycl)(input_capture[id], observations_capture[id]);
+      cgh.parallel_for(sycl::range<1>(input_size_capture), sum, [=](sycl::id<1> id, auto& reduction) {
+        const OutputT&& residual = (*model_sycl)(input_capture[id], observations_capture[id]);
 
-        const auto* error_ptr(reinterpret_cast<const double*>(&error));
+        const auto* error_presidual_ptr(reinterpret_cast<const double*>(&residual));
         double norm = 0.0;
         for (int dim = 0; dim < OutputDim; ++dim) {
-          norm += error_ptr[dim] * error_ptr[dim];
+          norm += error_presidual_ptr[dim] * error_presidual_ptr[dim];
         }
 
         reduction += norm;
@@ -85,19 +91,19 @@ class NumericalCostSycl : public ICost {
 
  private:
   inline SolveRhs applyEulerDiff(const Eigen::VectorXd& x, Model& model, SolveRhs& init) {
-    auto input_capture = input_sycl_;
-    auto observations_capture = observations_sycl_;
-
-    const auto ParamDim = x.size();
-    const auto InputSize = input_->size();
+    // Sycl captures
+    const auto input_capture = input_sycl_;
+    const auto observations_capture = observations_sycl_;
+    const auto param_dim_capture = x.size();
+    const auto input_size_capture = input_->size();
 
     auto* model_sycl = sycl::malloc_device<Model>(1, queue_);
     queue_.copy<Model>(&model, model_sycl, 1);
 
     // Initialize vector of models
-    std::vector<std::shared_ptr<Model>> models_plus(ParamDim);
-    auto* models_sycl_plus = sycl::malloc_device<Model>(ParamDim, queue_);
-    for (int i = 0; i < ParamDim; ++i) {
+    std::vector<std::shared_ptr<Model>> models_plus(param_dim_capture);
+    auto* models_sycl_plus = sycl::malloc_device<Model>(param_dim_capture, queue_);
+    for (int i = 0; i < param_dim_capture; ++i) {
       Eigen::VectorXd x_plus(x);
       x_plus[i] += g_SyclStep;
       models_plus[i] = std::make_shared<Model>(x_plus);
@@ -107,15 +113,16 @@ class NumericalCostSycl : public ICost {
     auto* cost_reduction = sycl::malloc_device<double>(1, queue_);
     queue_.memset(cost_reduction, 0, sizeof(double));
 
-    auto* jacobian_data = sycl::malloc_device<double>(OutputDim * InputSize * ParamDim, queue_);
-    auto* error_data = sycl::malloc_device<double>(OutputDim * InputSize, queue_);
+    auto* jacobian_data = sycl::malloc_device<double>(OutputDim * input_size_capture * param_dim_capture, queue_);
+    auto* error_data = sycl::malloc_device<double>(OutputDim * input_size_capture, queue_);
 
     queue_.wait();
 
     queue_.submit([&](sycl::handler& cgh) {
       auto sum = sycl::reduction(cost_reduction, 0.0, sycl::plus<double>{});
 
-      const auto workers = sycl::nd_range<2>(sycl::range<2>(InputSize, ParamDim), sycl::range<2>(OutputDim, ParamDim));
+      const auto workers = sycl::nd_range<2>(sycl::range<2>(input_size_capture, param_dim_capture),
+                                             sycl::range<2>(OutputDim, param_dim_capture));
       // const auto workers = sycl::range<2>(InputSize, ParamDim);
 
       cgh.parallel_for(workers, sum, [=](sycl::nd_item<2> id, auto& reduction) {
@@ -123,7 +130,7 @@ class NumericalCostSycl : public ICost {
         const auto ItemCol = id.get_global_id(1);
 
         const OutputT&& residual = model_sycl[0](input_capture[ItemRow], observations_capture[ItemRow]);
-        const auto numRows = OutputDim * InputSize;
+        const auto numRows = OutputDim * input_size_capture;
         auto* jacobian_col = reinterpret_cast<OutputT*>(&jacobian_data[ItemCol * numRows + ItemRow * OutputDim]);
         *jacobian_col =
             ((models_sycl_plus[ItemCol](input_capture[ItemRow], observations_capture[ItemRow])) - residual) /
@@ -147,8 +154,8 @@ class NumericalCostSycl : public ICost {
     queue_.wait();
 
     /// \todo compute those inside kernel
-    Eigen::MatrixXd Jac(OutputDim * InputSize, ParamDim);
-    Eigen::VectorXd Err(OutputDim * InputSize);
+    Eigen::MatrixXd Jac(OutputDim * input_size_capture, param_dim_capture);
+    Eigen::VectorXd Err(OutputDim * input_size_capture);
 
     queue_.copy<double>(jacobian_data, Jac.data(), Jac.size()).wait();
     queue_.copy<double>(error_data, Err.data(), Err.size()).wait();
