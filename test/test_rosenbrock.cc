@@ -3,22 +3,28 @@
 #include "LevenbergMarquardt.hh"
 #include "NumericalCost.hh"
 
-struct Rosenbrock {
-  Rosenbrock(const Eigen::VectorXd& x0) : x_(x0) {}
-
-  Eigen::Vector2d operator()(double /*input*/, const Eigen::Vector2d& /* observation */) {
-    const auto f0 = 10 * (x_[1] - x_[0] * x_[0]);
-    const auto f1 = 1 - x_[0];
-
-    return {f0, f1};
+/**
+ * @brief Model for the Rosenbrock function. No inputs or measurements, only parameters.
+ *
+ */
+struct Rosenbrock : public IModel {
+  void setup(const double* x) override {
+    x_[0] = x[0];
+    x_[1] = x[1];
+  }
+  void f(const double* /*input*/, const double* /*measurement*/, double* f_x) override {
+    f_x[0] = 10 * (x_[1] - x_[0] * x_[0]);
+    f_x[1] = 1 - x_[0];
   }
 
-  const Eigen::VectorXd x_;
+  double x_[2];
 };
 
 TEST(TestRosenbrock, TestRosenbrock) {
   Eigen::VectorXd x{{3.0, -1.0}};
-  auto cost = std::make_shared<NumericalCost<double, Eigen::Vector2d, Rosenbrock>>();
+
+  const auto model = std::make_shared<Rosenbrock>();
+  auto cost = std::make_shared<NumericalCost>(x.data(), x.data(), 1, 2, model);
   LevenbergMarquardt solver;
   solver.addCost(cost);
 

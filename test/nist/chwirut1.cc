@@ -52,21 +52,25 @@ const static std::vector<double> x_data{
     1.7500E0, 1.7500E0, .5000E0,  .7500E0,  1.7500E0, 1.7500E0, 2.7500E0, 3.7500E0, 1.7500E0, 1.7500E0, .5000E0,
     .7500E0,  2.7500E0, 3.7500E0, 1.7500E0, 1.7500E0};
 
-struct Model {
-  Model(const Eigen::VectorXd& x) : x_(x) {}
-
-  double operator()(double input, double observation) {
-    const auto num = std::exp(-x_[0] * input);
-    const auto den = x_[1] + x_[2] * input;
-    return observation - num / den;
+struct Model : public IModel {
+  void setup(const double* x) override {
+    x_[0] = x[0];
+    x_[1] = x[1];
+    x_[2] = x[2];
   }
-  Eigen::VectorXd x_;
+
+  void f(const double* input, const double* measurement, double* f_x) override {
+    const auto num = std::exp(-x_[0] * input[0]);
+    const auto den = x_[1] + x_[2] * input[0];
+    f_x[0] = measurement[0] - num / den;
+  }
+  double x_[3];
 };
 
 TEST(chwirut1, chwirut1) {
   Eigen::VectorXd x0{{0.1, 0.01, 0.02}};
-  auto cost =
-      std::make_shared<NumericalCost<double, double, Model, DifferentiationMethod::BACKWARD_EULER>>(&x_data, &y_data);
+  const auto model = std::make_shared<Model>();
+  auto cost = std::make_shared(x_data_.data(), y_data_.data(), x_data_.size(), 1, model);
   const auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::DEBUG);
   LevenbergMarquardt solver(logger);

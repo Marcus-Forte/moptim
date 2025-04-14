@@ -2,6 +2,7 @@
 
 #include <AnalyticalCost.hh>
 
+#include "AnalyticalCost.hh"
 #include "GaussNewton.hh"
 #include "LevenbergMarquardt.hh"
 #include "NumericalCost.hh"
@@ -12,10 +13,11 @@ using namespace test_models;
 TEST(TestSimpleModel, GaussNewton) {
   Eigen::VectorXd x{{0.9, 0.2}};
 
-  GaussNewton solver;
+  const auto model = std::make_shared<SimpleModel>();
+  auto cost = std::make_shared<NumericalCost>(x_data_.data(), y_data_.data(), x_data_.size(), 1, model,
+                                              DifferentiationMethod::CENTRAL);
 
-  auto cost = std::make_shared<NumericalCost<double, double, SimpleModel, DifferentiationMethod::BACKWARD_EULER>>(
-      &x_data_, &y_data_);
+  GaussNewton solver;
 
   solver.addCost(cost);
 
@@ -28,9 +30,9 @@ TEST(TestSimpleModel, GaussNewton) {
 TEST(TestSimpleModel, GaussNewtonAnalytical) {
   Eigen::VectorXd x{{0.9, 0.2}};
 
+  const auto model = std::make_shared<SimpleModel>();
+  auto cost = std::make_shared<AnalyticalCost>(x_data_.data(), y_data_.data(), x_data_.size(), 1, model);
   GaussNewton solver;
-
-  auto cost = std::make_shared<AnalyticalCost<double, double, SimpleModel>>(&x_data_, &y_data_);
 
   solver.addCost(cost);
 
@@ -42,10 +44,11 @@ TEST(TestSimpleModel, GaussNewtonAnalytical) {
 
 TEST(TestSimpleModel, LevenbergMarquardt) {
   Eigen::VectorXd x{{0.9, 0.2}};
-  LevenbergMarquardt solver;
 
-  auto cost = std::make_shared<NumericalCost<double, double, SimpleModel, DifferentiationMethod::BACKWARD_EULER>>(
-      &x_data_, &y_data_);
+  const auto model = std::make_shared<SimpleModel>();
+  auto cost = std::make_shared<AnalyticalCost>(x_data_.data(), y_data_.data(), x_data_.size(), 1, model);
+
+  LevenbergMarquardt solver;
 
   solver.addCost(cost);
 
@@ -57,9 +60,11 @@ TEST(TestSimpleModel, LevenbergMarquardt) {
 
 TEST(TestSimpleModel, LevenbergMarquardtAnalytical) {
   Eigen::VectorXd x{{0.9, 0.2}};
-  LevenbergMarquardt solver;
 
-  auto cost = std::make_shared<AnalyticalCost<double, double, SimpleModel>>(&x_data_, &y_data_);
+  const auto model = std::make_shared<SimpleModel>();
+  auto cost = std::make_shared<AnalyticalCost>(x_data_.data(), y_data_.data(), x_data_.size(), 1, model);
+
+  LevenbergMarquardt solver;
 
   solver.addCost(cost);
 

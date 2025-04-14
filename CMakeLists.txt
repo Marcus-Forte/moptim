@@ -21,7 +21,8 @@ find_package(Eigen3 REQUIRED)
 add_subdirectory(utils)
 
 add_library(moptim 
-  src/NumericalCost2.cc
+  src/NumericalCost.cc
+  src/AnalyticalCost.cc
   src/GaussNewton.cc
   src/LevenbergMarquardt.cc)
 target_compile_options(moptim PUBLIC --acpp-targets=generic)

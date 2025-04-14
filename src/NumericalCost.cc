@@ -1,36 +1,34 @@
-#include "NumericalCost2.hh"
+#include "NumericalCost.hh"
 
 static const double g_step = std::sqrt(std::numeric_limits<double>::epsilon());
 
-NumericalCost2::NumericalCost2(const double* input, const double* observations, size_t input_size, size_t output_dim,
-                               const std::shared_ptr<IModel>& model, DifferentiationMethod method)
+/// \todo perhaps pass X dimensions at construction
+NumericalCost::NumericalCost(const double* input, const double* observations, size_t input_size, size_t output_dim,
+                             const std::shared_ptr<IModel>& model, DifferentiationMethod method)
     : input_(input),
       observations_(observations),
       input_size_(input_size),
       output_dim_(output_dim),
       model_(model),
       method_(method) {
-        /// \todo preallocate matrices
-        /// \todo template float / double
-      }
+  /// \todo preallocate matrices
+  /// \todo template float / double
+}
 
-double NumericalCost2::computeCost(const Eigen::VectorXd& x) {
-  double sum = 0.0;
-
+/// \todo shared between analytical and numerical
+double NumericalCost::computeCost(const Eigen::VectorXd& x) {
   model_->setup(x.data());
 
   Eigen::VectorXd residual(output_dim_);
 
   for (int i = 0; i < input_size_; i += output_dim_) {
     model_->f(&input_[i], &observations_[i], residual.data());
-    sum += residual.squaredNorm();
   }
 
-  return sum;
+  return residual.squaredNorm();
 }
 
-ICost::SolveRhs NumericalCost2::computeLinearSystem(const Eigen::VectorXd& x) {
-
+ICost::SolveRhs NumericalCost::computeLinearSystem(const Eigen::VectorXd& x) {
   if (method_ == DifferentiationMethod::BACKWARD_EULER) {
     return applyEulerDiff(x);
   }
@@ -38,7 +36,7 @@ ICost::SolveRhs NumericalCost2::computeLinearSystem(const Eigen::VectorXd& x) {
   return applyCentralDiff(x);
 }
 
-ICost::SolveRhs NumericalCost2::applyEulerDiff(const Eigen::VectorXd& x) {
+ICost::SolveRhs NumericalCost::applyEulerDiff(const Eigen::VectorXd& x) {
   const auto param_dim = x.size();
 
   double sum = 0.0;
@@ -54,8 +52,6 @@ ICost::SolveRhs NumericalCost2::applyEulerDiff(const Eigen::VectorXd& x) {
     model_->f(&input_[i], &observations_[i], &residual[i]);
   }
 
-  sum += residual.squaredNorm();
-
   // Compute differentials
   for (int i = 0; i < param_dim; ++i) {
     Eigen::VectorXd x_plus(x);
@@ -68,12 +64,13 @@ ICost::SolveRhs NumericalCost2::applyEulerDiff(const Eigen::VectorXd& x) {
 
     jacobian.col(i) = (residual_plus - residual) / g_step;
   }
+
   const auto&& JTJ = jacobian.transpose() * jacobian;
   const auto&& JTb = jacobian.transpose() * residual;
-  return {JTJ, JTb, sum};
+  return {JTJ, JTb, residual.squaredNorm()};
 }
 
-ICost::SolveRhs NumericalCost2::applyCentralDiff(const Eigen::VectorXd& x) {
+ICost::SolveRhs NumericalCost::applyCentralDiff(const Eigen::VectorXd& x) {
   const auto param_dim = x.size();
 
   double sum = 0.0;

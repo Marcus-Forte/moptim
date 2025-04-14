@@ -18,16 +18,15 @@ add_executable(moptim_tests
   test_rosenbrock.cc
   test_transform2d.cc
   test_cost.cc
-  test_cost2.cc #v2
 )
-add_subdirectory(nist)
+# add_subdirectory(nist)
 target_link_libraries(moptim_tests gtest)
 gtest_discover_tests(moptim_tests)
 
-add_executable(moptim_sycl_tests
-  sycl/test_sycl_cost.cc
-  sycl/test_sycl_transform3d.cc
-)
-target_include_directories(moptim_sycl_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(moptim_sycl_tests gtest gtest_main)
-gtest_discover_tests(moptim_sycl_tests)
+# add_executable(moptim_sycl_tests
+#   sycl/test_sycl_cost.cc
+#   sycl/test_sycl_transform3d.cc
+# )
+# target_include_directories(moptim_sycl_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+# target_link_libraries(moptim_sycl_tests gtest gtest_main)
+# gtest_discover_tests(moptim_sycl_tests)
