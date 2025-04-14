@@ -13,7 +13,7 @@ class NumericalCost : public ICost {
                 const std::shared_ptr<IModel>& model,
                 DifferentiationMethod method = DifferentiationMethod::BACKWARD_EULER);
 
-  ~NumericalCost() = default;
+  virtual ~NumericalCost() = default;
 
   double computeCost(const Eigen::VectorXd& x) override;
 

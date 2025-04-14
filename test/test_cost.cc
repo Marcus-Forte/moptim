@@ -9,7 +9,7 @@
 
 using namespace test_models;
 
-TEST(TestCost2, CostEquivalence) {
+TEST(TestCost, CostEquivalence) {
   Eigen::VectorXd x{{0.1, 0.1}};
 
   const auto model = std::make_shared<SimpleModel>();
@@ -21,9 +21,10 @@ TEST(TestCost2, CostEquivalence) {
   const auto num_cost_result = num_cost.computeCost(x);
 
   EXPECT_NEAR(an_cost_result, num_cost_result, 1e-5);
+  EXPECT_NEAR(an_cost_result, 0.13670093591408203, 1e-5);
 }
 
-TEST(TestCost2, JacobianEquivalence2) {
+TEST(TestCost, JacobianEquivalence2) {
   Eigen::VectorXd x{{0.1, 0.1}};
 
   const auto model = std::make_shared<SimpleModel>();

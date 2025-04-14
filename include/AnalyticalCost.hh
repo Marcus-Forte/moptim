@@ -12,7 +12,7 @@ class AnalyticalCost : public ICost {
   AnalyticalCost(const double* input, const double* observations, size_t input_size, size_t output_dim,
                  const std::shared_ptr<IJacobianModel>& model);
 
-  ~AnalyticalCost() = default;
+  virtual ~AnalyticalCost() = default;
 
   double computeCost(const Eigen::VectorXd& x) override;
 

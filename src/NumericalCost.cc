@@ -19,10 +19,10 @@ NumericalCost::NumericalCost(const double* input, const double* observations, si
 double NumericalCost::computeCost(const Eigen::VectorXd& x) {
   model_->setup(x.data());
 
-  Eigen::VectorXd residual(output_dim_);
+  Eigen::VectorXd residual(output_dim_ * input_size_);
 
   for (int i = 0; i < input_size_; i += output_dim_) {
-    model_->f(&input_[i], &observations_[i], residual.data());
+    model_->f(&input_[i], &observations_[i], &residual[i]);
   }
 
   return residual.squaredNorm();

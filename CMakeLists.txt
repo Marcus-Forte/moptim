@@ -22,6 +22,7 @@ add_subdirectory(utils)
 
 add_library(moptim 
   src/NumericalCost.cc
+  # src/NumericalCostSycl.cc
   src/AnalyticalCost.cc
   src/GaussNewton.cc
   src/LevenbergMarquardt.cc)
