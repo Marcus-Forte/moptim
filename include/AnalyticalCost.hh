@@ -22,6 +22,6 @@ class AnalyticalCost : public ICost {
   const double* input_;
   const double* observations_;
   std::shared_ptr<IJacobianModel> model_;
-  const size_t input_size_;
   const size_t output_dim_;
+  const size_t residuals_dim_;
 };

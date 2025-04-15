@@ -7,21 +7,23 @@ NumericalCost::NumericalCost(const double* input, const double* observations, si
                              const std::shared_ptr<IModel>& model, DifferentiationMethod method)
     : input_(input),
       observations_(observations),
-      input_size_(input_size),
       output_dim_(output_dim),
       model_(model),
-      method_(method) {
+      method_(method),
+      residuals_dim_{input_size * output_dim} {
   /// \todo preallocate matrices
   /// \todo template float / double
 }
 
 /// \todo shared between analytical and numerical
+/// \todo perhaps pass X dimensions at construction
+/// \todo Eigen::Map?
 double NumericalCost::computeCost(const Eigen::VectorXd& x) {
   model_->setup(x.data());
 
-  Eigen::VectorXd residual(output_dim_ * input_size_);
+  Eigen::VectorXd residual(residuals_dim_);
 
-  for (int i = 0; i < input_size_; i += output_dim_) {
+  for (int i = 0; i < residuals_dim_; i += output_dim_) {
     model_->f(&input_[i], &observations_[i], &residual[i]);
   }
 
@@ -41,14 +43,14 @@ ICost::SolveRhs NumericalCost::applyEulerDiff(const Eigen::VectorXd& x) {
 
   double sum = 0.0;
 
-  Eigen::MatrixXd jacobian(output_dim_ * input_size_, param_dim);
-  Eigen::VectorXd residual(output_dim_ * input_size_);
-  Eigen::VectorXd residual_plus(output_dim_ * input_size_);
+  Eigen::MatrixXd jacobian(residuals_dim_, param_dim);
+  Eigen::VectorXd residual(residuals_dim_);
+  Eigen::VectorXd residual_plus(residuals_dim_);
 
   model_->setup(x.data());
 
   // Compute Residuals
-  for (int i = 0; i < input_size_; i += output_dim_) {
+  for (int i = 0; i < residuals_dim_; i += output_dim_) {
     model_->f(&input_[i], &observations_[i], &residual[i]);
   }
 
@@ -58,7 +60,7 @@ ICost::SolveRhs NumericalCost::applyEulerDiff(const Eigen::VectorXd& x) {
     x_plus[i] += g_step;
     model_->setup(x_plus.data());
 
-    for (int j = 0; j < input_size_; j += output_dim_) {
+    for (int j = 0; j < residuals_dim_; j += output_dim_) {
       model_->f(&input_[j], &observations_[j], &residual_plus[j]);
     }
 
@@ -75,15 +77,15 @@ ICost::SolveRhs NumericalCost::applyCentralDiff(const Eigen::VectorXd& x) {
 
   double sum = 0.0;
 
-  Eigen::MatrixXd jacobian(output_dim_ * input_size_, param_dim);
-  Eigen::VectorXd residual(output_dim_ * input_size_);
-  Eigen::VectorXd residual_plus(output_dim_ * input_size_);
-  Eigen::VectorXd residual_minus(output_dim_ * input_size_);
+  Eigen::MatrixXd jacobian(residuals_dim_, param_dim);
+  Eigen::VectorXd residual(residuals_dim_);
+  Eigen::VectorXd residual_plus(residuals_dim_);
+  Eigen::VectorXd residual_minus(residuals_dim_);
 
   model_->setup(x.data());
 
   // Compute Residuals
-  for (int i = 0; i < input_size_; i += output_dim_) {
+  for (int i = 0; i < residuals_dim_; i += output_dim_) {
     model_->f(&input_[i], &observations_[i], &residual[i]);
   }
 
@@ -97,12 +99,12 @@ ICost::SolveRhs NumericalCost::applyCentralDiff(const Eigen::VectorXd& x) {
     x_minus[i] -= g_step;
 
     model_->setup(x_plus.data());
-    for (int j = 0; j < input_size_; j += output_dim_) {
+    for (int j = 0; j < residuals_dim_; j += output_dim_) {
       model_->f(&input_[j], &observations_[j], &residual_plus[j]);
     }
 
     model_->setup(x_minus.data());
-    for (int j = 0; j < input_size_; j += output_dim_) {
+    for (int j = 0; j < residuals_dim_; j += output_dim_) {
       model_->f(&input_[j], &observations_[j], &residual_minus[j]);
     }
 

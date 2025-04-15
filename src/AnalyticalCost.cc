@@ -3,15 +3,19 @@
 /// \todo perhaps pass X dimensions at construction
 AnalyticalCost::AnalyticalCost(const double* input, const double* observations, size_t input_size, size_t output_dim,
                                const std::shared_ptr<IJacobianModel>& model)
-    : input_(input), observations_(observations), input_size_(input_size), output_dim_(output_dim), model_(model) {}
+    : input_(input),
+      observations_(observations),
+      output_dim_(output_dim),
+      model_(model),
+      residuals_dim_{input_size * output_dim} {}
 
 /// \todo shared between analytical and numerical
 double AnalyticalCost::computeCost(const Eigen::VectorXd& x) {
   model_->setup(x.data());
 
-  Eigen::VectorXd residual(output_dim_ * input_size_);
+  Eigen::VectorXd residual(residuals_dim_);
 
-  for (int i = 0; i < input_size_; i += output_dim_) {
+  for (int i = 0; i < residuals_dim_; i += output_dim_) {
     model_->f(&input_[i], &observations_[i], &residual[i]);
   }
 
@@ -23,11 +27,11 @@ ICost::SolveRhs AnalyticalCost::computeLinearSystem(const Eigen::VectorXd& x) {
 
   model_->setup(x.data());
 
-  Eigen::MatrixXd jacobian_transposed(param_dim, output_dim_ * input_size_);  // this is the transpose
-  Eigen::VectorXd residual(output_dim_ * input_size_);
+  Eigen::MatrixXd jacobian_transposed(param_dim, residuals_dim_);  // this is the transpose
+  Eigen::VectorXd residual(residuals_dim_);
 
   int k = 0;
-  for (int i = 0; i < input_size_; i += output_dim_) {
+  for (int i = 0; i < residuals_dim_; i += output_dim_) {
     model_->f(&input_[i], &observations_[i], &residual[i]);
     model_->df(&input_[i], &observations_[i], jacobian_transposed.data() + k);
     k += param_dim;

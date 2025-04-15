@@ -7,33 +7,13 @@
 
 using namespace test_models;
 
-// apparently sycl can't handle inherited objects
-struct SimpleModelSycl {
-  void setup(const double* x) {
-    x_[0] = x[0];
-    x_[1] = x[1];
-  }
-
-  void f(const double* input, const double* measurement, double* f_x) {
-    f_x[0] = measurement[0] - x_[0] * input[0] / (x_[1] + input[0]);
-  }
-
-  void df(const double* input, const double* measurement, double* df_x) {
-    const auto den = (x_[1] + input[0]);
-    df_x[0] = -input[0] / den;
-    df_x[1] = x_[0] * input[0] / (den * den);
-  }
-
-  double x_[2];
-};
-
 /// \todo pipelines with differnet machines
 TEST(TestCost, NumericalCostEquivalenceSycl) {
   sycl::queue queue{sycl::default_selector_v};
 
   const auto model = std::make_shared<SimpleModel>();
 
-  NumericalCostSycl<SimpleModelSycl, 1> num_cost_sycl(queue, x_data_.data(), y_data_.data(), x_data_.size());
+  NumericalCostSycl<SimpleModel, 1> num_cost_sycl(queue, x_data_.data(), y_data_.data(), x_data_.size());
   NumericalCost num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, model);
 
   Eigen::VectorXd x{{0.0, 0.0}};
