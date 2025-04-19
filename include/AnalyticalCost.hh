@@ -10,7 +10,7 @@ class AnalyticalCost : public ICost {
   AnalyticalCost(const AnalyticalCost&) = delete;
 
   AnalyticalCost(const double* input, const double* observations, size_t input_size, size_t output_dim,
-                 const std::shared_ptr<IJacobianModel>& model);
+                 size_t param_dim, const std::shared_ptr<IJacobianModel>& model);
 
   virtual ~AnalyticalCost() = default;
 
@@ -19,9 +19,13 @@ class AnalyticalCost : public ICost {
   SolveRhs computeLinearSystem(const Eigen::VectorXd& x) override;
 
  private:
+  Eigen::MatrixXd jacobian_transposed_data_;
+  Eigen::VectorXd residual_data_;
+
   const double* input_;
   const double* observations_;
   std::shared_ptr<IJacobianModel> model_;
   const size_t output_dim_;
+  const size_t param_dim_;
   const size_t residuals_dim_;
 };

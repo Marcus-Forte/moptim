@@ -14,7 +14,7 @@ TEST_F(Transform2D, 2DTransformLM) {
   solver_ = std::make_shared<LevenbergMarquardt>(g_logging);
   const auto model = std::make_shared<Point2Distance>();
   auto cost = std::make_shared<NumericalCost>(transformed_pointcloud_[0].data(), pointcloud_[0].data(),
-                                              transformed_pointcloud_.size(), 2, model);
+                                              transformed_pointcloud_.size(), 2, 3, model);
   solver_->addCost(cost);
   Eigen::VectorXd x0{{0, 0, 0}};
   solver_->optimize(x0);
@@ -31,7 +31,7 @@ TEST_F(Transform2D, DISABLED_2DTransformLMAnalytical) {
   solver_ = std::make_shared<LevenbergMarquardt>(g_logging);
   const auto model = std::make_shared<Point2Distance>();
   auto cost = std::make_shared<AnalyticalCost>(transformed_pointcloud_[0].data(), pointcloud_[0].data(),
-                                               transformed_pointcloud_.size(), 2, model);
+                                               transformed_pointcloud_.size(), 2, 3, model);
 
   solver_->addCost(cost);
   Eigen::VectorXd x0{{0, 0, 0}};

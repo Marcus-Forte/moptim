@@ -1,5 +1,5 @@
 # Update platform accordingly
-FROM --platform=linux/arm64 mdnf1992/sycl-dev 
+FROM --platform=linux/amd64 mdnf1992/sycl-dev 
 
 RUN apt-get update && apt-get install -y libgtest-dev clang-tidy clang-format && \
     apt-get clean && apt-get autoremove && \

@@ -14,7 +14,7 @@ TEST(TestSimpleModel, GaussNewton) {
   Eigen::VectorXd x{{0.9, 0.2}};
 
   const auto model = std::make_shared<SimpleModel>();
-  auto cost = std::make_shared<NumericalCost>(x_data_.data(), y_data_.data(), x_data_.size(), 1, model,
+  auto cost = std::make_shared<NumericalCost>(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model,
                                               DifferentiationMethod::CENTRAL);
 
   GaussNewton solver;
@@ -31,7 +31,7 @@ TEST(TestSimpleModel, GaussNewtonAnalytical) {
   Eigen::VectorXd x{{0.9, 0.2}};
 
   const auto model = std::make_shared<SimpleModel>();
-  auto cost = std::make_shared<AnalyticalCost>(x_data_.data(), y_data_.data(), x_data_.size(), 1, model);
+  auto cost = std::make_shared<AnalyticalCost>(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
   GaussNewton solver;
 
   solver.addCost(cost);
@@ -46,7 +46,7 @@ TEST(TestSimpleModel, LevenbergMarquardt) {
   Eigen::VectorXd x{{0.9, 0.2}};
 
   const auto model = std::make_shared<SimpleModel>();
-  auto cost = std::make_shared<AnalyticalCost>(x_data_.data(), y_data_.data(), x_data_.size(), 1, model);
+  auto cost = std::make_shared<AnalyticalCost>(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
 
   LevenbergMarquardt solver;
 
@@ -62,7 +62,7 @@ TEST(TestSimpleModel, LevenbergMarquardtAnalytical) {
   Eigen::VectorXd x{{0.9, 0.2}};
 
   const auto model = std::make_shared<SimpleModel>();
-  auto cost = std::make_shared<AnalyticalCost>(x_data_.data(), y_data_.data(), x_data_.size(), 1, model);
+  auto cost = std::make_shared<AnalyticalCost>(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
 
   LevenbergMarquardt solver;
 

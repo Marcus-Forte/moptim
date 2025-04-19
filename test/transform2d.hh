@@ -10,13 +10,13 @@
  *
  */
 struct Point2Distance : public IJacobianModel {
-  void setup(const double* x) override {
+  void setup(const double* x) final {
     transform_.setIdentity();
     transform_.rotate(x[2]);
     transform_.translate(Eigen::Vector2d{x[0], x[1]});
   }
 
-  void f(const double* input, const double* measurement, double* f_x) override {
+  void f(const double* input, const double* measurement, double* f_x) final {
     const auto* target = reinterpret_cast<const Eigen::Vector2d*>(measurement);
     const auto* source = reinterpret_cast<const Eigen::Vector2d*>(input);
     auto* transformed_point = reinterpret_cast<Eigen::Vector2d*>(f_x);
@@ -24,7 +24,7 @@ struct Point2Distance : public IJacobianModel {
     *transformed_point = *target - transform_ * (*source);
   }
 
-  void df(const double* input, const double* measurement, double* df_x) override {
+  void df(const double* input, const double* measurement, double* df_x) final {
     // const auto* target = reinterpret_cast<const Eigen::Vector2d*>(measurement);
     // const auto* source = reinterpret_cast<const Eigen::Vector2d*>(input);
     // auto* jacobian = reinterpret_cast<Eigen::Matrix<double, 2, 3>*>(df_x);

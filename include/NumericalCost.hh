@@ -9,8 +9,8 @@ class NumericalCost : public ICost {
  public:
   NumericalCost(const NumericalCost&) = delete;
 
-  NumericalCost(const double* input, const double* observations, size_t input_size, size_t output_dim,
-                const std::shared_ptr<IModel>& model,
+  NumericalCost(const double* input, const double* observations, size_t num_elements, size_t output_dim,
+                size_t param_dim, const std::shared_ptr<IModel>& model,
                 DifferentiationMethod method = DifferentiationMethod::BACKWARD_EULER);
 
   virtual ~NumericalCost() = default;
@@ -23,11 +23,17 @@ class NumericalCost : public ICost {
   SolveRhs applyEulerDiff(const Eigen::VectorXd& x);
   SolveRhs applyCentralDiff(const Eigen::VectorXd& x);
 
+  Eigen::MatrixXd jacobian_data_;
+  Eigen::VectorXd residual_data_;
+  Eigen::VectorXd residual_data_plus_;
+  Eigen::VectorXd residual_data_minus_;
+
   const double* input_;
   const double* observations_;
-  std::shared_ptr<IModel> model_;
+  const size_t num_elements_;
   const size_t output_dim_;
-  const DifferentiationMethod method_;
-
+  const size_t param_dim_;
   const size_t residuals_dim_;
+  std::shared_ptr<IModel> model_;
+  const DifferentiationMethod method_;
 };

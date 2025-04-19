@@ -25,5 +25,6 @@
     },
     "mounts": [
         "source=moptim-build-cache,target=/workspaces/moptim/build,type=volume"
-    ]
+    ],
+    "runArgs": ["--gpus", "all"]
 }

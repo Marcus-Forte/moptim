@@ -17,10 +17,10 @@ TEST_P(Test3DTransform, SyclCost) {
   const auto model = std::make_shared<Point3Distance>();
 
   auto normal_cost = std::make_shared<NumericalCost>(transformed_pointcloud_[0].data(), pointcloud_[0].data(),
-                                                     transformed_pointcloud_.size(), 3, model);
+                                                     transformed_pointcloud_.size(), 3, 6, model);
 
-  auto sycl_cost = std::make_shared<NumericalCostSycl<Point3Distance, 3>>(
-      queue, transformed_pointcloud_[0].data(), pointcloud_[0].data(), transformed_pointcloud_.size());
+  auto sycl_cost = std::make_shared<NumericalCostSycl<Point3Distance>>(
+      queue, transformed_pointcloud_[0].data(), pointcloud_[0].data(), transformed_pointcloud_.size(), 3, 6);
 
   Eigen::VectorXd x0{{0.0, 0.0, 0, 0, 0, 0}};
 
@@ -44,13 +44,15 @@ TEST_P(Test3DTransform, SyclJacobian) {
   Timer t0;
   sycl::queue queue{sycl::default_selector_v};
 
+  const auto num_elements = transformed_pointcloud_[0].size();  // pointcloud_.size();
+
   const auto model = std::make_shared<Point3Distance>();
 
-  auto normal_cost = std::make_shared<NumericalCost>(transformed_pointcloud_[0].data(), pointcloud_[0].data(), 4, 3,
-                                                     model, DifferentiationMethod::CENTRAL);
+  auto normal_cost = std::make_shared<NumericalCost>(transformed_pointcloud_[0].data(), pointcloud_[0].data(),
+                                                     num_elements, 3, 6, model, DifferentiationMethod::CENTRAL);
 
-  auto sycl_cost = std::make_shared<NumericalCostSycl<Point3Distance, 3>>(queue, transformed_pointcloud_[0].data(),
-                                                                          pointcloud_[0].data(), 4);
+  auto sycl_cost = std::make_shared<NumericalCostSycl<Point3Distance>>(queue, transformed_pointcloud_[0].data(),
+                                                                       pointcloud_[0].data(), num_elements, 3, 6);
 
   Eigen::VectorXd x0{{0.1, 0.1, 0.1, 0, 0, 0}};
 

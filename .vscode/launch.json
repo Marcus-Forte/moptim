@@ -12,7 +12,9 @@
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": [],
+            "environment": [
+                {"name": "ACPP_VISIBILITY_MASK", "value": "ocl"}
+            ],
             "externalConsole": false,
             "MIMode": "gdb",
             "setupCommands": [

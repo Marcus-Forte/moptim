@@ -14,8 +14,8 @@ TEST(TestCost, CostEquivalence) {
 
   const auto model = std::make_shared<SimpleModel>();
 
-  AnalyticalCost an_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, model);
-  NumericalCost num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, model);
+  AnalyticalCost an_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
+  NumericalCost num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
 
   const auto an_cost_result = an_cost.computeCost(x);
   const auto num_cost_result = num_cost.computeCost(x);
@@ -24,13 +24,13 @@ TEST(TestCost, CostEquivalence) {
   EXPECT_NEAR(an_cost_result, 0.13670093591408203, 1e-5);
 }
 
-TEST(TestCost, JacobianEquivalence2) {
+TEST(TestCost, JacobianEquivalence) {
   Eigen::VectorXd x{{0.1, 0.1}};
 
   const auto model = std::make_shared<SimpleModel>();
 
-  AnalyticalCost an_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, model);
-  NumericalCost num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, model, DifferentiationMethod::CENTRAL);
+  AnalyticalCost an_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
+  NumericalCost num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model, DifferentiationMethod::CENTRAL);
 
   const auto [an_jtj, an_jtb, an_total] = an_cost.computeLinearSystem(x);
   const auto [num_jtj, num_jtb, num_total] = num_cost.computeLinearSystem(x);
@@ -44,7 +44,4 @@ TEST(TestCost, JacobianEquivalence2) {
   }
 
   EXPECT_NEAR(an_total, num_total, 1e-5);
-
-  ConsoleLogger logg;
-  logg.log(ILog::Level::INFO, "number: {}", 25);
 }

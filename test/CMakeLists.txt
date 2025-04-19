@@ -25,6 +25,8 @@ gtest_discover_tests(moptim_tests)
 
 add_executable(moptim_sycl_tests
   sycl/test_sycl_cost.cc
+  sycl/test_sycl_jacobian.cc
+  sycl/test_sycl_transform2d.cc
   sycl/test_sycl_transform3d.cc
 )
 target_include_directories(moptim_sycl_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
