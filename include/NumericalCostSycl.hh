@@ -45,7 +45,7 @@ class NumericalCostSycl : public ICost {
     }
   }
 
-   ~NumericalCostSycl() override {
+  ~NumericalCostSycl() override {
     if (!queue_.get_device().is_cpu()) {
       sycl::free(input_sycl_, queue_);
       sycl::free(observations_sycl_, queue_);
@@ -54,7 +54,6 @@ class NumericalCostSycl : public ICost {
     if (method_ == DifferentiationMethod::CENTRAL) {
       sycl::free(residual_minus_data_, queue_);
     }
-    
 
     sycl::free(cost_reduction_, queue_);
     sycl::free(jacobian_data_, queue_);

@@ -7,6 +7,7 @@
 #include "NumericalCost.hh"
 #include "NumericalCostSycl.hh"
 #include "Timer.hh"
+#include "test_helper.hh"
 #include "transform2d.hh"
 
 const double sycl_vs_cpu_tolerance = 1e-1;
@@ -47,13 +48,8 @@ TEST_F(Transform2D, SyclCost) {
 
   EXPECT_NEAR(num_total_sycl, num_total, sycl_vs_cpu_tolerance);
 
-  for (int i = 0; i < num_jtj_sycl.size(); ++i) {
-    EXPECT_NEAR(num_jtj_sycl(i), num_jtj(i), sycl_vs_cpu_tolerance);
-  }
-
-  for (int i = 0; i < num_jtb_sycl.size(); ++i) {
-    EXPECT_NEAR(num_jtb_sycl(i), num_jtb(i), sycl_vs_cpu_tolerance);
-  }
+  compareMatrices(num_jtj_sycl, num_jtj, sycl_vs_cpu_tolerance);
+  compareMatrices(num_jtb_sycl, num_jtb, sycl_vs_cpu_tolerance);
 }
 
 TEST_F(Transform2D, Sycl2DTransformLM) {

@@ -27,13 +27,8 @@ TEST(TestJacobian, NumericalJacobianEquivalenceSycl) {
   std::cout << "num_total: " << num_total << std::endl;
   EXPECT_NEAR(num_total_sycl, num_total, 1e-5);
 
-  for (int i = 0; i < num_jtj_sycl.size(); ++i) {
-    EXPECT_NEAR(num_jtj_sycl(i), num_jtj(i), 1e-5);
-  }
-
-  for (int i = 0; i < num_jtb_sycl.size(); ++i) {
-    EXPECT_NEAR(num_jtb_sycl(i), num_jtb(i), 1e-5);
-  }
+  compareMatrices(num_jtj_sycl, num_jtj);
+  compareMatrices(num_jtb_sycl, num_jtb);
 }
 
 TEST(TestJacobian, NumericalJacobianMethods) {

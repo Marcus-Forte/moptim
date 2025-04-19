@@ -4,11 +4,12 @@
 #include "NumericalCost.hh"
 #include "NumericalCostSycl.hh"
 #include "Timer.hh"
+#include "test_helper.hh"
 #include "transform3d.hh"
 
 const double sycl_vs_cpu_tolerance = 1e-2;
 
-INSTANTIATE_TEST_SUITE_P(Test3DTransform10MillionPoints, Test3DTransform, ::testing::Values(1'000'000));
+INSTANTIATE_TEST_SUITE_P(Test3DTransform1MillionPoints, Test3DTransform, ::testing::Values(1'000'000));
 
 TEST_P(Test3DTransform, SyclCost) {
   auto g_logging = std::make_shared<ConsoleLogger>();
@@ -80,13 +81,8 @@ TEST_P(Test3DTransform, SyclJacobian) {
   stop = t0.stop();
   g_logging->log(ILog::Level::INFO, "Sycl cost jacobian: took {} us", stop);
 
-  for (int i = 0; i < num_jtj_sycl.size(); ++i) {
-    EXPECT_NEAR(num_jtj_sycl(i), num_jtj(i), sycl_vs_cpu_tolerance);
-  }
-
-  for (int i = 0; i < num_jtb_sycl.size(); ++i) {
-    EXPECT_NEAR(num_jtb_sycl(i), num_jtb(i), sycl_vs_cpu_tolerance);
-  }
+  compareMatrices(num_jtj_sycl, num_jtj, sycl_vs_cpu_tolerance);
+  compareMatrices(num_jtb_sycl, num_jtb, sycl_vs_cpu_tolerance);
 
   EXPECT_NEAR(num_total, num_total_sycl, sycl_vs_cpu_tolerance);
 }
