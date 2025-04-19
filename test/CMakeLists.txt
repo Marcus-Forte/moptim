@@ -6,6 +6,7 @@ add_library(test_models
   test_models.cc
   transform2d.cc
   transform3d.cc
+  test_helper.cc
 )
 target_link_libraries(test_models moptim)
 link_libraries(test_models)

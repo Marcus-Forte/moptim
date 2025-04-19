@@ -5,9 +5,9 @@ static const double g_step = std::sqrt(std::numeric_limits<double>::epsilon());
 /// \todo template float / double
 NumericalCost::NumericalCost(const double* input, const double* observations, size_t num_elements, size_t output_dim,
                              size_t param_dim, const std::shared_ptr<IModel>& model, DifferentiationMethod method)
-    : input_(input),
+    : ICost(num_elements),
+      input_(input),
       observations_(observations),
-      num_elements_(num_elements),
       output_dim_(output_dim),
       param_dim_(param_dim),
       model_(model),

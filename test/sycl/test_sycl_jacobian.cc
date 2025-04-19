@@ -3,8 +3,8 @@
 #include "AnalyticalCost.hh"
 #include "NumericalCost.hh"
 #include "NumericalCostSycl.hh"
+#include "test_helper.hh"
 #include "test_models.hh"
-
 using namespace test_models;
 
 /// \todo pipelines with differnet machines
@@ -34,4 +34,22 @@ TEST(TestJacobian, NumericalJacobianEquivalenceSycl) {
   for (int i = 0; i < num_jtb_sycl.size(); ++i) {
     EXPECT_NEAR(num_jtb_sycl(i), num_jtb(i), 1e-5);
   }
+}
+
+TEST(TestJacobian, NumericalJacobianMethods) {
+  sycl::queue queue{sycl::default_selector_v};
+  const auto num_elements = x_data_.size();
+  NumericalCostSycl<SimpleModel> num_euler(queue, x_data_.data(), y_data_.data(), num_elements, 1, 2);
+  NumericalCostSycl<SimpleModel> num_central(queue, x_data_.data(), y_data_.data(), num_elements, 1, 2,
+                                             DifferentiationMethod::CENTRAL);
+
+  Eigen::VectorXd x{{0.1, 0.1}};
+
+  const auto [num_jtj_sycl, num_jtb_sycl, num_total_sycl] = num_euler.computeLinearSystem(x);
+  const auto [num_jtj, num_jtb, num_total] = num_central.computeLinearSystem(x);
+
+  EXPECT_NEAR(num_total_sycl, num_total, 1e-5);
+
+  compareMatrices(num_jtj_sycl, num_jtj);
+  compareMatrices(num_jtb_sycl, num_jtb);
 }

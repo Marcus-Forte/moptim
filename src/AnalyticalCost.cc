@@ -1,13 +1,14 @@
 #include "AnalyticalCost.hh"
 
-AnalyticalCost::AnalyticalCost(const double* input, const double* observations, size_t input_size, size_t output_dim,
+AnalyticalCost::AnalyticalCost(const double* input, const double* observations, size_t num_elements, size_t output_dim,
                                size_t param_dim, const std::shared_ptr<IJacobianModel>& model)
-    : input_{input},
+    : ICost(num_elements),
+      input_{input},
       observations_{observations},
       output_dim_{output_dim},
       param_dim_{param_dim},
       model_{model},
-      residuals_dim_{input_size * output_dim} {
+      residuals_dim_{num_elements * output_dim} {
   // We fill the jacobian transposed
   jacobian_transposed_data_.resize(param_dim_, residuals_dim_);
   residual_data_.resize(residuals_dim_);

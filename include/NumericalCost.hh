@@ -28,9 +28,10 @@ class NumericalCost : public ICost {
   Eigen::VectorXd residual_data_plus_;
   Eigen::VectorXd residual_data_minus_;
 
+  using ICost::num_elements_;
+
   const double* input_;
   const double* observations_;
-  const size_t num_elements_;
   const size_t output_dim_;
   const size_t param_dim_;
   const size_t residuals_dim_;

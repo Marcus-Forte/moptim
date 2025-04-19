@@ -6,6 +6,9 @@ enum class DifferentiationMethod { BACKWARD_EULER = 0, CENTRAL = 1 };
 
 class ICost {
  public:
+  ICost(size_t num_elements) : num_elements_(num_elements) {}
+  virtual ~ICost() = default;
+
   // JTJ, JTb, cost
   using SolveRhs = std::tuple<Eigen::MatrixXd, Eigen::VectorXd, double>;
 
@@ -19,14 +22,13 @@ class ICost {
    */
   virtual SolveRhs computeLinearSystem(const Eigen::VectorXd& x) = 0;
 
- protected:
-  inline static SolveRhs Reduction(SolveRhs a, const SolveRhs& b) {
-    auto& [JTJ_a, JTb_a, residual_a] = a;
-    const auto& [JTJ_b, JTb_b, residual_b] = b;
-    JTJ_a += JTJ_b;
-    JTb_a += JTb_b;
-    residual_a += residual_b;
+  /**
+   * @brief Get number of elements to iterate over the cost
+   *
+   * @return size_t number of elements
+   */
+  size_t getNumElements() const { return num_elements_; }
 
-    return a;
-  }
+ protected:
+  const size_t num_elements_;
 };
