@@ -145,10 +145,12 @@ class NumericalCostSycl : public ICost {
                                        sycl::property::reduction::initialize_to_identity{});
 
       const auto workers = sycl::range<2>(num_elements_, param_dim_);
+      // const auto workers =
+      //     sycl::nd_range<2>(sycl::range<2>(num_elements_, param_dim_), sycl::range<2>(1, param_dim_));
 
       cgh.parallel_for(workers, sum, [=](sycl::item<2> id, auto& reduction) {
-        const auto ItemRow = id[0] * output_dim_capture;
-        const auto ItemCol = id[1];
+        const auto ItemRow = id.get_id(0) * output_dim_capture;
+        const auto ItemCol = id.get_id(1);
 
         Eigen::Map<Eigen::VectorXd> residual_map(&residual_data_capture[ItemRow], output_dim_capture);
         Eigen::Map<Eigen::VectorXd> residual_plus_map(
@@ -191,6 +193,7 @@ class NumericalCostSycl : public ICost {
     return {JTJ, JTB, Sum};
   }
 
+  /// \todo fixme
   inline SolveRhs applyCentralDiff(const Eigen::VectorXd& x, Model& model) {
     // Sycl captures
     const auto* input_capture = input_sycl_;
@@ -255,7 +258,7 @@ class NumericalCostSycl : public ICost {
         models_sycl_minus[ItemCol].f(&input_capture[ItemRow], &observations_capture[ItemRow],
                                      residual_minus_map.data());
         jacobian_map.block(ItemRow, ItemCol, output_dim_capture, 1) =
-            (residual_plus_map - residual_map) / (1 * g_SyclStep);
+            (residual_plus_map - residual_minus_map) / (2 * g_SyclStep);
 
         // Only compute `InputSize` (One Column) times.
         if (ItemCol == 0) {
@@ -280,6 +283,7 @@ class NumericalCostSycl : public ICost {
     const auto&& JTB = Jac.transpose() * Err;
 
     sycl::free(models_sycl_plus, queue_);
+    sycl::free(models_sycl_minus, queue_);
     sycl::free(model_sycl, queue_);
 
     return {JTJ, JTB, Sum};

@@ -33,3 +33,10 @@ add_executable(moptim_sycl_tests
 target_include_directories(moptim_sycl_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(moptim_sycl_tests gtest gtest_main)
 gtest_discover_tests(moptim_sycl_tests)
+
+
+# Playground code for quick testing
+add_executable(moptim_playground
+  playground.cc
+)
+target_link_libraries(moptim_playground moptim)

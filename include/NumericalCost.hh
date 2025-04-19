@@ -13,8 +13,6 @@ class NumericalCost : public ICost {
                 size_t param_dim, const std::shared_ptr<IModel>& model,
                 DifferentiationMethod method = DifferentiationMethod::BACKWARD_EULER);
 
-  virtual ~NumericalCost() = default;
-
   double computeCost(const Eigen::VectorXd& x) override;
 
   SolveRhs computeLinearSystem(const Eigen::VectorXd& x) override;

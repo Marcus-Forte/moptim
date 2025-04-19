@@ -9,10 +9,8 @@ class AnalyticalCost : public ICost {
  public:
   AnalyticalCost(const AnalyticalCost&) = delete;
 
-  AnalyticalCost(const double* input, const double* observations, size_t input_size, size_t output_dim,
+  AnalyticalCost(const double* input, const double* observations, size_t num_elements, size_t output_dim,
                  size_t param_dim, const std::shared_ptr<IJacobianModel>& model);
-
-  virtual ~AnalyticalCost() = default;
 
   double computeCost(const Eigen::VectorXd& x) override;
 
