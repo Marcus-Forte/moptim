@@ -141,12 +141,13 @@ class NumericalCostSycl : public ICost {
 
     // Sycl Kernel /// \todo lots of duplicate code with euler
     queue_.submit([&](sycl::handler& cgh) {
-      const auto sum = sycl::reduction(cost_reduction_capture, 0.0, sycl::plus<double>{},
-                                       sycl::property::reduction::initialize_to_identity{});
+      auto sum = sycl::reduction(cost_reduction_capture, 0.0, sycl::plus<double>{},
+                                 sycl::property::reduction::initialize_to_identity{});
 
+      /// \todo use work groups.
+      // const auto workers = sycl::nd_range<2>(sycl::range<2>(num_elements_, param_dim_), sycl::range<2>(1,
+      // param_dim_));
       const auto workers = sycl::range<2>(num_elements_, param_dim_);
-      // const auto workers =
-      //     sycl::nd_range<2>(sycl::range<2>(num_elements_, param_dim_), sycl::range<2>(1, param_dim_));
 
       cgh.parallel_for(workers, sum, [=](sycl::item<2> id, auto& reduction) {
         const auto ItemRow = id.get_id(0) * output_dim_capture;
@@ -157,29 +158,32 @@ class NumericalCostSycl : public ICost {
             &residual_plus_data_capture[ItemRow + ItemCol * residuals_dim_capture], output_dim_capture);
         Eigen::Map<Eigen::MatrixXd> jacobian_map(jacobian_data_capture, residuals_dim_capture, param_dim_capture);
 
-        /// \todo Only need to compute those once per row
-        model_sycl->f(&input_capture[ItemRow], &observations_capture[ItemRow], residual_map.data());
-
         models_sycl_plus[ItemCol].f(&input_capture[ItemRow], &observations_capture[ItemRow], residual_plus_map.data());
-        jacobian_map.block(ItemRow, ItemCol, output_dim_capture, 1) = (residual_plus_map - residual_map) / g_SyclStep;
 
-        // Only compute `InputSize` (One Column) times.
         if (ItemCol == 0) {
-          Eigen::Map<Eigen::VectorXd> residual_data_map(residual_data_capture, residuals_dim_capture);
-          reduction += residual_data_map.block(ItemRow, 0, output_dim_capture, 1).squaredNorm();
+          model_sycl->f(&input_capture[ItemRow], &observations_capture[ItemRow], residual_map.data());
+          reduction += residual_map.squaredNorm();
         }
+
+        /// \bug? The `if` above is entered as many times as really needed, the for some
+        /// reason the reduction variable is not updated for the very first calcuation.
+        /// So the first thread has to compute it "again"
+
+        // Sync to use residuals results
+        // sycl::group_barrier(id.get_group());
+
+        jacobian_map.block(ItemRow, ItemCol, output_dim_capture, 1) = (residual_plus_map - residual_map) / g_SyclStep;
 
         /// \todo synchronize threads and compute transpose
       });
     });
-
-    queue_.wait();
 
     /// \todo compute those inside kernel
     Eigen::MatrixXd Jac(residuals_dim_, param_dim_capture);
     Eigen::VectorXd Err(residuals_dim_);
     double Sum;
 
+    queue_.wait();
     queue_.copy<double>(jacobian_data_, Jac.data(), Jac.size()).wait();
     queue_.copy<double>(residual_data_, Err.data(), Err.size()).wait();
     queue_.copy<double>(cost_reduction_, &Sum, 1).wait();
@@ -275,6 +279,7 @@ class NumericalCostSycl : public ICost {
     Eigen::VectorXd Err(residuals_dim_);
     double Sum;
 
+    queue_.wait();
     queue_.copy<double>(jacobian_data_, Jac.data(), Jac.size()).wait();
     queue_.copy<double>(residual_data_, Err.data(), Err.size()).wait();
     queue_.copy<double>(cost_reduction_, &Sum, 1).wait();
