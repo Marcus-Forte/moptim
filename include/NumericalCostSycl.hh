@@ -61,6 +61,7 @@ class NumericalCostSycl : public ICost {
     sycl::free(residual_plus_data_, queue_);
   }
 
+  /// \todo if this is called before jacobian, we don't have to compute cost again.
   double computeCost(const Eigen::VectorXd& x) override {
     const auto* input_capture = input_sycl_;
     const auto* observations_capture = observations_sycl_;
@@ -77,16 +78,14 @@ class NumericalCostSycl : public ICost {
       auto sum = sycl::reduction<double>(cost_reduction_capture, 0.0, sycl::plus<double>{},
                                          sycl::property::reduction::initialize_to_identity{});
 
-      cgh.parallel_for(sycl::range<1>(num_elements_), sum, [=](sycl::id<1> id, auto& reduction) {
-        const auto ItemRow = id[0] * output_dim_capture;
+      // const auto workers = sycl::nd_range<1>(sycl::range<1>(num_elements_), sycl::range<1>(1));
+      const auto workers = sycl::range<1>(num_elements_);
 
+      cgh.parallel_for(workers, sum, [=](sycl::item<1> id, auto& reduction) {
+        const auto ItemRow = id.get_id() * output_dim_capture;
+        Eigen::Map<Eigen::VectorXd> residual_map(&residual_data_capture[ItemRow], output_dim_capture);
         model_sycl->f(&input_capture[ItemRow], &observations_capture[ItemRow], &residual_data_capture[ItemRow]);
-        double norm = 0.0;
-        for (int i = 0; i < output_dim_capture; ++i) {
-          norm += residual_data_capture[ItemRow + i] * residual_data_capture[ItemRow + i];
-        }
-
-        reduction += norm;
+        reduction += residual_map.squaredNorm();
       });
     });
 
@@ -139,19 +138,23 @@ class NumericalCostSycl : public ICost {
       queue_.copy<Model>(models_plus[i].get(), &models_sycl_plus[i], 1);
     }
 
+    queue_.memset(cost_reduction_, 0, sizeof(double));
+
     // Sycl Kernel /// \todo lots of duplicate code with euler
     queue_.submit([&](sycl::handler& cgh) {
-      auto sum = sycl::reduction(cost_reduction_capture, 0.0, sycl::plus<double>{},
-                                 sycl::property::reduction::initialize_to_identity{});
+      /// \todo reduction didn't work when using work groups
+      // auto sum = sycl::reduction(cost_reduction_, 0.0, sycl::plus<double>{});
+
+      auto reduce =
+          sycl::atomic_ref<double, sycl::memory_order::relaxed, sycl::memory_scope::device>(*cost_reduction_capture);
 
       /// \todo use work groups.
-      // const auto workers = sycl::nd_range<2>(sycl::range<2>(num_elements_, param_dim_), sycl::range<2>(1,
-      // param_dim_));
-      const auto workers = sycl::range<2>(num_elements_, param_dim_);
+      const auto workers = sycl::nd_range<2>(sycl::range<2>(num_elements_, param_dim_), sycl::range<2>(1, param_dim_));
+      // const auto workers = sycl::range<2>(num_elements_, param_dim_);
 
-      cgh.parallel_for(workers, sum, [=](sycl::item<2> id, auto& reduction) {
-        const auto ItemRow = id.get_id(0) * output_dim_capture;
-        const auto ItemCol = id.get_id(1);
+      cgh.parallel_for(workers, [=](sycl::nd_item<2> id) {
+        const auto ItemRow = id.get_global_id(0) * output_dim_capture;
+        const auto ItemCol = id.get_global_id(1);
 
         Eigen::Map<Eigen::VectorXd> residual_map(&residual_data_capture[ItemRow], output_dim_capture);
         Eigen::Map<Eigen::VectorXd> residual_plus_map(
@@ -160,17 +163,12 @@ class NumericalCostSycl : public ICost {
 
         models_sycl_plus[ItemCol].f(&input_capture[ItemRow], &observations_capture[ItemRow], residual_plus_map.data());
 
-        if (ItemCol == 0) {
+        if (id.get_local_linear_id() == 0) {
           model_sycl->f(&input_capture[ItemRow], &observations_capture[ItemRow], residual_map.data());
-          reduction += residual_map.squaredNorm();
+          reduce.fetch_add(residual_map.squaredNorm());
         }
 
-        /// \bug? The `if` above is entered as many times as really needed, the for some
-        /// reason the reduction variable is not updated for the very first calcuation.
-        /// So the first thread has to compute it "again"
-
-        // Sync to use residuals results
-        // sycl::group_barrier(id.get_group());
+        sycl::group_barrier(id.get_group());
 
         jacobian_map.block(ItemRow, ItemCol, output_dim_capture, 1) = (residual_plus_map - residual_map) / g_SyclStep;
 

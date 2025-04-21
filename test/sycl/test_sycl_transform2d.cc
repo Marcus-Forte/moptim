@@ -12,7 +12,7 @@
 
 const double sycl_vs_cpu_tolerance = 1e-1;
 
-TEST_F(Transform2D, SyclCost) {
+TEST_F(TestTransform2D, SyclCost) {
   sycl::queue queue{sycl::default_selector_v};
 
   const auto num_elements = pointcloud_.size();
@@ -52,7 +52,7 @@ TEST_F(Transform2D, SyclCost) {
   compareMatrices(num_jtb_sycl, num_jtb, sycl_vs_cpu_tolerance);
 }
 
-TEST_F(Transform2D, Sycl2DTransformLM) {
+TEST_F(TestTransform2D, Sycl2DTransformLM) {
   auto g_logging = std::make_shared<ConsoleLogger>();
   const auto num_elements = pointcloud_.size();
 

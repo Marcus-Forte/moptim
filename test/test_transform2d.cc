@@ -7,7 +7,7 @@
 #include "Timer.hh"
 #include "transform2d.hh"
 
-TEST_F(Transform2D, 2DTransformLM) {
+TEST_F(TestTransform2D, 2DTransformLM) {
   auto g_logging = std::make_shared<ConsoleLogger>();
   Timer t0;
   t0.start();
@@ -26,7 +26,7 @@ TEST_F(Transform2D, 2DTransformLM) {
 }
 
 // FIXME
-TEST_F(Transform2D, DISABLED_2DTransformLMAnalytical) {
+TEST_F(TestTransform2D, DISABLED_2DTransformLMAnalytical) {
   auto g_logging = std::make_shared<ConsoleLogger>();
   solver_ = std::make_shared<LevenbergMarquardt>(g_logging);
   const auto model = std::make_shared<Point2Distance>();

@@ -38,7 +38,7 @@ static void applyNoise(std::vector<Eigen::Vector2d>& pointcloud, double amplitud
   }
 }
 
-void Transform2D::SetUp() {
+void TestTransform2D::SetUp() {
   pointcloud_ = read2DTxtScan(TEST_PATH / std::filesystem::path("scan.txt"));
 
   Eigen::Rotation2D<double> rot(x0_ref[2]);

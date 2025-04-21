@@ -3,6 +3,17 @@
     "build":{
         "dockerfile": "Dockerfile"
     },
+    "features": {
+    "desktop-lite": {
+        "password": "vscode",
+        "webPort": "6080",
+        "vncPort": "5901"
+    }
+    },
+    "forwardPorts": [
+        5901,
+        6080
+    ],
     "customizations": {
         "vscode": {
             "extensions": [
@@ -26,5 +37,5 @@
     "mounts": [
         "source=moptim-build-cache,target=/workspaces/moptim/build,type=volume"
     ],
-    "runArgs": ["--gpus", "all"]
+    "runArgs": ["--gpus", "all", "--cap-add=SYS_ADMIN"]
 }

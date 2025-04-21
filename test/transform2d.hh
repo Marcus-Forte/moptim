@@ -46,7 +46,7 @@ struct Point2Distance : public IJacobianModel {
   Eigen::Affine2d transform_;
 };
 
-class Transform2D : public ::testing::Test {
+class TestTransform2D : public ::testing::Test {
  public:
   void SetUp() override;
 
