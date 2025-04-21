@@ -2,9 +2,12 @@
 
 #include "ConsoleLogger.hh"
 #include "ICost.hh"
+#include "Timer.hh"
 #include "sycl/sycl.hpp"
 
 static const double g_SyclStep = 1e-9;
+constexpr size_t g_localSizeX = 16;
+constexpr size_t g_localSizeY = 32;
 
 template <class Model>
 class NumericalCostSycl : public ICost {
@@ -23,7 +26,12 @@ class NumericalCostSycl : public ICost {
         residuals_dim_{num_elements * output_dim} {
     ConsoleLogger logger;
     logger.log(ILog::Level::INFO, "Sycl Device: {}", queue_.get_device().get_info<sycl::info::device::name>());
-
+    logger.log(ILog::Level::INFO, "max_compute_units: {}",
+               queue_.get_device().get_info<sycl::info::device::max_compute_units>());
+    logger.log(ILog::Level::INFO, "max_work_group_size: {}",
+               queue_.get_device().get_info<sycl::info::device::max_work_group_size>());
+    logger.log(ILog::Level::INFO, "max_work_item_dimensions: {}",
+               queue_.get_device().get_info<sycl::info::device::max_work_item_dimensions>());
     if (!queue_.get_device().is_cpu()) {
       input_sycl_ = sycl::malloc_device<double>(residuals_dim_, queue_);
       observations_sycl_ = sycl::malloc_device<double>(residuals_dim_, queue_);
@@ -119,6 +127,7 @@ class NumericalCostSycl : public ICost {
     auto* residual_plus_data_capture = residual_plus_data_;
     auto* jacobian_data_capture = jacobian_data_;
 
+    const auto num_elements_capture = num_elements_;
     const auto param_dim_capture = param_dim_;
     const auto output_dim_capture = output_dim_;
     const auto residuals_dim_capture = residuals_dim_;
@@ -138,18 +147,32 @@ class NumericalCostSycl : public ICost {
       queue_.copy<Model>(models_plus[i].get(), &models_sycl_plus[i], 1);
     }
 
-    queue_.memset(cost_reduction_, 0, sizeof(double));
+    std::cout << "problem space: " << num_elements_ << "," << param_dim_ << std::endl;
+    std::cout << "local space: " << g_localSizeX << "," << g_localSizeY << std::endl;
 
+    auto* JTJ_device = sycl::malloc_device<double>(param_dim_ * param_dim_, queue_);
+
+    queue_.memset(cost_reduction_capture, 0, sizeof(double));
+
+    Timer t0;
+    t0.start();
     // Sycl Kernel /// \todo lots of duplicate code with euler
     queue_.submit([&](sycl::handler& cgh) {
-      /// \todo reduction didn't work when using work groups
-      // auto sum = sycl::reduction(cost_reduction_, 0.0, sycl::plus<double>{});
+      // auto sum_reduction = sycl::reduction<double>(cost_reduction_, 0.0, sycl::plus<double>{},
+      //                                              sycl::property::reduction::initialize_to_identity{});
 
-      auto reduce =
+      auto sum_reduction =
           sycl::atomic_ref<double, sycl::memory_order::relaxed, sycl::memory_scope::device>(*cost_reduction_capture);
 
-      /// \todo use work groups.
-      const auto workers = sycl::nd_range<2>(sycl::range<2>(num_elements_, param_dim_), sycl::range<2>(1, param_dim_));
+      // auto jtj_reduce = sycl::reduction<Eigen::MatrixXd>(reinterpret_cast<Eigen::MatrixXd*>(JTJ_device),
+      //                                                    Eigen::MatrixXd::Zero(), sycl::plus<Eigen::MatrixXd>{},
+      //                                                    sycl::property::reduction::initialize_to_identity{});
+
+      // Alocate for JTJ reduction per group
+      sycl::local_accessor<double, 1> local_JTJ_local{param_dim_ * param_dim_, cgh};
+      sycl::local_accessor<double, 1> JTb_local{param_dim_ * output_dim_, cgh};
+
+      const auto workers = sycl::nd_range<2>{{num_elements_, param_dim_}, {g_localSizeX, g_localSizeY}};
       // const auto workers = sycl::range<2>(num_elements_, param_dim_);
 
       cgh.parallel_for(workers, [=](sycl::nd_item<2> id) {
@@ -161,27 +184,61 @@ class NumericalCostSycl : public ICost {
             &residual_plus_data_capture[ItemRow + ItemCol * residuals_dim_capture], output_dim_capture);
         Eigen::Map<Eigen::MatrixXd> jacobian_map(jacobian_data_capture, residuals_dim_capture, param_dim_capture);
 
-        models_sycl_plus[ItemCol].f(&input_capture[ItemRow], &observations_capture[ItemRow], residual_plus_map.data());
+        // Eigen::Map<Eigen::MatrixXd> local_JTJ_map(&local_JTJ[0], param_dim_capture, param_dim_capture);
+        // Eigen::Map<Eigen::MatrixXd> local_JT_map(&local_JT[0], param_dim_capture, param_dim_capture);
 
-        if (id.get_local_linear_id() == 0) {
-          model_sycl->f(&input_capture[ItemRow], &observations_capture[ItemRow], residual_map.data());
-          reduce.fetch_add(residual_map.squaredNorm());
+        if (ItemRow < residuals_dim_capture && ItemCol < param_dim_capture) {
+          models_sycl_plus[ItemCol].f(&input_capture[ItemRow], &observations_capture[ItemRow],
+                                      residual_plus_map.data());
+
+          if (ItemCol == 0) {
+            model_sycl->f(&input_capture[ItemRow], &observations_capture[ItemRow], residual_map.data());
+            sum_reduction.fetch_add(residual_map.squaredNorm());
+          }
         }
 
         sycl::group_barrier(id.get_group());
 
-        jacobian_map.block(ItemRow, ItemCol, output_dim_capture, 1) = (residual_plus_map - residual_map) / g_SyclStep;
+        if (ItemRow < residuals_dim_capture && ItemCol < param_dim_capture) {
+          jacobian_map.block(ItemRow, ItemCol, output_dim_capture, 1) = (residual_plus_map - residual_map) / g_SyclStep;
+        }
 
         /// \todo synchronize threads and compute transpose
+
+        // local_JTJ_map.col(ItemCol) = (residual_plus_map - residual_map) / g_SyclStep;
+
+        // sycl::group_barrier(id.get_group());
+        // // Leaders (as many as num elements)
+        // if (id.get_local_id(1) == 0) {
+        //   // auto* pt = &local_sum[0];
+        //   // Eigen::Map<Eigen::MatrixXd> jtj_reduction(JTJ_device, param_dim_capture, param_dim_capture);
+        //   // local_JT_map.noalias() = local_JTJ_map.transpose();
+        //   // local_JTJ_map.noalias() = local_JT_map * local_JTJ_map;
+
+        //   // jtj_reduction.noalias() = jtj_reduction.transpose() * jtj_reduction;
+        //   // local_sum_map.setOnes();
+        //   // // jtj_reduction = local_sum_map;
+        //   // out << "Reduce\n";
+        //   // jtj_reduce_.combine(local_sum_map);
+        // }
       });
     });
+
+    queue_.wait();
+
+    // Eigen::MatrixXd JTJ_result(param_dim_, param_dim_);
+    // queue_.copy<double>(JTJ_device, JTJ_result.data(), JTJ_result.size()).wait();
 
     /// \todo compute those inside kernel
     Eigen::MatrixXd Jac(residuals_dim_, param_dim_capture);
     Eigen::VectorXd Err(residuals_dim_);
+
     double Sum;
 
     queue_.wait();
+    auto stop = t0.stop();
+    std::cout << "Sycl kernel jacobian: took " << stop << " us" << std::endl;
+    t0.start();
     queue_.copy<double>(jacobian_data_, Jac.data(), Jac.size()).wait();
     queue_.copy<double>(residual_data_, Err.data(), Err.size()).wait();
     queue_.copy<double>(cost_reduction_, &Sum, 1).wait();
@@ -191,6 +248,9 @@ class NumericalCostSycl : public ICost {
 
     sycl::free(models_sycl_plus, queue_);
     sycl::free(model_sycl, queue_);
+
+    stop = t0.stop();
+    std::cout << "Sycl copy and jacobian transposes : took " << stop << " us" << std::endl;
 
     return {JTJ, JTB, Sum};
   }

@@ -40,3 +40,9 @@ add_executable(moptim_playground
   playground.cc
 )
 target_link_libraries(moptim_playground moptim)
+
+
+# Bug reproduction
+add_executable(bug_reduction
+  sycl/bug_reduction.cc
+)

@@ -23,7 +23,7 @@ static std::vector<Eigen::Vector3d> generateCloud3D(size_t n_points) {
   return pointcloud;
 }
 
-void Test3DTransform::SetUp() {
+void TestTransform3D::SetUp() {
   pointcloud_ = generateCloud3D(GetParam());
 
   Eigen::AngleAxisd rollAngle(x0_ref[3], Eigen::Vector3d::UnitX());

@@ -40,7 +40,7 @@ struct Point3Distance : public IJacobianModel {
  * @brief Fixture for 3D transform tests.
  *
  */
-class Test3DTransform : public ::testing::TestWithParam<int> {
+class TestTransform3D : public ::testing::TestWithParam<int> {
  public:
   void SetUp() override;
 

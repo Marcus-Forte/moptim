@@ -12,7 +12,7 @@
 
 const double sycl_vs_cpu_tolerance = 1e-1;
 
-TEST_F(TestTransform2D, SyclCost) {
+TEST_F(TestTransform2D, SyclCostAndJacobian) {
   sycl::queue queue{sycl::default_selector_v};
 
   const auto num_elements = pointcloud_.size();
