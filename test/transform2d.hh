@@ -17,14 +17,15 @@ struct Point2Distance : public IJacobianModel {
   }
 
   void f(const double* input, const double* measurement, double* f_x) final {
-    const auto* target = reinterpret_cast<const Eigen::Vector2d*>(measurement);
-    const auto* source = reinterpret_cast<const Eigen::Vector2d*>(input);
-    auto* transformed_point = reinterpret_cast<Eigen::Vector2d*>(f_x);
+    Eigen::Map<const Eigen::Vector2d> target{measurement};
+    Eigen::Map<const Eigen::Vector2d> source{input};
+    Eigen::Map<Eigen::Vector2d> transformed_point{f_x};
 
-    *transformed_point = *target - transform_ * (*source);
+    transformed_point = target - transform_ * source;
   }
 
   void df(const double* input, const double* measurement, double* df_x) final {
+    throw std::runtime_error("Unimplemented 2d point jacobian!");
     // const auto* target = reinterpret_cast<const Eigen::Vector2d*>(measurement);
     // const auto* source = reinterpret_cast<const Eigen::Vector2d*>(input);
     // auto* jacobian = reinterpret_cast<Eigen::Matrix<double, 2, 3>*>(df_x);

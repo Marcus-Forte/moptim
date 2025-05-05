@@ -20,17 +20,17 @@ struct Point3Distance : public IJacobianModel {
   }
 
   void f(const double* input, const double* measurement, double* f_x) final {
-    Eigen::Map<Eigen::Vector3d> input_map{const_cast<double*>(input)};
-    Eigen::Map<Eigen::Vector3d> measurement_map{const_cast<double*>(measurement)};
+    Eigen::Map<const Eigen::Vector3d> input_map{input};
+    Eigen::Map<const Eigen::Vector3d> measurement_map{measurement};
     Eigen::Map<Eigen::Vector3d> f_x_map{f_x};
     f_x_map = measurement_map - transform_ * input_map;
   }
 
   void df(const double* input, const double* measurement, double* df_x) final {
-    Eigen::Map<Eigen::Vector3d> input_map{const_cast<double*>(input)};
-    Eigen::Map<Eigen::Vector3d> measurement_map{const_cast<double*>(measurement)};
+    Eigen::Map<const Eigen::Vector3d> input_map{input};
+    Eigen::Map<const Eigen::Vector3d> measurement_map{measurement};
     // f_x_map = measurement_map - transform_ * input_map;
-    df_x[0] = 222;
+    throw std::runtime_error("Unimplemented 3d point jacobian!");
   }
 
   Eigen::Affine3d transform_;
