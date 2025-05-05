@@ -6,7 +6,7 @@
 #include "sycl/sycl.hpp"
 
 static const double g_SyclStep = 1e-9;
-constexpr size_t g_localSizeX = 16;
+constexpr size_t g_localSizeX = 32;
 constexpr size_t g_localSizeY = 32;
 
 template <class Model>
@@ -158,11 +158,11 @@ class NumericalCostSycl : public ICost {
     t0.start();
     // Sycl Kernel /// \todo lots of duplicate code with euler
     queue_.submit([&](sycl::handler& cgh) {
-      // auto sum_reduction = sycl::reduction<double>(cost_reduction_, 0.0, sycl::plus<double>{},
-      //                                              sycl::property::reduction::initialize_to_identity{});
+      auto sum_reduction = sycl::reduction<double>(cost_reduction_, 0.0, sycl::plus<double>{},
+                                                   sycl::property::reduction::initialize_to_identity{});
 
-      auto sum_reduction =
-          sycl::atomic_ref<double, sycl::memory_order::relaxed, sycl::memory_scope::device>(*cost_reduction_capture);
+      // auto sum_reduction =
+      //     sycl::atomic_ref<double, sycl::memory_order::relaxed, sycl::memory_scope::device>(*cost_reduction_capture);
 
       // auto jtj_reduce = sycl::reduction<Eigen::MatrixXd>(reinterpret_cast<Eigen::MatrixXd*>(JTJ_device),
       //                                                    Eigen::MatrixXd::Zero(), sycl::plus<Eigen::MatrixXd>{},
@@ -172,10 +172,12 @@ class NumericalCostSycl : public ICost {
       sycl::local_accessor<double, 1> local_JTJ_local{param_dim_ * param_dim_, cgh};
       sycl::local_accessor<double, 1> JTb_local{param_dim_ * output_dim_, cgh};
 
-      const auto workers = sycl::nd_range<2>{{num_elements_, param_dim_}, {g_localSizeX, g_localSizeY}};
+      /// \note global space must be multiple of local space in all dimensions for reductions and kernel to actually
+      /// work. ACPP does not yet throw exception if that is not the case, so let's be careful
+      const auto workers = sycl::nd_range<2>{{num_elements_, g_localSizeY}, {g_localSizeX, g_localSizeY}};
       // const auto workers = sycl::range<2>(num_elements_, param_dim_);
 
-      cgh.parallel_for(workers, [=](sycl::nd_item<2> id) {
+      cgh.parallel_for(workers, sum_reduction, [=](sycl::nd_item<2> id, auto& sum_reduction) {
         const auto ItemRow = id.get_global_id(0) * output_dim_capture;
         const auto ItemCol = id.get_global_id(1);
 
@@ -193,7 +195,7 @@ class NumericalCostSycl : public ICost {
 
           if (ItemCol == 0) {
             model_sycl->f(&input_capture[ItemRow], &observations_capture[ItemRow], residual_map.data());
-            sum_reduction.fetch_add(residual_map.squaredNorm());
+            sum_reduction += residual_map.squaredNorm();
           }
         }
 
