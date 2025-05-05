@@ -24,15 +24,21 @@ add_executable(moptim_tests
 target_link_libraries(moptim_tests gtest)
 gtest_discover_tests(moptim_tests)
 
-add_executable(moptim_sycl_tests
-  sycl/test_sycl_cost.cc
-  sycl/test_sycl_jacobian.cc
-  sycl/test_sycl_transform2d.cc
-  sycl/test_sycl_transform3d.cc
-)
-target_include_directories(moptim_sycl_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(moptim_sycl_tests gtest gtest_main)
-gtest_discover_tests(moptim_sycl_tests)
+if(WITH_SYCL)
+  add_executable(moptim_sycl_tests
+    sycl/test_sycl_cost.cc
+    sycl/test_sycl_jacobian.cc
+    sycl/test_sycl_transform2d.cc
+    sycl/test_sycl_transform3d.cc
+  )
+  target_include_directories(moptim_sycl_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(moptim_sycl_tests gtest gtest_main)
+  gtest_discover_tests(moptim_sycl_tests)
+  # Bug reproduction
+  add_executable(bug_reduction
+  sycl/bug_reduction.cc
+  )
+endif()
 
 
 # Playground code for quick testing
@@ -42,7 +48,3 @@ add_executable(moptim_playground
 target_link_libraries(moptim_playground moptim)
 
 
-# Bug reproduction
-add_executable(bug_reduction
-  sycl/bug_reduction.cc
-)
