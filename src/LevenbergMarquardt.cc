@@ -73,15 +73,16 @@ IOptimizer::Status LevenbergMarquardt::step(Eigen::VectorXd& x) const {
 IOptimizer::Status LevenbergMarquardt::optimize(Eigen::VectorXd& x) const {
   lm_init_lambda_factor_ = 1e-9;
   lm_lambda_ = -1.0;
+  static Timer timer;
   for (int i = 0; i < max_iterations_; i++) {
-    if (logger_) {
-      static Timer timer;
-      const auto delta = timer.stop();
-      logger_->log(ILog::Level::DEBUG, "LM Iteration: {}/{} (took: {} us)", i + 1, max_iterations_, delta);
-      timer.start();
-    }
-
+    timer.start();
     const auto status = step(x);
+
+    if (logger_) {
+      const auto delta = timer.stop();
+      logger_->log(ILog::Level::DEBUG, "LM Iteration: {}/{} (took: {} us). Status: {}", i + 1, max_iterations_, delta,
+                   static_cast<int>(status));
+    }
 
     if (status != Status::STEP_OK) {
       return status;
