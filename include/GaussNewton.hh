@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ILog.hh"
-#include "IOptmizer.hh"
+#include "IOptimizer.hh"
 
 class GaussNewton : public IOptimizer {
  public:

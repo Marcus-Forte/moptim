@@ -3,7 +3,7 @@
 #include <Eigen/Dense>
 
 #include "IModel.hh"
-#include "IOptmizer.hh"
+#include "IOptimizer.hh"
 
 /**
  * @brief 3D Point distance model

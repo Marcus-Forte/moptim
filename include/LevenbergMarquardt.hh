@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IOptmizer.hh"
+#include "IOptimizer.hh"
 
 class LevenbergMarquardt : public IOptimizer {
  public:

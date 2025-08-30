@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 
 #include "IModel.hh"
-#include "IOptmizer.hh"
+#include "IOptimizer.hh"
 
 /**
  * @brief 2D Point distance model
