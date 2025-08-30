@@ -3,17 +3,6 @@
     "build":{
         "dockerfile": "Dockerfile"
     },
-    // "features": {
-    // "desktop-lite": {
-    //     "password": "vscode",
-    //     "webPort": "6080",
-    //     "vncPort": "5901"
-    // }
-    // },
-    // "forwardPorts": [
-    //     5901,
-    //     6080
-    // ],
     "customizations": {
         "vscode": {
             "extensions": [
@@ -26,7 +15,7 @@
                      "-header-insertion=never"
                 ],
                 "cmake.configureArgs": [
-                    "-DFORMAT_CODE=ON", "-DWITH_SYCL=ON"
+                    "-DFORMAT_CODE=ON"
                 ],
                 "cmake.additionalKits": [
                     "/opt/sycl/cmake/cmake-kits.json"

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(moptim)
 set(CMAKE_CXX_STANDARD 20)
-
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(CTest)
 
 option(USE_CLANG_TIDY "Enable clang-tidy" OFF)
@@ -28,11 +28,12 @@ add_library(moptim
   src/LevenbergMarquardt.cc)
 
 if(WITH_SYCL)
-  string(FIND "${CMAKE_CXX_COMPILER}" "acpp" FOUND_INDEX)
-  if(FOUND_INDEX EQUAL -1)
+  include(CheckCXXCompilerFlag)
+  check_cxx_compiler_flag("-fsycl" COMPILER_SUPPORTS_FSYCL)
+  if(NOT COMPILER_SUPPORTS_FSYCL)
       message(FATAL_ERROR "SYCL compilation requires acpp compiler")
   endif()
-  target_compile_options(moptim PUBLIC --acpp-targets=generic)
+  target_compile_options(moptim PUBLIC -fsycl -fsycl-targets=native_cpu)
 endif()
 target_include_directories(moptim PUBLIC include)
 target_link_libraries(moptim utils Eigen3::Eigen)
