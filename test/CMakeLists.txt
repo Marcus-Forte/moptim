@@ -35,9 +35,9 @@ if(WITH_SYCL)
   target_link_libraries(moptim_sycl_tests gtest gtest_main)
   gtest_discover_tests(moptim_sycl_tests)
   # Bug reproduction
-  add_executable(bug_reduction
-  sycl/bug_reduction.cc
-  )
+  # add_executable(bug_reduction
+  # sycl/bug_reduction.cc
+  # )
 endif()
 
 

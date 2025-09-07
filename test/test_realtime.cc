@@ -11,7 +11,7 @@
 #include "transform2d.hh"
 
 // One the same CPU, sumulate load with:
-// 
+//
 
 namespace {
 int SetRealTimePriority() {
