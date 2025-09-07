@@ -172,9 +172,12 @@ class NumericalCostSycl : public ICost {
       sycl::local_accessor<double, 1> local_JTJ_local{param_dim_ * param_dim_, cgh};
       sycl::local_accessor<double, 1> JTb_local{param_dim_ * output_dim_, cgh};
 
+      const auto ItemsX = ((num_elements_ + g_localSizeX - 1) / g_localSizeX) * g_localSizeX;
+      ;
+
       /// \note global space must be multiple of local space in all dimensions for reductions and kernel to actually
       /// work. ACPP does not yet throw exception if that is not the case, so let's be careful
-      const auto workers = sycl::nd_range<2>{{num_elements_, g_localSizeY}, {g_localSizeX, g_localSizeY}};
+      const auto workers = sycl::nd_range<2>{{ItemsX, g_localSizeY}, {g_localSizeX, g_localSizeY}};
       // const auto workers = sycl::range<2>(num_elements_, param_dim_);
 
       cgh.parallel_for(workers, sum_reduction, [=](sycl::nd_item<2> id, auto& sum_reduction) {

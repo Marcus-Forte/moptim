@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "AnalyticalCost.hh"
+#include "AsyncConsoleLogger.hh"
 #include "NumericalCost.hh"
 #include "NumericalCostSycl.hh"
 #include "Timer.hh"
@@ -44,7 +45,7 @@ TEST_P(TestTransform3D, SyclCost) {
 }
 
 TEST_P(TestTransform3D, SyclJacobian) {
-  auto g_logging = std::make_shared<ConsoleLogger>();
+  auto g_logging = std::make_shared<AsyncConsoleLogger>();
   Timer t0;
   sycl::queue queue{sycl::default_selector_v};
 
@@ -63,7 +64,7 @@ TEST_P(TestTransform3D, SyclJacobian) {
   t0.start();
   const auto [num_jtj, num_jtb, num_total] = normal_cost->computeLinearSystem(x0);
   auto stop = t0.stop();
-  g_logging->log(ILog::Level::INFO, "Known cost jacobian: took {} us", stop);
+  g_logging->log(ILog::Level::INFO, "Normal cost jacobian: took {} us", stop);
 
   t0.start();
   const auto [num_jtj_sycl, num_jtb_sycl, num_total_sycl] = sycl_cost->computeLinearSystem(x0);
