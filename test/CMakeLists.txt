@@ -2,14 +2,14 @@
 add_compile_definitions(-DTEST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/data")
 find_package(GTest REQUIRED)
 
-add_library(test_models
+add_library(test_helper
   test_models.cc
   transform2d.cc
   transform3d.cc
   test_helper.cc
 )
-target_link_libraries(test_models moptim)
-link_libraries(test_models)
+target_link_libraries(test_helper moptim)
+link_libraries(test_helper gtest)
 
 add_executable(moptim_tests
   test_main.cc
@@ -21,7 +21,7 @@ add_executable(moptim_tests
   test_cost.cc
 )
 # add_subdirectory(nist) # TODO fix
-target_link_libraries(moptim_tests gtest)
+target_link_libraries(moptim_tests test_helper)
 gtest_discover_tests(moptim_tests)
 
 if(WITH_SYCL)
@@ -46,5 +46,8 @@ add_executable(moptim_playground
   playground.cc
 )
 target_link_libraries(moptim_playground moptim)
+
+add_executable(test_realtime test_realtime.cc)
+target_link_libraries(test_realtime moptim)
 
 
