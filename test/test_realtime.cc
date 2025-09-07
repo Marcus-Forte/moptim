@@ -1,12 +1,17 @@
 
 #include <sched.h>
 
+#include <algorithm>
+
 #include "AsyncConsoleLogger.hh"
 #include "ConsoleLogger.hh"
 #include "LevenbergMarquardt.hh"
 #include "NumericalCost.hh"
 #include "test_helper.hh"
 #include "transform2d.hh"
+
+// One the same CPU, sumulate load with:
+// 
 
 namespace {
 int SetRealTimePriority() {
@@ -29,7 +34,7 @@ int main(int argc, char** argv) {
     return -1;
   }
 
-  const auto interval_us = std::stoi(argv[1]);
+  const auto expected_period = std::stoi(argv[1]);
   const auto use_realtime = std::stoi(argv[2]);
 
   if (use_realtime == 1) {
@@ -54,9 +59,11 @@ int main(int argc, char** argv) {
                  [&](const Eigen::Vector2d& pt) { return transform * pt; });
 
   auto g_logging = std::make_shared<AsyncConsoleLogger>();
-  g_logging->setLevel(ILog::Level::INFO);
+  g_logging->setLevel(ILog::Level::DEBUG);
 
-  std::chrono::high_resolution_clock::time_point last_start = {};
+  std::chrono::high_resolution_clock::time_point last_start =
+      std::chrono::high_resolution_clock::now() - std::chrono::microseconds(expected_period);
+
   auto solver = std::make_shared<LevenbergMarquardt>(g_logging);
   const auto model = std::make_shared<Point2Distance>();
 
@@ -64,6 +71,8 @@ int main(int argc, char** argv) {
                                               transformed_pointcloud.size(), 2, 3, model);
 
   Eigen::VectorXd x0{{0, 0, 0}};
+
+  uint64_t max_latency = 0;
 
   // This loop has to run exactly every 'interval_us'.
   while (true) {
@@ -73,24 +82,26 @@ int main(int argc, char** argv) {
     solver->addCost(cost);
     x0.setZero();
     solver->optimize(x0);
-    // g_logging->log(ILog::Level::INFO, "Estimated: x={} y={} yaw={}", x0[0], x0[1], x0[2]);
+    g_logging->log(ILog::Level::INFO, "Estimated: x={} y={} yaw={}", x0[0], x0[1], x0[2]);
 
-    const auto real_period = std::chrono::duration_cast<std::chrono::microseconds>(start - last_start).count();
-    g_logging->log(ILog::Level::INFO, "Intended Period: {}, Real Period: {} us. Latency: {} us", interval_us,
-                   real_period, real_period - interval_us);
-
+    const uint64_t real_period = std::chrono::duration_cast<std::chrono::microseconds>(start - last_start).count();
     last_start = start;
-
-    const auto delta =
+    const uint64_t compute_time =
         std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start)
             .count();
-    const int64_t sleep_time_us = interval_us - delta;
+    const auto latency = real_period - expected_period;
+
+    g_logging->log(ILog::Level::INFO,
+                   "Intended Period: {}, Real Period: {}, Computation Time: {}, Latency: {}, Max Latency: {} (us)",
+                   expected_period, real_period, compute_time, latency, max_latency);
+
+    const int64_t sleep_time_us = expected_period - compute_time;
 
     if (sleep_time_us > 0) {
-      // g_logging->log(ILog::Level::INFO, "Computation time: {} us. Sleeping for {} us", delta, sleep_time_us);
       std::this_thread::sleep_for(std::chrono::microseconds(sleep_time_us));
+      max_latency = std::max(max_latency, latency);
     } else {
-      g_logging->log(ILog::Level::INFO, "Computation time: {} us. Overrun by {} us", delta, -sleep_time_us);
+      g_logging->log(ILog::Level::INFO, "Loop period overrun by {} us", -sleep_time_us);
       std::this_thread::sleep_for(std::chrono::microseconds(100000));
     }
   }
