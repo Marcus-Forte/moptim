@@ -5,7 +5,7 @@
 #include "Timer.hh"
 
 int main(int argc, char** argv) {
-  ConsoleLogger g_logging;
+  ConsoleLogger logger;
 
   const auto iterations = 100'000'000;
 
@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
   std::cout << data[6] << std::endl;
 
   const auto delta = t0.stop(false);
-  g_logging.log(ILog::Level::INFO, "Elapsed time: {} us", delta);
+  logger.log(ILog::Level::INFO, "Elapsed time: {} us", delta);
 
   delete[] data;
 }

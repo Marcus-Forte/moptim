@@ -15,12 +15,14 @@ const double sycl_vs_cpu_tolerance = 1e-1;
 TEST_F(TestTransform2D, SyclCostAndJacobian) {
   sycl::queue queue{sycl::default_selector_v};
 
+  auto logger = std::make_shared<ConsoleLogger>();
+
   const auto num_elements = pointcloud_.size();
 
   const auto model = std::make_shared<Point2Distance>();
 
-  NumericalCostSycl<Point2Distance> num_cost_sycl(queue, transformed_pointcloud_[0].data(), pointcloud_[0].data(),
-                                                  num_elements, 2, 3);
+  NumericalCostSycl<Point2Distance> num_cost_sycl(logger, queue, transformed_pointcloud_[0].data(),
+                                                  pointcloud_[0].data(), num_elements, 2, 3);
   NumericalCost num_cost(transformed_pointcloud_[0].data(), pointcloud_[0].data(), num_elements, 2, 3, model);
 
   Eigen::VectorXd x{{0.0, 0.0, 0.0}};
@@ -53,15 +55,15 @@ TEST_F(TestTransform2D, SyclCostAndJacobian) {
 }
 
 TEST_F(TestTransform2D, Sycl2DTransformLM) {
-  auto g_logging = std::make_shared<ConsoleLogger>();
+  auto logger = std::make_shared<ConsoleLogger>();
   const auto num_elements = pointcloud_.size();
 
   Timer t0;
   t0.start();
   sycl::queue queue{sycl::default_selector_v};
-  solver_ = std::make_shared<LevenbergMarquardt>(g_logging);
+  solver_ = std::make_shared<LevenbergMarquardt>(logger);
 
-  auto cost = std::make_shared<NumericalCostSycl<Point2Distance>>(queue, transformed_pointcloud_[0].data(),
+  auto cost = std::make_shared<NumericalCostSycl<Point2Distance>>(logger, queue, transformed_pointcloud_[0].data(),
                                                                   pointcloud_[0].data(), num_elements, 2, 3);
 
   auto model = std::make_shared<Point2Distance>();
@@ -80,8 +82,8 @@ TEST_F(TestTransform2D, Sycl2DTransformLM) {
 
 // FIXME
 // TEST_F(Transform2D, DISABLED_Sycl2DTransformLMAnalytical) {
-//   auto g_logging = std::make_shared<ConsoleLogger>();
-//   solver_ = std::make_shared<LevenbergMarquardt>(g_logging);
+//   auto logger = std::make_shared<ConsoleLogger>();
+//   solver_ = std::make_shared<LevenbergMarquardt>(logger);
 //   const auto model = std::make_shared<Point2Distance>();
 //   auto cost = std::make_shared<AnalyticalCost>(transformed_pointcloud_[0].data(), pointcloud_[0].data(),
 //                                                transformed_pointcloud_.size(), 2, model);

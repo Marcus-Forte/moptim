@@ -8,10 +8,10 @@
 #include "transform2d.hh"
 
 TEST_F(TestTransform2D, 2DTransformLM) {
-  auto g_logging = std::make_shared<ConsoleLogger>();
+  auto logger = std::make_shared<ConsoleLogger>();
   Timer t0;
   t0.start();
-  solver_ = std::make_shared<LevenbergMarquardt>(g_logging);
+  solver_ = std::make_shared<LevenbergMarquardt>(logger);
   const auto model = std::make_shared<Point2Distance>();
   auto cost = std::make_shared<NumericalCost>(transformed_pointcloud_[0].data(), pointcloud_[0].data(),
                                               transformed_pointcloud_.size(), 2, 3, model);
@@ -27,8 +27,8 @@ TEST_F(TestTransform2D, 2DTransformLM) {
 
 // FIXME
 TEST_F(TestTransform2D, DISABLED_2DTransformLMAnalytical) {
-  auto g_logging = std::make_shared<ConsoleLogger>();
-  solver_ = std::make_shared<LevenbergMarquardt>(g_logging);
+  auto logger = std::make_shared<ConsoleLogger>();
+  solver_ = std::make_shared<LevenbergMarquardt>(logger);
   const auto model = std::make_shared<Point2Distance>();
   auto cost = std::make_shared<AnalyticalCost>(transformed_pointcloud_[0].data(), pointcloud_[0].data(),
                                                transformed_pointcloud_.size(), 2, 3, model);

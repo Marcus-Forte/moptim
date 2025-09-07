@@ -58,13 +58,13 @@ int main(int argc, char** argv) {
   std::transform(pointcloud.begin(), pointcloud.end(), std::back_inserter(transformed_pointcloud),
                  [&](const Eigen::Vector2d& pt) { return transform * pt; });
 
-  auto g_logging = std::make_shared<AsyncConsoleLogger>();
-  g_logging->setLevel(ILog::Level::DEBUG);
+  auto logger = std::make_shared<AsyncConsoleLogger>();
+  logger->setLevel(ILog::Level::DEBUG);
 
   std::chrono::high_resolution_clock::time_point last_start =
       std::chrono::high_resolution_clock::now() - std::chrono::microseconds(expected_period);
 
-  auto solver = std::make_shared<LevenbergMarquardt>(g_logging);
+  auto solver = std::make_shared<LevenbergMarquardt>(logger);
   const auto model = std::make_shared<Point2Distance>();
 
   auto cost = std::make_shared<NumericalCost>(transformed_pointcloud[0].data(), pointcloud[0].data(),
@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
     solver->addCost(cost);
     x0.setZero();
     solver->optimize(x0);
-    g_logging->log(ILog::Level::INFO, "Estimated: x={} y={} yaw={}", x0[0], x0[1], x0[2]);
+    logger->log(ILog::Level::INFO, "Estimated: x={} y={} yaw={}", x0[0], x0[1], x0[2]);
 
     const uint64_t real_period = std::chrono::duration_cast<std::chrono::microseconds>(start - last_start).count();
     last_start = start;
@@ -91,9 +91,9 @@ int main(int argc, char** argv) {
             .count();
     const auto latency = real_period - expected_period;
 
-    g_logging->log(ILog::Level::INFO,
-                   "Intended Period: {}, Real Period: {}, Computation Time: {}, Latency: {}, Max Latency: {} (us)",
-                   expected_period, real_period, compute_time, latency, max_latency);
+    logger->log(ILog::Level::INFO,
+                "Intended Period: {}, Real Period: {}, Computation Time: {}, Latency: {}, Max Latency: {} (us)",
+                expected_period, real_period, compute_time, latency, max_latency);
 
     const int64_t sleep_time_us = expected_period - compute_time;
 
@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
       std::this_thread::sleep_for(std::chrono::microseconds(sleep_time_us));
       max_latency = std::max(max_latency, latency);
     } else {
-      g_logging->log(ILog::Level::INFO, "Loop period overrun by {} us", -sleep_time_us);
+      logger->log(ILog::Level::INFO, "Loop period overrun by {} us", -sleep_time_us);
       std::this_thread::sleep_for(std::chrono::microseconds(100000));
     }
   }

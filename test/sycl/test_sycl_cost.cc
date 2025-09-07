@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "AnalyticalCost.hh"
+#include "ConsoleLogger.hh"
 #include "NumericalCost.hh"
 #include "NumericalCostSycl.hh"
 #include "test_models.hh"
@@ -10,10 +11,11 @@ using namespace test_models;
 /// \todo pipelines with differnet machines
 TEST(TestCost, NumericalCostEquivalenceSycl) {
   sycl::queue queue{sycl::default_selector_v};
+  auto logger = std::make_shared<ConsoleLogger>();
 
   const auto model = std::make_shared<SimpleModel>();
 
-  NumericalCostSycl<SimpleModel> num_cost_sycl(queue, x_data_.data(), y_data_.data(), x_data_.size(), 1, 2);
+  NumericalCostSycl<SimpleModel> num_cost_sycl(logger, queue, x_data_.data(), y_data_.data(), x_data_.size(), 1, 2);
   NumericalCost num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
 
   Eigen::VectorXd x{{0.0, 0.0}};

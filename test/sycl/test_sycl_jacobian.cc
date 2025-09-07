@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "AnalyticalCost.hh"
+#include "ConsoleLogger.hh"
 #include "NumericalCost.hh"
 #include "NumericalCostSycl.hh"
 #include "test_helper.hh"
@@ -10,7 +11,9 @@ using namespace test_models;
 /// \todo pipelines with differnet machines
 TEST(TestJacobian, NumericalJacobianEquivalenceSycl) {
   sycl::queue queue{sycl::default_selector_v};
-  NumericalCostSycl<SimpleModel> num_cost_sycl(queue, x_data_.data(), y_data_.data(), x_data_.size(), 1, 2);
+  auto logger = std::make_shared<ConsoleLogger>();
+
+  NumericalCostSycl<SimpleModel> num_cost_sycl(logger, queue, x_data_.data(), y_data_.data(), x_data_.size(), 1, 2);
   NumericalCost num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, std::make_shared<SimpleModel>());
 
   Eigen::VectorXd x{{0.1, 0.1}};
@@ -33,9 +36,10 @@ TEST(TestJacobian, NumericalJacobianEquivalenceSycl) {
 
 TEST(TestJacobian, NumericalJacobianMethods) {
   sycl::queue queue{sycl::default_selector_v};
+  auto logger = std::make_shared<ConsoleLogger>();
   const auto num_elements = x_data_.size();
-  NumericalCostSycl<SimpleModel> num_euler(queue, x_data_.data(), y_data_.data(), num_elements, 1, 2);
-  NumericalCostSycl<SimpleModel> num_central(queue, x_data_.data(), y_data_.data(), num_elements, 1, 2,
+  NumericalCostSycl<SimpleModel> num_euler(logger, queue, x_data_.data(), y_data_.data(), num_elements, 1, 2);
+  NumericalCostSycl<SimpleModel> num_central(logger, queue, x_data_.data(), y_data_.data(), num_elements, 1, 2,
                                              DifferentiationMethod::CENTRAL);
 
   Eigen::VectorXd x{{0.1, 0.1}};
