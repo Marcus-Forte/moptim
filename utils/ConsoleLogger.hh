@@ -4,5 +4,5 @@
 
 class ConsoleLogger : public ILog {
  private:
-  void log_impl(ILog::Level level, const std::string& message) const override;
+  void log_impl(ILog::Level level, LogCommand&& message) const override;
 };

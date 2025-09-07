@@ -4,4 +4,4 @@
 
 #include <iostream>
 
-void ConsoleLogger::log_impl(ILog::Level level, const std::string& message) const { std::cout << message << std::endl; }
+void ConsoleLogger::log_impl(ILog::Level level, LogCommand&& message) const { std::cout << message() << std::endl; }

@@ -1,6 +1,7 @@
 
 #include <sched.h>
 
+#include "AsyncConsoleLogger.hh"
 #include "ConsoleLogger.hh"
 #include "LevenbergMarquardt.hh"
 #include "NumericalCost.hh"
@@ -13,8 +14,12 @@ int SetRealTimePriority() {
   sch.sched_priority = 99;
   return sched_setscheduler(0, SCHED_FIFO, &sch);
 }
-
-void printUsage() { std::cout << "Usage: test_realtime [ interval us ] [ realtime 1|0] " << std::endl; }
+void printUsage() {
+  std::cout << "Usage: test_realtime <interval_us> <realtime>\n"
+            << "  <interval_us> : Loop period in microseconds (e.g., 10000)\n"
+            << "  <realtime>    : Set real-time scheduling (1 = enable, 0 = disable)\n"
+            << "Example: test_realtime 10000 1\n";
+}
 
 }  // namespace
 
@@ -48,46 +53,45 @@ int main(int argc, char** argv) {
   std::transform(pointcloud.begin(), pointcloud.end(), std::back_inserter(transformed_pointcloud),
                  [&](const Eigen::Vector2d& pt) { return transform * pt; });
 
-  auto g_logging = std::make_shared<ConsoleLogger>();
+  auto g_logging = std::make_shared<AsyncConsoleLogger>();
   g_logging->setLevel(ILog::Level::INFO);
 
-  // This loop has to run exactly every 'interval_us'.
   std::chrono::high_resolution_clock::time_point last_start = {};
+  auto solver = std::make_shared<LevenbergMarquardt>(g_logging);
+  const auto model = std::make_shared<Point2Distance>();
 
+  auto cost = std::make_shared<NumericalCost>(transformed_pointcloud[0].data(), pointcloud[0].data(),
+                                              transformed_pointcloud.size(), 2, 3, model);
+
+  Eigen::VectorXd x0{{0, 0, 0}};
+
+  // This loop has to run exactly every 'interval_us'.
   while (true) {
-    auto solver = std::make_shared<LevenbergMarquardt>(g_logging);
-
     const auto start = std::chrono::high_resolution_clock::now();
 
-    const auto model = std::make_shared<Point2Distance>();
-    auto cost = std::make_shared<NumericalCost>(transformed_pointcloud[0].data(), pointcloud[0].data(),
-                                                transformed_pointcloud.size(), 2, 3, model);
+    solver->clearCosts();
     solver->addCost(cost);
-    Eigen::VectorXd x0{{0, 0, 0}};
+    x0.setZero();
     solver->optimize(x0);
-    g_logging->log(ILog::Level::INFO, "Estimated: x={} y={} yaw={}", x0[0], x0[1], x0[2]);
-
-    const auto end = std::chrono::high_resolution_clock::now();
-
-    const auto delta = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    const int64_t sleep_time_us = interval_us - delta;
-
-    if (sleep_time_us > 0) {
-      g_logging->log(ILog::Level::INFO, "Computation time: {} us. Sleeping for {} us", delta, sleep_time_us);
-      // std::this_thread::sleep_for(std::chrono::microseconds(sleep_time));
-      // replace above with clock_nanosleep for better accuracy
-      timespec ts = {0, sleep_time_us * 1000};  // 100,000,000 nanoseconds = 0.1 seconds
-
-      clock_nanosleep(CLOCK_MONOTONIC, 0, &ts, nullptr);
-
-    } else {
-      g_logging->log(ILog::Level::INFO, "Computation time: {} us. Overrun by {} us", delta, -sleep_time_us);
-      std::this_thread::sleep_for(std::chrono::microseconds(100000));
-    }
+    // g_logging->log(ILog::Level::INFO, "Estimated: x={} y={} yaw={}", x0[0], x0[1], x0[2]);
 
     const auto real_period = std::chrono::duration_cast<std::chrono::microseconds>(start - last_start).count();
     g_logging->log(ILog::Level::INFO, "Intended Period: {}, Real Period: {} us. Latency: {} us", interval_us,
                    real_period, real_period - interval_us);
+
     last_start = start;
+
+    const auto delta =
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now() - start)
+            .count();
+    const int64_t sleep_time_us = interval_us - delta;
+
+    if (sleep_time_us > 0) {
+      // g_logging->log(ILog::Level::INFO, "Computation time: {} us. Sleeping for {} us", delta, sleep_time_us);
+      std::this_thread::sleep_for(std::chrono::microseconds(sleep_time_us));
+    } else {
+      g_logging->log(ILog::Level::INFO, "Computation time: {} us. Overrun by {} us", delta, -sleep_time_us);
+      std::this_thread::sleep_for(std::chrono::microseconds(100000));
+    }
   }
 }

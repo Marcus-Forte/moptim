@@ -10,7 +10,7 @@ option(WITH_SYCL "Use SYCL compilation for parallel computation" OFF)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(code-format)
 
-# \todo Clang tidy does not work with ACPP
+# \todo Clang tidy does not work with sycl
 if(USE_CLANG_TIDY)
   set(CMAKE_CXX_CLANG_TIDY "clang-tidy")
 else()
@@ -18,6 +18,7 @@ else()
 endif()
 
 find_package(Eigen3 REQUIRED)
+find_package(Boost REQUIRED)
 
 add_subdirectory(utils)
 
