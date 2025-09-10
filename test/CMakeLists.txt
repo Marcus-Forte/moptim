@@ -38,6 +38,10 @@ if(WITH_SYCL)
   # add_executable(bug_reduction
   # sycl/bug_reduction.cc
   # )
+  # add_executable(test_sycl_matmult
+  #   sycl/test_sycl_matmult.cc
+  # )
+  # target_link_libraries(test_sycl_matmult onemath_blas_generic)
 endif()
 
 

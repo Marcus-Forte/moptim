@@ -14,9 +14,6 @@
                 "clangd.arguments": [
                      "-header-insertion=never"
                 ],
-                "cmake.configureArgs": [
-                    "-DFORMAT_CODE=ON"
-                ],
                 "cmake.additionalKits": [
                     "/opt/sycl/cmake/cmake-kits.json"
                 ]
@@ -30,6 +27,7 @@
         "--cap-add=SYS_NICE",
         "--ulimit=rtprio=99",
         "--ulimit=memlock=-1",
+        "--gpus=all"
         // "--cpus=1",
         // "--cpuset-cpus=0"
     ]
