@@ -9,7 +9,7 @@
 
 static const double g_SyclStep = 1e-9;
 
-template <class Model>
+template <class Model, oneapi::math::backend Backend = oneapi::math::backend::generic>
 class NumericalCostSycl : public ICost {
  public:
   NumericalCostSycl(const NumericalCostSycl&) = delete;
@@ -200,7 +200,7 @@ class NumericalCostSycl : public ICost {
     // n := params
     // k := residuals
 
-    const oneapi::math::backend_selector<oneapi::math::backend::generic> backend(queue_);
+    const oneapi::math::backend_selector<Backend> backend(queue_);
 
     // C := J^T * J (params x params) (m x n)
     auto res_jtj = oneapi::math::blas::column_major::gemm(backend,
