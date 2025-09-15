@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <Eigen/Dense>
+
 #include "IModel.hh"
 #include "IOptimizer.hh"
 
@@ -11,7 +13,7 @@ using namespace moptim;
  * @brief 2D Point distance model
  *
  */
-struct Point2Distance : public IJacobianModel {
+struct Point2Distance : public IJacobianModel<double> {
   void setup(const double* x) final {
     transform_.setIdentity();
     transform_.rotate(x[2]);

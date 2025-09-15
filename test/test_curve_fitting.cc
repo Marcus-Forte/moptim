@@ -30,7 +30,7 @@ const std::vector<double> input = {
     4.200000e+00, 4.275000e+00, 4.350000e+00, 4.425000e+00, 4.500000e+00, 4.575000e+00, 4.650000e+00, 4.725000e+00,
     4.800000e+00, 4.875000e+00, 4.950000e+00};
 
-struct CuveFittingModel : public IJacobianModel {
+struct CuveFittingModel : public IJacobianModel<double> {
   void setup(const double* x) final {
     x_[0] = x[0];
     x_[1] = x[1];
@@ -50,7 +50,7 @@ struct CuveFittingModel : public IJacobianModel {
 
 TEST(CurveFitting, SolvingWithNumericalCost) {
   const auto model = std::make_shared<CuveFittingModel>();
-  auto cost = std::make_shared<NumericalCost>(input.data(), observations.data(), input.size(), 1, 2, model);
+  auto cost = std::make_shared<NumericalCost<double>>(input.data(), observations.data(), input.size(), 1, 2, model);
 
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
@@ -64,7 +64,7 @@ TEST(CurveFitting, SolvingWithNumericalCost) {
 
 TEST(CurveFitting, SolvingWithAnalyticalCost) {
   const auto model = std::make_shared<CuveFittingModel>();
-  auto cost = std::make_shared<AnalyticalCost>(input.data(), observations.data(), input.size(), 1, 2, model);
+  auto cost = std::make_shared<AnalyticalCost<double>>(input.data(), observations.data(), input.size(), 1, 2, model);
 
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
@@ -83,7 +83,7 @@ TEST(CurveFitting, CurveFittingLMNumerical) {
   for (int i = 0; i < 10000; ++i) {
     const auto startTime = std::chrono::high_resolution_clock::now();
 
-    auto cost = std::make_shared<NumericalCost>(input.data(), observations.data(), input.size(), 1, 2, model);
+    auto cost = std::make_shared<NumericalCost<double>>(input.data(), observations.data(), input.size(), 1, 2, model);
 
     LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
     solver.addCost(cost);
@@ -106,7 +106,7 @@ TEST(CurveFitting, CurveFittingLMAnalytical) {
   for (int i = 0; i < 10000; ++i) {
     const auto startTime = std::chrono::high_resolution_clock::now();
 
-    auto cost = std::make_shared<AnalyticalCost>(input.data(), observations.data(), input.size(), 1, 2, model);
+    auto cost = std::make_shared<AnalyticalCost<double>>(input.data(), observations.data(), input.size(), 1, 2, model);
 
     LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
     solver.addCost(cost);

@@ -1,11 +1,14 @@
 #include "NumericalCost.hh"
 
+#include <cmath>
+
+namespace moptim {
 static const double g_step = std::sqrt(std::numeric_limits<double>::epsilon());
 
-/// \todo template float / double
-NumericalCost::NumericalCost(const double* input, const double* observations, size_t num_elements, size_t output_dim,
-                             size_t param_dim, const std::shared_ptr<IModel>& model, DifferentiationMethod method)
-    : ICost(num_elements),
+template <class T>
+NumericalCost<T>::NumericalCost(const T* input, const T* observations, size_t num_elements, size_t output_dim,
+                                size_t param_dim, const std::shared_ptr<IModel<T>>& model, DifferentiationMethod method)
+    : ICost<T>(param_dim, num_elements),
       input_(input),
       observations_(observations),
       output_dim_(output_dim),
@@ -22,8 +25,9 @@ NumericalCost::NumericalCost(const double* input, const double* observations, si
 /// \todo shared between analytical and numerical
 /// \todo perhaps pass X dimensions at construction
 /// \todo Eigen::Map?
-double NumericalCost::computeCost(const Eigen::VectorXd& x) {
-  model_->setup(x.data());
+template <class T>
+T NumericalCost<T>::computeCost(const T* x) {
+  model_->setup(x);
 
   for (int i = 0; i < residuals_dim_; i += output_dim_) {
     model_->f(&input_[i], &observations_[i], &residual_data_[i]);
@@ -32,8 +36,9 @@ double NumericalCost::computeCost(const Eigen::VectorXd& x) {
   return residual_data_.squaredNorm();
 }
 
-ICost::SolveRhs NumericalCost::computeLinearSystem(const Eigen::VectorXd& x) {
-  model_->setup(x.data());
+template <class T>
+void NumericalCost<T>::computeLinearSystem(const T* x, T* JTJ, T* JTb, T* cost) {
+  model_->setup(x);
 
   // Compute residuals
   for (int i = 0; i < residuals_dim_; i += output_dim_) {
@@ -42,15 +47,18 @@ ICost::SolveRhs NumericalCost::computeLinearSystem(const Eigen::VectorXd& x) {
 
   // Compute differentials
   if (method_ == DifferentiationMethod::BACKWARD_EULER) {
-    return applyEulerDiff(x);
+    return applyEulerDiff(x, JTJ, JTb, cost);
   }
 
-  return applyCentralDiff(x);
+  return applyCentralDiff(x, JTJ, JTb, cost);
 }
 
-ICost::SolveRhs NumericalCost::applyEulerDiff(const Eigen::VectorXd& x) {
+template <class T>
+void NumericalCost<T>::applyEulerDiff(const T* x, T* JTJ, T* JTb, T* cost) {
+  Eigen::Map<const VectorT> x_vec(x, param_dim_);
+
   for (int i = 0; i < param_dim_; ++i) {
-    Eigen::VectorXd x_plus(x);
+    VectorT x_plus(x_vec);
     x_plus[i] += g_step;
 
     model_->setup(x_plus.data());
@@ -62,15 +70,22 @@ ICost::SolveRhs NumericalCost::applyEulerDiff(const Eigen::VectorXd& x) {
     jacobian_data_.col(i) = (residual_data_plus_ - residual_data_) / g_step;
   }
 
-  const auto&& JTJ = jacobian_data_.transpose() * jacobian_data_;
-  const auto&& JTb = jacobian_data_.transpose() * residual_data_;
-  return {JTJ, JTb, residual_data_.squaredNorm()};
+  Eigen::Map<MatrixT> JTJ_map(JTJ, param_dim_, param_dim_);
+  Eigen::Map<VectorT> JTb_map(JTb, param_dim_);
+
+  /// \todo can use rank update?
+  JTJ_map = jacobian_data_.transpose() * jacobian_data_;
+  JTb_map = jacobian_data_.transpose() * residual_data_;
+  *cost = residual_data_.squaredNorm();
 }
 
-ICost::SolveRhs NumericalCost::applyCentralDiff(const Eigen::VectorXd& x) {
+template <class T>
+void NumericalCost<T>::applyCentralDiff(const T* x, T* JTJ, T* JTb, T* cost) {
+  Eigen::Map<const VectorT> x_vec(x, param_dim_);
+
   for (int i = 0; i < param_dim_; ++i) {
-    Eigen::VectorXd x_plus(x);
-    Eigen::VectorXd x_minus(x);
+    VectorT x_plus(x_vec);
+    VectorT x_minus(x_vec);
     x_plus[i] += g_step;
     x_minus[i] -= g_step;
 
@@ -86,7 +101,16 @@ ICost::SolveRhs NumericalCost::applyCentralDiff(const Eigen::VectorXd& x) {
 
     jacobian_data_.col(i) = (residual_data_plus_ - residual_data_minus_) / (2 * g_step);
   }
-  const auto&& JTJ = jacobian_data_.transpose() * jacobian_data_;
-  const auto&& JTb = jacobian_data_.transpose() * residual_data_;
-  return {JTJ, JTb, residual_data_.squaredNorm()};
+  Eigen::Map<MatrixT> JTJ_map(JTJ, param_dim_, param_dim_);
+  Eigen::Map<VectorT> JTb_map(JTb, param_dim_);
+
+  /// \todo can use rank update?
+  JTJ_map = jacobian_data_.transpose() * jacobian_data_;
+  JTb_map = jacobian_data_.transpose() * residual_data_;
+  *cost = residual_data_.squaredNorm();
 }
+
+template class NumericalCost<double>;
+template class NumericalCost<float>;
+
+}  // namespace moptim

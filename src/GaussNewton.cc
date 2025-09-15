@@ -19,16 +19,21 @@ Status GaussNewton<T>::step(T* x) const {
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
 
+  MatrixT JTJ(this->dimensions_, this->dimensions_);
+  VectorT JTb(this->dimensions_, 1);
+
   MatrixT Hessian = MatrixT::Zero(this->dimensions_, this->dimensions_);
   VectorT BVec = VectorT::Zero(this->dimensions_);
   VectorT DeltaVec(this->dimensions_);
   Eigen::Map<VectorT> XVec(x, this->dimensions_);
   T totalCost = 0.0;
 
+  // Compute Hessian
   for (const auto& cost : this->costs_) {
-    const auto& [JtJ_, Jtb_, cost_val] = cost->computeLinearSystem(XVec);
-    Hessian += JtJ_;
-    BVec += Jtb_;
+    T cost_val = 0.0;
+    cost->computeLinearSystem(x, JTJ.data(), JTb.data(), &cost_val);
+    Hessian += JTJ;
+    BVec += JTb;
     totalCost += cost_val;
   }
 
@@ -67,6 +72,6 @@ Status GaussNewton<T>::optimize(T* x) const {
 }
 
 template class GaussNewton<double>;
-// template class GaussNewton<float>;
+template class GaussNewton<float>;
 
 }  // namespace moptim

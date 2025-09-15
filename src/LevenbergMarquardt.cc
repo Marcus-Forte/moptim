@@ -19,6 +19,9 @@ Status LevenbergMarquardt<T>::step(T* x) const {
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
 
+  MatrixT JTJ(this->dimensions_, this->dimensions_);
+  VectorT JTb(this->dimensions_, 1);
+
   MatrixT Hessian = MatrixT::Zero(this->dimensions_, this->dimensions_);
   MatrixT HessianDiagnonal = MatrixT::Zero(this->dimensions_, this->dimensions_);
   VectorT BVec = VectorT::Zero(this->dimensions_);
@@ -29,11 +32,12 @@ Status LevenbergMarquardt<T>::step(T* x) const {
   T totalCost = 0.0;
   T initCost = 0.0;
 
-  // // Compute Hessian
+  // Compute Hessian
   for (const auto& cost : this->costs_) {
-    const auto& [JtJ_, Jtb_, cost_val] = cost->computeLinearSystem(XVec);
-    Hessian += JtJ_;
-    BVec += Jtb_;
+    T cost_val = 0.0;
+    cost->computeLinearSystem(x, JTJ.data(), JTb.data(), &cost_val);
+    Hessian += JTJ;
+    BVec += JTb;
     initCost += cost_val;
   }
 
@@ -53,7 +57,7 @@ Status LevenbergMarquardt<T>::step(T* x) const {
     XiVec = XVec + DeltaVec;
 
     for (const auto& cost : this->costs_) {
-      totalCost += cost->computeCost(XiVec);
+      totalCost += cost->computeCost(XiVec.data());
     }
     auto rho = (initCost - totalCost) / DeltaVec.dot(lm_lambda_ * DeltaVec - BVec);
 

@@ -11,7 +11,7 @@ using namespace moptim;
  * @brief 3D Point distance model
  *
  */
-struct Point3Distance : public IJacobianModel {
+struct Point3Distance : public IJacobianModel<double> {
   void setup(const double* x) final {
     transform_.setIdentity();
     Eigen::AngleAxisd rollAngle(x[3], Eigen::Vector3d::UnitX());

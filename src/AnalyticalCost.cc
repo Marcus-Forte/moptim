@@ -1,8 +1,10 @@
 #include "AnalyticalCost.hh"
 
-AnalyticalCost::AnalyticalCost(const double* input, const double* observations, size_t num_elements, size_t output_dim,
-                               size_t param_dim, const std::shared_ptr<IJacobianModel>& model)
-    : ICost(num_elements),
+namespace moptim {
+template <class T>
+AnalyticalCost<T>::AnalyticalCost(const T* input, const T* observations, size_t num_elements, size_t output_dim,
+                                  size_t param_dim, const std::shared_ptr<IJacobianModel<T>>& model)
+    : ICost<T>(param_dim, num_elements),
       input_{input},
       observations_{observations},
       output_dim_{output_dim},
@@ -15,8 +17,9 @@ AnalyticalCost::AnalyticalCost(const double* input, const double* observations, 
 }
 
 /// \todo shared between analytical and numerical
-double AnalyticalCost::computeCost(const Eigen::VectorXd& x) {
-  model_->setup(x.data());
+template <class T>
+T AnalyticalCost<T>::computeCost(const T* x) {
+  model_->setup(x);
 
   for (int i = 0; i < residuals_dim_; i += output_dim_) {
     model_->f(&input_[i], &observations_[i], &residual_data_[i]);
@@ -25,8 +28,9 @@ double AnalyticalCost::computeCost(const Eigen::VectorXd& x) {
   return residual_data_.squaredNorm();
 }
 
-ICost::SolveRhs AnalyticalCost::computeLinearSystem(const Eigen::VectorXd& x) {
-  model_->setup(x.data());
+template <class T>
+void AnalyticalCost<T>::computeLinearSystem(const T* x, T* JTJ, T* JTb, T* cost) {
+  model_->setup(x);
 
   int k = 0;
   for (int i = 0; i < residuals_dim_; i += output_dim_) {
@@ -35,7 +39,16 @@ ICost::SolveRhs AnalyticalCost::computeLinearSystem(const Eigen::VectorXd& x) {
     k += param_dim_;
   }
 
-  const auto&& JTJ = jacobian_transposed_data_ * jacobian_transposed_data_.transpose();
-  const auto&& JTb = jacobian_transposed_data_ * residual_data_;
-  return {JTJ, JTb, residual_data_.squaredNorm()};
+  Eigen::Map<MatrixT> JTJ_map(JTJ, param_dim_, param_dim_);
+  Eigen::Map<VectorT> JTb_map(JTb, param_dim_);
+
+  /// \todo can use rank update?
+  JTJ_map = jacobian_transposed_data_ * jacobian_transposed_data_.transpose();
+  JTb_map = jacobian_transposed_data_ * residual_data_;
+  *cost = residual_data_.squaredNorm();
 }
+
+template class AnalyticalCost<double>;
+template class AnalyticalCost<float>;
+
+}  // namespace moptim

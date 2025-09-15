@@ -14,7 +14,7 @@ namespace test_models {
 extern const std::vector<double> x_data_;
 extern const std::vector<double> y_data_;
 
-struct SimpleModel : public IJacobianModel {
+struct SimpleModel : public IJacobianModel<double> {
   void setup(const double* x) final {
     x_[0] = x[0];
     x_[1] = x[1];
