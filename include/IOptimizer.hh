@@ -6,9 +6,7 @@
 #include "ICost.hh"
 #include "Status.hh"
 
-namespace moptim::constants {
-constexpr double g_small_cost = 1e-80;
-}
+namespace moptim::constants {}
 
 namespace moptim {
 

@@ -1,5 +1,7 @@
 #include "GaussNewton.hh"
 
+#include <cmath>
+
 #include "Convergence.hh"
 #include "EigenSolver.hh"
 #include "Timer.hh"
@@ -42,11 +44,12 @@ Status GaussNewton<T>::step(T* x) const {
 
   logger_->log(ILog::Level::DEBUG, " Cost: {} ", totalCost);
 
-  if (totalCost < moptim::constants::g_small_cost) {
+  if (isCostSmall(totalCost)) {
     return Status::CONVERGED;
   }
 
   if (isDeltaSmall(DeltaVec.data(), this->dimensions_)) {
+    logger_->log(ILog::Level::DEBUG, " Delta < {} ", std::sqrt(std::numeric_limits<T>::epsilon()));
     return Status::SMALL_DELTA;
   }
 

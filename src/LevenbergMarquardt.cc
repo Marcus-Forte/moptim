@@ -69,7 +69,7 @@ Status LevenbergMarquardt<T>::step(T* x) const {
 
     if (rho < 0 || std::isnan(rho)) {
       if (isDeltaSmall(DeltaVec.data(), this->dimensions_)) {
-        if (totalCost < moptim::constants::g_small_cost) {
+        if (isCostSmall(totalCost)) {
           return Status::CONVERGED;
         }
         return Status::SMALL_DELTA;
@@ -111,5 +111,5 @@ Status LevenbergMarquardt<T>::optimize(T* x) const {
 }
 
 template class LevenbergMarquardt<double>;
-// template class LevenbergMarquardt<float>;
+template class LevenbergMarquardt<float>;
 }  // namespace moptim

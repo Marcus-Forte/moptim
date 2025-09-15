@@ -3,7 +3,6 @@ add_compile_definitions(-DTEST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/data")
 find_package(GTest REQUIRED)
 
 add_library(test_helper
-  test_models.cc
   transform2d.cc
   transform3d.cc
   test_helper.cc

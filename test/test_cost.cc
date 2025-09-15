@@ -10,10 +10,13 @@
 using namespace test_models;
 using namespace moptim;
 
+const std::vector<double> x_data_{0.038, 0.194, 0.425, 0.626, 1.253, 2.5, 3.70};        // model
+const std::vector<double> y_data_{0.05, 0.127, 0.094, 0.2122, 0.2729, 0.2665, 0.3317};  // measurement
+
 TEST(TestCost, CostEquivalence) {
   Eigen::VectorXd x{{0.1, 0.1}};
 
-  const auto model = std::make_shared<SimpleModel>();
+  const auto model = std::make_shared<SimpleModel<double>>();
 
   AnalyticalCost<double> an_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
   NumericalCost<double> num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
@@ -28,7 +31,7 @@ TEST(TestCost, CostEquivalence) {
 TEST(TestCost, JacobianEquivalence) {
   Eigen::VectorXd x{{0.1, 0.1}};
 
-  const auto model = std::make_shared<SimpleModel>();
+  const auto model = std::make_shared<SimpleModel<double>>();
 
   AnalyticalCost<double> an_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
   NumericalCost<double> num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model,
