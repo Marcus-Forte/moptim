@@ -23,6 +23,7 @@ struct Point3Distance : public IJacobianModel {
     Eigen::Map<const Eigen::Vector3d> input_map{input};
     Eigen::Map<const Eigen::Vector3d> measurement_map{measurement};
     Eigen::Map<Eigen::Vector3d> f_x_map{f_x};
+    
     f_x_map = measurement_map - transform_ * input_map;
   }
 

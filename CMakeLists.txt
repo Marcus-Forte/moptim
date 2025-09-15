@@ -39,7 +39,8 @@ if(WITH_SYCL)
   set(SYCL_FLAGS -fsycl -fsycl-targets=native_cpu,nvptx64-nvidia-cuda,spir64)
   target_compile_options(moptim PUBLIC ${SYCL_FLAGS})
   target_link_options(moptim PUBLIC ${SYCL_FLAGS})
-  link_libraries(ONEMATH::onemath onemath_blas_generic) # This library must have been built with the same targets of `SYCL_FLAGS`
+  link_libraries(ONEMATH::onemath onemath_blas_generic) # The onemath library must have been compiled in the base container.
+  # If `onemath_blas_cublas` is used, make sure to link `cuda` as well.
 endif()
 target_include_directories(moptim PUBLIC include)
 target_link_libraries(moptim utils Eigen3::Eigen)

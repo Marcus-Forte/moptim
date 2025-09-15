@@ -9,7 +9,7 @@ AnalyticalCost::AnalyticalCost(const double* input, const double* observations, 
       param_dim_{param_dim},
       model_{model},
       residuals_dim_{num_elements * output_dim} {
-  // We fill the jacobian transposed
+  // We fill the jacobian transposed already
   jacobian_transposed_data_.resize(param_dim_, residuals_dim_);
   residual_data_.resize(residuals_dim_);
 }

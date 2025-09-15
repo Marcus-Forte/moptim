@@ -9,7 +9,7 @@
 
 static const double g_SyclStep = 1e-9;
 
-template <class Model, oneapi::math::backend Backend = oneapi::math::backend::generic>
+template <class Model, oneapi::math::backend Backend = oneapi::math::backend::cublas>
 class NumericalCostSycl : public ICost {
  public:
   NumericalCostSycl(const NumericalCostSycl&) = delete;
