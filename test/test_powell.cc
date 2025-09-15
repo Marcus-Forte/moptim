@@ -4,6 +4,8 @@
 #include "GaussNewton.hh"
 #include "NumericalCost.hh"
 
+using namespace moptim;
+
 /**
  * @brief Model for the Powell function. No inputs or measurements, only parameters.
  *
@@ -56,11 +58,11 @@ TEST(TestPowell, TestPowell) {
   const auto model = std::make_shared<Powell>();
 
   auto cost = std::make_shared<NumericalCost>(x.data(), x.data(), 1, 4, 4, model);
-  GaussNewton solver;
+  GaussNewton<double> solver(4, std::make_shared<ConsoleLogger>());
   solver.setMaxIterations(20);
   solver.addCost(cost);
 
-  solver.optimize(x);
+  solver.optimize(x.data());
   EXPECT_NEAR(x[0], 0.0, 1e-5);
   EXPECT_NEAR(x[1], 0.0, 1e-5);
   EXPECT_NEAR(x[2], 0.0, 1e-5);
@@ -130,14 +132,14 @@ TEST(TestPowell, TestPowerllSplit) {
 
   auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::INFO);
-  GaussNewton solver(logger);
+  GaussNewton<double> solver(4, logger);
   solver.setMaxIterations(20);
   solver.addCost(cost1);
   solver.addCost(cost2);
   solver.addCost(cost3);
   solver.addCost(cost4);
 
-  solver.optimize(x);
+  solver.optimize(x.data());
   EXPECT_NEAR(x[0], 0.0, 1e-5);
   EXPECT_NEAR(x[1], 0.0, 1e-5);
   EXPECT_NEAR(x[2], 0.0, 1e-5);

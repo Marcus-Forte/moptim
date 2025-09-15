@@ -64,7 +64,7 @@ int main(int argc, char** argv) {
   std::chrono::high_resolution_clock::time_point last_start =
       std::chrono::high_resolution_clock::now() - std::chrono::microseconds(expected_period);
 
-  auto solver = std::make_shared<LevenbergMarquardt>(logger);
+  auto solver = std::make_shared<LevenbergMarquardt<double>>(3, logger);
   const auto model = std::make_shared<Point2Distance>();
 
   auto cost = std::make_shared<NumericalCost>(transformed_pointcloud[0].data(), pointcloud[0].data(),
@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
     solver->clearCosts();
     solver->addCost(cost);
     x0.setZero();
-    solver->optimize(x0);
+    solver->optimize(x0.data());
     logger->log(ILog::Level::INFO, "Estimated: x={} y={} yaw={}", x0[0], x0[1], x0[2]);
 
     const uint64_t real_period = std::chrono::duration_cast<std::chrono::microseconds>(start - last_start).count();

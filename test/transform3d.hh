@@ -5,6 +5,8 @@
 #include "IModel.hh"
 #include "IOptimizer.hh"
 
+using namespace moptim;
+
 /**
  * @brief 3D Point distance model
  *
@@ -23,7 +25,7 @@ struct Point3Distance : public IJacobianModel {
     Eigen::Map<const Eigen::Vector3d> input_map{input};
     Eigen::Map<const Eigen::Vector3d> measurement_map{measurement};
     Eigen::Map<Eigen::Vector3d> f_x_map{f_x};
-    
+
     f_x_map = measurement_map - transform_ * input_map;
   }
 
@@ -49,5 +51,5 @@ class TestTransform3D : public ::testing::TestWithParam<int> {
   Eigen::VectorXd x0_ref{{0.1, 0.1, 0.1, 0, 0, 0}};
   std::vector<Eigen::Vector3d> transformed_pointcloud_;
   std::vector<Eigen::Vector3d> pointcloud_;
-  std::shared_ptr<IOptimizer> solver_;
+  std::shared_ptr<IOptimizer<double>> solver_;
 };

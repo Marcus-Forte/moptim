@@ -1,38 +1,47 @@
 #include "GaussNewton.hh"
 
+#include "Convergence.hh"
+#include "EigenSolver.hh"
 #include "Timer.hh"
 
-GaussNewton::GaussNewton() = default;
-GaussNewton::GaussNewton(const std::shared_ptr<ILog>& logger) : IOptimizer(logger) {}
+namespace moptim {
+template <class T>
+GaussNewton<T>::GaussNewton(size_t dimensions, const std::shared_ptr<ILog>& logger,
+                            const std::shared_ptr<ISolver<T>>& solver)
+    : IOptimizer<T>(dimensions), logger_(logger), solver_(solver) {}
 
-IOptimizer::Status GaussNewton::step(Eigen::VectorXd& x) const {
-  Eigen::MatrixXd Hessian = Eigen::MatrixXd::Zero(x.size(), x.size());
-  Eigen::VectorXd BVec = Eigen::VectorXd::Zero(x.size());
-  Eigen::VectorXd delta(x.size());
-  double totalCost = 0.0;
+template <class T>
+GaussNewton<T>::GaussNewton(size_t dimensions, const std::shared_ptr<ILog>& logger)
+    : IOptimizer<T>(dimensions), logger_(logger), solver_(std::make_shared<EigenSolver<T>>(logger, dimensions)) {}
 
-  for (const auto& cost : costs_) {
-    const auto& [JtJ_, Jtb_, cost_val] = cost->computeLinearSystem(x);
+template <class T>
+Status GaussNewton<T>::step(T* x) const {
+  using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
+  using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
+
+  MatrixT Hessian = MatrixT::Zero(this->dimensions_, this->dimensions_);
+  VectorT BVec = VectorT::Zero(this->dimensions_);
+  VectorT DeltaVec(this->dimensions_);
+  Eigen::Map<VectorT> XVec(x, this->dimensions_);
+  T totalCost = 0.0;
+
+  for (const auto& cost : this->costs_) {
+    const auto& [JtJ_, Jtb_, cost_val] = cost->computeLinearSystem(XVec);
     Hessian += JtJ_;
     BVec += Jtb_;
     totalCost += cost_val;
   }
 
-  Eigen::LDLT<Eigen::MatrixXd> solver(Hessian);
-  delta = solver.solve(-BVec);
-  x += delta;
+  solver_->solve(Hessian.data(), BVec.data(), DeltaVec.data());
+  XVec += DeltaVec;
 
-  if (logger_) {
-    std::stringstream delta_str;
-    delta_str << delta.transpose();
-    logger_->log(ILog::Level::DEBUG, "delta: [{}], Cost: {} ", delta_str.str(), totalCost);
-  }
+  logger_->log(ILog::Level::DEBUG, " Cost: {} ", totalCost);
 
   if (totalCost < moptim::constants::g_small_cost) {
     return Status::CONVERGED;
   }
 
-  if (isDeltaSmall(delta)) {
+  if (isDeltaSmall(DeltaVec.data(), this->dimensions_)) {
     return Status::SMALL_DELTA;
   }
 
@@ -41,19 +50,23 @@ IOptimizer::Status GaussNewton::step(Eigen::VectorXd& x) const {
 
 // Automate steps:
 // Verify: rel_tolerance, abs_tolerance, max iterations, cost
-IOptimizer::Status GaussNewton::optimize(Eigen::VectorXd& x) const {
-  for (int i = 0; i < max_iterations_; i++) {
-    if (logger_) {
-      static Timer timer;
-      const auto delta = timer.stop();
-      logger_->log(ILog::Level::DEBUG, "GN Iteration: {}/{} (took: {} us)", i + 1, max_iterations_, delta);
-      timer.start();
-    }
+template <class T>
+Status GaussNewton<T>::optimize(T* x) const {
+  for (int i = 0; i < this->max_iterations_; i++) {
+    static Timer timer;
+    const auto delta = timer.stop();
+    logger_->log(ILog::Level::DEBUG, "GN Iteration: {}/{} (took: {} us)", i + 1, this->max_iterations_, delta);
+    timer.start();
     const auto status = step(x);
 
     if (status != Status::STEP_OK) {
       return status;
     }
   }
-  return IOptimizer::Status::MAX_ITERATIONS_REACHED;
+  return Status::MAX_ITERATIONS_REACHED;
 }
+
+template class GaussNewton<double>;
+// template class GaussNewton<float>;
+
+}  // namespace moptim

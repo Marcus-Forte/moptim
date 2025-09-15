@@ -5,6 +5,8 @@
 #include "IModel.hh"
 #include "IOptimizer.hh"
 
+using namespace moptim;
+
 /**
  * @brief 2D Point distance model
  *
@@ -55,5 +57,5 @@ class TestTransform2D : public ::testing::Test {
   Eigen::VectorXd x0_ref{{0.1, 0.2, 0.3}};
   std::vector<Eigen::Vector2d> transformed_pointcloud_;
   std::vector<Eigen::Vector2d> pointcloud_;
-  std::shared_ptr<IOptimizer> solver_;
+  std::shared_ptr<IOptimizer<double>> solver_;
 };

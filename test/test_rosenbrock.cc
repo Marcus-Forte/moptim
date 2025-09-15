@@ -1,7 +1,10 @@
 #include <gtest/gtest.h>
 
+#include "ConsoleLogger.hh"
 #include "LevenbergMarquardt.hh"
 #include "NumericalCost.hh"
+
+using namespace moptim;
 
 /**
  * @brief Model for the Rosenbrock function. No inputs or measurements, only parameters.
@@ -25,10 +28,10 @@ TEST(TestRosenbrock, TestRosenbrock) {
 
   const auto model = std::make_shared<Rosenbrock>();
   auto cost = std::make_shared<NumericalCost>(x.data(), x.data(), 1, 2, 2, model);
-  LevenbergMarquardt solver;
+  LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
 
-  solver.optimize(x);
+  solver.optimize(x.data());
   EXPECT_NEAR(x[0], 1.0, 1e-5);
   EXPECT_NEAR(x[1], 1.0, 1e-5);
 }

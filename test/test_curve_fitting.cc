@@ -6,6 +6,8 @@
 #include "LevenbergMarquardt.hh"
 #include "NumericalCost.hh"
 
+using namespace moptim;
+
 const std::vector<double> observations = {
     1.133898e+00, 1.334902e+00, 1.213546e+00, 1.252016e+00, 1.392265e+00, 1.314458e+00, 1.472541e+00, 1.536218e+00,
     1.355679e+00, 1.463566e+00, 1.490201e+00, 1.658699e+00, 1.067574e+00, 1.464629e+00, 1.402653e+00, 1.713141e+00,
@@ -50,11 +52,11 @@ TEST(CurveFitting, SolvingWithNumericalCost) {
   const auto model = std::make_shared<CuveFittingModel>();
   auto cost = std::make_shared<NumericalCost>(input.data(), observations.data(), input.size(), 1, 2, model);
 
-  LevenbergMarquardt solver(std::make_shared<ConsoleLogger>());
+  LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
   Eigen::VectorXd x{{0.0, 0.0}};
 
-  solver.optimize(x);
+  solver.optimize(x.data());
 
   EXPECT_NEAR(x[0], 0.291861, 5e-5);
   EXPECT_NEAR(x[1], 0.131439, 5e-5);
@@ -64,11 +66,11 @@ TEST(CurveFitting, SolvingWithAnalyticalCost) {
   const auto model = std::make_shared<CuveFittingModel>();
   auto cost = std::make_shared<AnalyticalCost>(input.data(), observations.data(), input.size(), 1, 2, model);
 
-  LevenbergMarquardt solver(std::make_shared<ConsoleLogger>());
+  LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
   Eigen::VectorXd x{{0.0, 0.0}};
 
-  solver.optimize(x);
+  solver.optimize(x.data());
 
   EXPECT_NEAR(x[0], 0.291861, 5e-5);
   EXPECT_NEAR(x[1], 0.131439, 5e-5);
@@ -83,10 +85,10 @@ TEST(CurveFitting, CurveFittingLMNumerical) {
 
     auto cost = std::make_shared<NumericalCost>(input.data(), observations.data(), input.size(), 1, 2, model);
 
-    LevenbergMarquardt solver;
+    LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
     solver.addCost(cost);
 
-    solver.optimize(x);
+    solver.optimize(x.data());
     const auto deltaTime =
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now() - startTime)
             .count();
@@ -106,10 +108,10 @@ TEST(CurveFitting, CurveFittingLMAnalytical) {
 
     auto cost = std::make_shared<AnalyticalCost>(input.data(), observations.data(), input.size(), 1, 2, model);
 
-    LevenbergMarquardt solver;
+    LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
     solver.addCost(cost);
 
-    solver.optimize(x);
+    solver.optimize(x.data());
     const auto deltaTime =
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now() - startTime)
             .count();
