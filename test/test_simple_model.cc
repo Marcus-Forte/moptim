@@ -4,7 +4,7 @@
 #include "ConsoleLogger.hh"
 #include "GaussNewton.hh"
 #include "LevenbergMarquardt.hh"
-#include "NumericalCost.hh"
+#include "NumericalCostForwardEuler.hh"
 #include "test_models.hh"
 
 using namespace test_models;
@@ -27,14 +27,11 @@ TYPED_TEST_SUITE(SimpleModelTest, TestTypes);
 
 TYPED_TEST(SimpleModelTest, GaussNewton) {
   using T = TypeParam;
-  if constexpr (std::is_same_v<T, float>) {
-    GTEST_SKIP() << "TODO Test disabled for float type.";
-  }
   Eigen::Vector<T, Eigen::Dynamic> x{{0.9, 0.2}};
 
   const auto model = std::make_shared<SimpleModel<T>>();
-  auto cost = std::make_shared<NumericalCost<T>>(this->x_data_.data(), this->y_data_.data(), this->x_data_.size(), 1, 2,
-                                                 model, DifferentiationMethod::CENTRAL);
+  auto cost = std::make_shared<NumericalCostForwardEuler<T>>(this->x_data_.data(), this->y_data_.data(),
+                                                             this->x_data_.size(), 1, 2, model);
 
   GaussNewton<T> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::DEBUG));
 

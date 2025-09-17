@@ -24,7 +24,8 @@ find_package(Boost REQUIRED)
 add_subdirectory(utils)
 
 add_library(moptim 
-  src/NumericalCost.cc
+  src/NumericalCostCentral.cc
+  src/NumericalCostForwardEuler.cc  
   src/AnalyticalCost.cc
   src/EigenSolver.cc
   src/GaussNewton.cc

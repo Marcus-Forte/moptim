@@ -3,7 +3,7 @@
 #include "AnalyticalCost.hh"
 #include "ConsoleLogger.hh"
 #include "LevenbergMarquardt.hh"
-#include "NumericalCost.hh"
+#include "NumericalCostForwardEuler.hh"
 #include "Timer.hh"
 #include "transform2d.hh"
 
@@ -13,8 +13,8 @@ TEST_F(TestTransform2D, 2DTransformLM) {
   t0.start();
   solver_ = std::make_shared<LevenbergMarquardt<double>>(3, logger);
   const auto model = std::make_shared<Point2Distance>();
-  auto cost = std::make_shared<NumericalCost<double>>(transformed_pointcloud_[0].data(), pointcloud_[0].data(),
-                                                      transformed_pointcloud_.size(), 2, 3, model);
+  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(
+      transformed_pointcloud_[0].data(), pointcloud_[0].data(), transformed_pointcloud_.size(), 2, 3, model);
   solver_->addCost(cost);
   Eigen::VectorXd x0{{0, 0, 0}};
   solver_->optimize(x0.data());

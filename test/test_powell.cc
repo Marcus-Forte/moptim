@@ -4,7 +4,7 @@
 
 #include "ConsoleLogger.hh"
 #include "GaussNewton.hh"
-#include "NumericalCost.hh"
+#include "NumericalCostForwardEuler.hh"
 
 using namespace moptim;
 
@@ -59,7 +59,7 @@ TEST(TestPowell, TestPowell) {
   Eigen::VectorXd x{{3.0, -1.0, 0.0, 4.0}};
   const auto model = std::make_shared<Powell>();
 
-  auto cost = std::make_shared<NumericalCost<double>>(x.data(), x.data(), 1, 4, 4, model);
+  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(x.data(), x.data(), 1, 4, 4, model);
   GaussNewton<double> solver(4, std::make_shared<ConsoleLogger>());
   solver.setMaxIterations(20);
   solver.addCost(cost);
@@ -127,10 +127,14 @@ struct PowellF3 : public IModel<double> {
 TEST(TestPowell, TestPowerllSplit) {
   Eigen::VectorXd x{{3.0, -1.0, 0.0, 4.0}};
 
-  auto cost1 = std::make_shared<NumericalCost<double>>(x.data(), x.data(), 1, 1, 4, std::make_shared<PowellF0>());
-  auto cost2 = std::make_shared<NumericalCost<double>>(x.data(), x.data(), 1, 1, 4, std::make_shared<PowellF1>());
-  auto cost3 = std::make_shared<NumericalCost<double>>(x.data(), x.data(), 1, 1, 4, std::make_shared<PowellF2>());
-  auto cost4 = std::make_shared<NumericalCost<double>>(x.data(), x.data(), 1, 1, 4, std::make_shared<PowellF3>());
+  auto cost1 =
+      std::make_shared<NumericalCostForwardEuler<double>>(x.data(), x.data(), 1, 1, 4, std::make_shared<PowellF0>());
+  auto cost2 =
+      std::make_shared<NumericalCostForwardEuler<double>>(x.data(), x.data(), 1, 1, 4, std::make_shared<PowellF1>());
+  auto cost3 =
+      std::make_shared<NumericalCostForwardEuler<double>>(x.data(), x.data(), 1, 1, 4, std::make_shared<PowellF2>());
+  auto cost4 =
+      std::make_shared<NumericalCostForwardEuler<double>>(x.data(), x.data(), 1, 1, 4, std::make_shared<PowellF3>());
 
   auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::INFO);

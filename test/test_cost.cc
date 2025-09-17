@@ -4,7 +4,7 @@
 
 #include "AnalyticalCost.hh"
 #include "ConsoleLogger.hh"
-#include "NumericalCost.hh"
+#include "NumericalCostForwardEuler.hh"
 #include "test_models.hh"
 
 using namespace test_models;
@@ -19,7 +19,7 @@ TEST(TestCost, CostEquivalence) {
   const auto model = std::make_shared<SimpleModel<double>>();
 
   AnalyticalCost<double> an_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
-  NumericalCost<double> num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
+  NumericalCostForwardEuler<double> num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
 
   const auto an_cost_result = an_cost.computeCost(x.data());
   const auto num_cost_result = num_cost.computeCost(x.data());
@@ -34,8 +34,7 @@ TEST(TestCost, JacobianEquivalence) {
   const auto model = std::make_shared<SimpleModel<double>>();
 
   AnalyticalCost<double> an_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
-  NumericalCost<double> num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model,
-                                 DifferentiationMethod::CENTRAL);
+  NumericalCostForwardEuler<double> num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
   Eigen::MatrixXd num_jtj(2, 2);
   Eigen::VectorXd num_jtb(2);
   double num_total = 0.0;

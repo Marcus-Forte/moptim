@@ -4,7 +4,9 @@
 #include <LevenbergMarquardt.hh>
 
 #include "ConsoleLogger.hh"
-#include "NumericalCost.hh"
+#include "NumericalCostForwardEuler.hh"
+
+using namespace moptim;
 
 const static std::vector<double> y_data{
     0.0082E0,  9.65E0,    0.0112E0,  0.0149E0,  0.0198E0,  0.0248E0,  0.0324E0,  0.0420E0,  0.0549E0,  0.0719E0,
@@ -40,25 +42,30 @@ const static std::vector<double> x_data{
     329.01E0, 331.56E0, 333.56E0, 336.10E0, 338.08E0, 340.60E0, 342.57E0, 345.08E0, 347.02E0, 349.52E0, 351.44E0,
     353.93E0, 355.83E0, 358.32E0, 360.20E0, 362.67E0, 364.53E0, 367.00E0, 371.30E0};
 
-struct Model {
-  Model(const Eigen::VectorXd& x) : x_(x) {}
-
-  double operator()(double input, double observation) {
-    const auto num = x_[0] + x_[1] * input + x_[2] * input * input;
-    const auto den = 1 + x_[3] * input + x_[4] * input * input;
-    return observation - num / den;
+struct Model : public IModel<double> {
+  void setup(const double* x) override {
+    x_[0] = x[0];
+    x_[1] = x[1];
+    x_[2] = x[2];
   }
-  Eigen::VectorXd x_;
+
+  void f(const double* input, const double* measurement, double* f_x) override {
+    const auto num = x_[0] + x_[1] * input[0] + x_[2] * input[0] * input[0];
+    const auto den = 1 + x_[3] * input[0] + x_[4] * input[0] * input[0];
+    f_x[0] = measurement[0] - num / den;
+  }
+  double x_[3];
 };
 
 // Todo fix!
 TEST(kirby2, kirby2) {
-  Eigen::VectorXd x0{{2.0000000000E+00, -1.0000000000E-01, 3.0000000000E-03, -1.0000000000E-03, 1.0000000000E-05}};
+  double x0[] = {2.0000000000E+00, -1.0000000000E-01, 3.0000000000E-03, -1.0000000000E-03, 1.0000000000E-05};
+  const auto model = std::make_shared<Model>();
   auto cost =
-      std::make_shared<NumericalCost<double, double, Model, DifferentiationMethod::BACKWARD_EULER>>(&x_data, &y_data);
+      std::make_shared<NumericalCostForwardEuler<double>>(x_data.data(), y_data.data(), x_data.size(), 1, 3, model);
   const auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::DEBUG);
-  LevenbergMarquardt solver(logger);
+  LevenbergMarquardt<double> solver(3, logger);
   solver.setMaxIterations(50);
   solver.addCost(cost);
 

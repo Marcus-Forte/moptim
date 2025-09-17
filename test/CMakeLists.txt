@@ -19,7 +19,7 @@ add_executable(moptim_tests
   test_transform2d.cc
   test_cost.cc
 )
-# add_subdirectory(nist) # TODO fix
+add_subdirectory(nist) # TODO fix
 target_link_libraries(moptim_tests test_helper)
 gtest_discover_tests(moptim_tests)
 

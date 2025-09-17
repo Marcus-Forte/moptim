@@ -4,7 +4,9 @@
 #include <LevenbergMarquardt.hh>
 
 #include "ConsoleLogger.hh"
-#include "NumericalCost.hh"
+#include "NumericalCostForwardEuler.hh"
+
+using namespace moptim;
 
 const static std::vector<double> y_data{
     92.9000E0, 78.7000E0, 64.2000E0, 64.9000E0, 57.1000E0, 43.3000E0, 31.1000E0, 23.6000E0, 31.0500E0, 23.7750E0,
@@ -52,7 +54,7 @@ const static std::vector<double> x_data{
     1.7500E0, 1.7500E0, .5000E0,  .7500E0,  1.7500E0, 1.7500E0, 2.7500E0, 3.7500E0, 1.7500E0, 1.7500E0, .5000E0,
     .7500E0,  2.7500E0, 3.7500E0, 1.7500E0, 1.7500E0};
 
-struct Model : public IModel {
+struct Model : public IModel<double> {
   void setup(const double* x) override {
     x_[0] = x[0];
     x_[1] = x[1];
@@ -68,12 +70,13 @@ struct Model : public IModel {
 };
 
 TEST(chwirut1, chwirut1) {
-  Eigen::VectorXd x0{{0.1, 0.01, 0.02}};
+  double x0[3] = {0.1, 0.01, 0.02};
   const auto model = std::make_shared<Model>();
-  auto cost = std::make_shared(x_data_.data(), y_data_.data(), x_data_.size(), 1, model);
+  auto cost =
+      std::make_shared<NumericalCostForwardEuler<double>>(x_data.data(), y_data.data(), x_data.size(), 1, 3, model);
   const auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::DEBUG);
-  LevenbergMarquardt solver(logger);
+  LevenbergMarquardt<double> solver(3, logger);
   solver.setMaxIterations(100);
   solver.addCost(cost);
 

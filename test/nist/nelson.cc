@@ -4,14 +4,11 @@
 #include <LevenbergMarquardt.hh>
 
 #include "ConsoleLogger.hh"
-#include "NumericalCost.hh"
+#include "NumericalCostForwardEuler.hh"
 
-struct input_vec {
-  double x1;
-  double x2;
-};
+using namespace moptim;
 
-const static std::vector<double> y_data{
+const static double y_data[]{
     15.00E0, 17.00E0, 15.50E0, 16.50E0, 15.50E0, 15.00E0, 16.00E0, 14.50E0, 15.00E0, 14.50E0, 12.50E0, 11.00E0, 14.00E0,
     13.00E0, 14.00E0, 11.50E0, 14.00E0, 16.00E0, 13.00E0, 13.50E0, 13.00E0, 13.50E0, 12.50E0, 12.50E0, 12.50E0, 12.00E0,
     11.50E0, 12.00E0, 13.00E0, 11.50E0, 13.00E0, 12.50E0, 13.50E0, 17.50E0, 17.50E0, 13.50E0, 12.50E0, 12.50E0, 15.00E0,
@@ -24,45 +21,46 @@ const static std::vector<double> y_data{
     11.50E0, 10.50E0, 10.00E0, 7.27E0,  7.50E0,  6.70E0,  7.60E0,  1.50E0,  1.00E0,  1.20E0,  1.20E0,
 };
 
-const static std::vector<input_vec> x_data{
-    {1E0, 180E0},  {1E0, 180E0},  {1E0, 180E0},  {1E0, 180E0},  {1E0, 225E0},  {1E0, 225E0},  {1E0, 225E0},
-    {1E0, 225E0},  {1E0, 250E0},  {1E0, 250E0},  {1E0, 250E0},  {1E0, 250E0},  {1E0, 275E0},  {1E0, 275E0},
-    {1E0, 275E0},  {1E0, 275E0},  {2E0, 180E0},  {2E0, 180E0},  {2E0, 180E0},  {2E0, 180E0},  {2E0, 225E0},
-    {2E0, 225E0},  {2E0, 225E0},  {2E0, 225E0},  {2E0, 250E0},  {2E0, 250E0},  {2E0, 250E0},  {2E0, 250E0},
-    {2E0, 275E0},  {2E0, 275E0},  {2E0, 275E0},  {2E0, 275E0},  {4E0, 180E0},  {4E0, 180E0},  {4E0, 180E0},
-    {4E0, 180E0},  {4E0, 225E0},  {4E0, 225E0},  {4E0, 225E0},  {4E0, 225E0},  {4E0, 250E0},  {4E0, 250E0},
-    {4E0, 250E0},  {4E0, 250E0},  {4E0, 275E0},  {4E0, 275E0},  {4E0, 275E0},  {4E0, 275E0},  {8E0, 180E0},
-    {8E0, 180E0},  {8E0, 180E0},  {8E0, 180E0},  {8E0, 225E0},  {8E0, 225E0},  {8E0, 225E0},  {8E0, 225E0},
-    {8E0, 250E0},  {8E0, 250E0},  {8E0, 250E0},  {8E0, 250E0},  {8E0, 275E0},  {8E0, 275E0},  {8E0, 275E0},
-    {8E0, 275E0},  {16E0, 180E0}, {16E0, 180E0}, {16E0, 180E0}, {16E0, 180E0}, {16E0, 225E0}, {16E0, 225E0},
-    {16E0, 225E0}, {16E0, 225E0}, {16E0, 250E0}, {16E0, 250E0}, {16E0, 250E0}, {16E0, 250E0}, {16E0, 275E0},
-    {16E0, 275E0}, {16E0, 275E0}, {16E0, 275E0}, {32E0, 180E0}, {32E0, 180E0}, {32E0, 180E0}, {32E0, 180E0},
-    {32E0, 225E0}, {32E0, 225E0}, {32E0, 225E0}, {32E0, 225E0}, {32E0, 250E0}, {32E0, 250E0}, {32E0, 250E0},
-    {32E0, 250E0}, {32E0, 275E0}, {32E0, 275E0}, {32E0, 275E0}, {32E0, 275E0}, {48E0, 180E0}, {48E0, 180E0},
-    {48E0, 180E0}, {48E0, 180E0}, {48E0, 225E0}, {48E0, 225E0}, {48E0, 225E0}, {48E0, 225E0}, {48E0, 250E0},
-    {48E0, 250E0}, {48E0, 250E0}, {48E0, 250E0}, {48E0, 275E0}, {48E0, 275E0}, {48E0, 275E0}, {48E0, 275E0},
-    {64E0, 180E0}, {64E0, 180E0}, {64E0, 180E0}, {64E0, 180E0}, {64E0, 225E0}, {64E0, 225E0}, {64E0, 225E0},
-    {64E0, 225E0}, {64E0, 250E0}, {64E0, 250E0}, {64E0, 250E0}, {64E0, 250E0}, {64E0, 275E0}, {64E0, 275E0},
-    {64E0, 275E0}, {64E0, 275E0}};
+const static double x_data[]{
+    1E0,  180E0, 1E0,  180E0, 1E0,  180E0, 1E0,  180E0, 1E0,  225E0, 1E0,  225E0, 1E0,  225E0, 1E0,  225E0, 1E0,  250E0,
+    1E0,  250E0, 1E0,  250E0, 1E0,  250E0, 1E0,  275E0, 1E0,  275E0, 1E0,  275E0, 1E0,  275E0, 2E0,  180E0, 2E0,  180E0,
+    2E0,  180E0, 2E0,  180E0, 2E0,  225E0, 2E0,  225E0, 2E0,  225E0, 2E0,  225E0, 2E0,  250E0, 2E0,  250E0, 2E0,  250E0,
+    2E0,  250E0, 2E0,  275E0, 2E0,  275E0, 2E0,  275E0, 2E0,  275E0, 4E0,  180E0, 4E0,  180E0, 4E0,  180E0, 4E0,  180E0,
+    4E0,  225E0, 4E0,  225E0, 4E0,  225E0, 4E0,  225E0, 4E0,  250E0, 4E0,  250E0, 4E0,  250E0, 4E0,  250E0, 4E0,  275E0,
+    4E0,  275E0, 4E0,  275E0, 4E0,  275E0, 8E0,  180E0, 8E0,  180E0, 8E0,  180E0, 8E0,  180E0, 8E0,  225E0, 8E0,  225E0,
+    8E0,  225E0, 8E0,  225E0, 8E0,  250E0, 8E0,  250E0, 8E0,  250E0, 8E0,  250E0, 8E0,  275E0, 8E0,  275E0, 8E0,  275E0,
+    8E0,  275E0, 16E0, 180E0, 16E0, 180E0, 16E0, 180E0, 16E0, 180E0, 16E0, 225E0, 16E0, 225E0, 16E0, 225E0, 16E0, 225E0,
+    16E0, 250E0, 16E0, 250E0, 16E0, 250E0, 16E0, 250E0, 16E0, 275E0, 16E0, 275E0, 16E0, 275E0, 16E0, 275E0, 32E0, 180E0,
+    32E0, 180E0, 32E0, 180E0, 32E0, 180E0, 32E0, 225E0, 32E0, 225E0, 32E0, 225E0, 32E0, 225E0, 32E0, 250E0, 32E0, 250E0,
+    32E0, 250E0, 32E0, 250E0, 32E0, 275E0, 32E0, 275E0, 32E0, 275E0, 32E0, 275E0, 48E0, 180E0, 48E0, 180E0, 48E0, 180E0,
+    48E0, 180E0, 48E0, 225E0, 48E0, 225E0, 48E0, 225E0, 48E0, 225E0, 48E0, 250E0, 48E0, 250E0, 48E0, 250E0, 48E0, 250E0,
+    48E0, 275E0, 48E0, 275E0, 48E0, 275E0, 48E0, 275E0, 64E0, 180E0, 64E0, 180E0, 64E0, 180E0, 64E0, 180E0, 64E0, 225E0,
+    64E0, 225E0, 64E0, 225E0, 64E0, 225E0, 64E0, 250E0, 64E0, 250E0, 64E0, 250E0, 64E0, 250E0, 64E0, 275E0, 64E0, 275E0,
+    64E0, 275E0, 64E0, 275E0};
 
-struct Model {
-  Model(const Eigen::VectorXd& x) : x_(x) {}
-
-  double operator()(input_vec input, double observation) {
-    const auto f = x_[0] - x_[1] * input.x1 * std::exp(-x_[2] * input.x2);
-    return observation - f;
+struct Model : public IModel<double> {
+  void setup(const double* x) override {
+    x_[0] = x[0];
+    x_[1] = x[1];
+    x_[2] = x[2];
   }
-  Eigen::VectorXd x_;
+
+  void f(const double* input, const double* measurement, double* f_x) override {
+    const auto f = x_[0] - x_[1] * input[0] * std::exp(-x_[2] * input[1]);
+    f_x[0] = measurement[0] - f;
+  }
+  double x_[3];
 };
 
 // TODO
 TEST(nelson, nelson) {
-  Eigen::VectorXd x0{{2, 0.0001, -0.01}};
+  double x0[3]{2, 0.0001, -0.01};
+  const auto model = std::make_shared<Model>();
   auto cost =
-      std::make_shared<NumericalCost<input_vec, double, Model, DifferentiationMethod::CENTRAL>>(&x_data, &y_data);
+      std::make_shared<NumericalCostForwardEuler<double>>(x_data, y_data, sizeof(x_data) / sizeof(double), 1, 3, model);
   const auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::DEBUG);
-  LevenbergMarquardt solver(logger);
+  LevenbergMarquardt<double> solver(3, logger);
   solver.setMaxIterations(100);
   solver.addCost(cost);
 

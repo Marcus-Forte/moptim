@@ -6,7 +6,7 @@
 #include "AsyncConsoleLogger.hh"
 #include "ConsoleLogger.hh"
 #include "LevenbergMarquardt.hh"
-#include "NumericalCost.hh"
+#include "NumericalCostForwardEuler.hh"
 #include "test_helper.hh"
 #include "transform2d.hh"
 
@@ -67,8 +67,8 @@ int main(int argc, char** argv) {
   auto solver = std::make_shared<LevenbergMarquardt<double>>(3, logger);
   const auto model = std::make_shared<Point2Distance>();
 
-  auto cost = std::make_shared<NumericalCost<double>>(transformed_pointcloud[0].data(), pointcloud[0].data(),
-                                                      transformed_pointcloud.size(), 2, 3, model);
+  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(
+      transformed_pointcloud[0].data(), pointcloud[0].data(), transformed_pointcloud.size(), 2, 3, model);
 
   Eigen::VectorXd x0{{0, 0, 0}};
 

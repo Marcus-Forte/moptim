@@ -4,7 +4,7 @@
 #include "ConsoleLogger.hh"
 #include "IModel.hh"
 #include "LevenbergMarquardt.hh"
-#include "NumericalCost.hh"
+#include "NumericalCostForwardEuler.hh"
 
 using namespace moptim;
 
@@ -50,7 +50,8 @@ struct CuveFittingModel : public IJacobianModel<double> {
 
 TEST(CurveFitting, SolvingWithNumericalCost) {
   const auto model = std::make_shared<CuveFittingModel>();
-  auto cost = std::make_shared<NumericalCost<double>>(input.data(), observations.data(), input.size(), 1, 2, model);
+  auto cost =
+      std::make_shared<NumericalCostForwardEuler<double>>(input.data(), observations.data(), input.size(), 1, 2, model);
 
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
@@ -83,7 +84,8 @@ TEST(CurveFitting, CurveFittingLMNumerical) {
   for (int i = 0; i < 10000; ++i) {
     const auto startTime = std::chrono::high_resolution_clock::now();
 
-    auto cost = std::make_shared<NumericalCost<double>>(input.data(), observations.data(), input.size(), 1, 2, model);
+    auto cost = std::make_shared<NumericalCostForwardEuler<double>>(input.data(), observations.data(), input.size(), 1,
+                                                                    2, model);
 
     LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
     solver.addCost(cost);
