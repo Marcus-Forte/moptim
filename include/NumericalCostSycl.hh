@@ -13,14 +13,13 @@ class NumericalCostSycl : public ICost<T> {
  public:
   NumericalCostSycl(const NumericalCostSycl&) = delete;
   NumericalCostSycl(const std::shared_ptr<ILog>& logger, const sycl::queue& queue, const T* input,
-                    const T* observations, size_t num_elements, size_t output_dim, size_t param_dim)
-      : ICost(param_dim, num_elements),
+                    const T* observations, size_t input_dim, size_t observation_dim, size_t param_dim,
+                    size_t num_elements)
+      : ICost<T>(input_dim, observation_dim, param_dim, num_elements),
         logger_(logger),
         queue_(queue),
         input_{input},
-        observations_{observations},
-        output_dim_{output_dim},
-        residuals_dim_{num_elements * output_dim} {
+        observations_{observations} {
     logger_->log(ILog::Level::DEBUG, "Sycl Device: {}", queue_.get_device().get_info<sycl::info::device::name>());
     logger_->log(ILog::Level::DEBUG, "max_compute_units: {}",
                  queue_.get_device().get_info<sycl::info::device::max_compute_units>());
@@ -28,35 +27,30 @@ class NumericalCostSycl : public ICost<T> {
                  queue_.get_device().get_info<sycl::info::device::max_work_group_size>());
     logger_->log(ILog::Level::DEBUG, "max_work_item_dimensions: {}",
                  queue_.get_device().get_info<sycl::info::device::max_work_item_dimensions>());
+
     if (!queue_.get_device().is_cpu()) {
-      input_sycl_ = sycl::malloc_device<double>(residuals_dim_, queue_);
-      observations_sycl_ = sycl::malloc_device<double>(residuals_dim_, queue_);
-      queue_.copy<double>(input, input_sycl_, residuals_dim_);
-      queue_.copy<double>(observations, observations_sycl_, residuals_dim_);
+      input_sycl_ = sycl::malloc_device<T>(observation_dim_ * num_elements, queue_);
+      observations_sycl_ = sycl::malloc_device<T>(observation_dim_ * num_elements, queue_);
+
+      queue_.copy<T>(input, input_sycl_, observation_dim_ * num_elements);
+      queue_.copy<T>(observations, observations_sycl_, observation_dim_ * num_elements);
 
     } else {  // No need to copy data if it already lies in a CPU (host) device
-      input_sycl_ = const_cast<double*>(input);
-      observations_sycl_ = const_cast<double*>(observations);
+      input_sycl_ = const_cast<T*>(input);
+      observations_sycl_ = const_cast<T*>(observations);
     }
 
-    cost_reduction_ = sycl::malloc_device<double>(1, queue_);
-    jacobian_data_ = sycl::malloc_device<double>(residuals_dim_ * param_dim_, queue_);
-    residual_data_ = sycl::malloc_device<double>(residuals_dim_, queue_);
+    cost_reduction_ = sycl::malloc_device<T>(1, queue_);
+    jacobian_data_ = sycl::malloc_device<T>(observation_dim_ * num_elements * param_dim_, queue_);
+    residual_data_ = sycl::malloc_device<T>(observation_dim_ * num_elements, queue_);
     // One per column
-    residual_plus_data_ = sycl::malloc_device<double>(residuals_dim_ * param_dim_, queue_);
-    if (method_ == DifferentiationMethod::CENTRAL) {
-      residual_minus_data_ = sycl::malloc_device<double>(residuals_dim_ * param_dim_, queue_);
-    }
+    residual_plus_data_ = sycl::malloc_device<T>(observation_dim_ * num_elements * param_dim_, queue_);
   }
 
   ~NumericalCostSycl() override {
     if (!queue_.get_device().is_cpu()) {
       sycl::free(input_sycl_, queue_);
       sycl::free(observations_sycl_, queue_);
-    }
-
-    if (method_ == DifferentiationMethod::CENTRAL) {
-      sycl::free(residual_minus_data_, queue_);
     }
 
     sycl::free(cost_reduction_, queue_);
@@ -66,9 +60,9 @@ class NumericalCostSycl : public ICost<T> {
   }
 
   /// \todo if this is called before jacobian, we don't have to compute cost again.
-  double computeCost(const Eigen::VectorXd& x) override {
+  T computeCost(const T* x) override {
     Model model;
-    model.setup(x.data());
+    model.setup(x);
     auto* model_sycl = sycl::malloc_device<Model>(1, queue_);
     queue_.copy<Model>(&model, model_sycl, 1);
 
@@ -80,15 +74,16 @@ class NumericalCostSycl : public ICost<T> {
 
       const auto* input_capture = input_sycl_;
       const auto* observations_capture = observations_sycl_;
-      const auto output_dim_capture = output_dim_;
+      const auto observation_dim_capture = observation_dim_;
       auto* residual_data_capture = residual_data_;
 
       // const auto workers = sycl::nd_range<1>(sycl::range<1>(num_elements_), sycl::range<1>(1));
       const auto workers = sycl::range<1>(num_elements_);
 
       cgh.parallel_for(workers, sum, [=](sycl::item<1> id, auto& reduction) {
-        const auto ItemRow = id.get_id() * output_dim_capture;
-        Eigen::Map<Eigen::VectorXd> residual_map(&residual_data_capture[ItemRow], output_dim_capture);
+        const auto ItemRow = id.get_id() * observation_dim_capture;
+        Eigen::Map<Eigen::Vector<T, Eigen::Dynamic>> residual_map(&residual_data_capture[ItemRow],
+                                                                  observation_dim_capture);
         model_sycl->f(&input_capture[ItemRow], &observations_capture[ItemRow], &residual_data_capture[ItemRow]);
         reduction += residual_map.squaredNorm();
       });
@@ -104,14 +99,146 @@ class NumericalCostSycl : public ICost<T> {
   }
 
   void computeLinearSystem(const T* x, T* JTJ, T* JTb, T* cost) override {
-    // Model model;
-    // model.setup(x.data());
+    Eigen::Map<const VectorT> x_vec(x, param_dim_);
 
-    // if (method_ == ::DifferentiationMethod::BACKWARD_EULER) {
-    //   return applyEulerDiff(x, model);
+    Model model;
+    model.setup(x);
+
+    // Timer t0;
+    // t0.start();
+    // auto* model_sycl = sycl::malloc_device<Model>(1, queue_);
+    // queue_.copy<Model>(&model, model_sycl, 1);
+
+    // // Initialize vector of models
+    // std::vector<std::shared_ptr<Model>> models_plus(param_dim_);
+    // auto* models_sycl_plus = sycl::malloc_device<Model>(param_dim_, queue_);
+    // for (int i = 0; i < param_dim_; ++i) {
+    //   VectorT x_plus(x);
+    //   x_plus[i] += g_SyclStep;
+    //   models_plus[i] = std::make_shared<Model>();
+    //   models_plus[i]->setup(x_plus.data());
+    //   queue_.copy<Model>(models_plus[i].get(), &models_sycl_plus[i], 1);
     // }
 
-    // return applyCentralDiff(x, model);
+    // auto* JTJ_device = sycl::malloc_device<double>(param_dim_ * param_dim_, queue_);
+    // auto* JTb_device = sycl::malloc_device<double>(param_dim_, queue_);
+
+    // queue_.memset(JTJ_device, 0, sizeof(double) * param_dim_ * param_dim_).wait();
+    // queue_.memset(JTb_device, 0, sizeof(double) * param_dim_).wait();
+
+    // auto stop = t0.stop();
+    // logger_->log(ILog::Level::DEBUG, "Sycl kernel prepare: took: {} us", stop);
+
+    // t0.start();
+    // // Sycl Kernel /// \todo lots of duplicate code with euler
+    // auto jac_event = queue_.submit([&](sycl::handler& cgh) {
+    //   const auto* input_capture = input_sycl_;
+    //   const auto* observations_capture = observations_sycl_;
+    //   auto* cost_reduction_capture = cost_reduction_;
+    //   auto* residual_data_capture = residual_data_;
+    //   auto* residual_plus_data_capture = residual_plus_data_;
+    //   auto* jacobian_data_capture = jacobian_data_;
+    //   const auto num_elements_capture = num_elements_;
+    //   const auto param_dim_capture = param_dim_;
+    //   const auto output_dim_capture = observation_dim_;
+    //   // const auto residuals_dim_capture = residuals_dim_;
+
+    //   auto sum_reduction = sycl::reduction<double>(cost_reduction_, 0.0, sycl::plus<double>{},
+    //                                                sycl::property::reduction::initialize_to_identity{});
+
+    //   const auto workers = sycl::range<2>(num_elements_, param_dim_);
+
+    //   cgh.parallel_for(workers, sum_reduction, [=](sycl::item<2> id, auto& sum_reduction) {
+    //     const auto ItemRow = id.get_id(0) * output_dim_capture;
+    //     const auto ItemCol = id.get_id(1);
+
+    //     Eigen::Map<Eigen::VectorXd> residual_map(&residual_data_capture[ItemRow], output_dim_capture);
+    //     Eigen::Map<Eigen::VectorXd> residual_plus_map(
+    //         &residual_plus_data_capture[ItemRow + ItemCol * residuals_dim_capture], output_dim_capture);
+    //     Eigen::Map<Eigen::MatrixXd> jacobian_map(jacobian_data_capture, residuals_dim_capture, param_dim_capture);
+
+    //     if (ItemRow < residuals_dim_capture && ItemCol < param_dim_capture) {
+    //       models_sycl_plus[ItemCol].f(&input_capture[ItemRow], &observations_capture[ItemRow],
+    //                                   residual_plus_map.data());
+
+    //       if (ItemCol == 0) {
+    //         model_sycl->f(&input_capture[ItemRow], &observations_capture[ItemRow], residual_map.data());
+    //         sum_reduction += residual_map.squaredNorm();
+    //       }
+    //     }
+
+    //     if (ItemRow < residuals_dim_capture && ItemCol < param_dim_capture) {
+    //       jacobian_map.block(ItemRow, ItemCol, output_dim_capture, 1) = (residual_plus_map - residual_map) /
+    //       g_SyclStep;
+    //     }
+    //   });
+    // });
+
+    // stop = t0.stop();
+    // logger_->log(ILog::Level::DEBUG, "Sycl num diff took: {} us", stop);
+
+    // // J := residuals x params
+    // // A := J^T (params x residuals) (m x k)
+    // // B := J (residuals x params) (k x n)
+
+    // // m := params
+    // // n := params
+    // // k := residuals
+
+    // const oneapi::math::backend_selector<Backend> backend(queue_);
+
+    // // C := J^T * J (params x params) (m x n)
+    // auto res_jtj = oneapi::math::blas::column_major::gemm(backend,
+    //                                                       oneapi::math::transpose::trans,     // op(a)
+    //                                                       oneapi::math::transpose::nontrans,  // op(b)
+    //                                                       param_dim_,                         // m
+    //                                                       param_dim_,                         // n
+    //                                                       residuals_dim_,                     // k
+    //                                                       1.0,                                // alpha
+    //                                                       jacobian_data_,                     // A*
+    //                                                       residuals_dim_,                     // lda
+    //                                                       jacobian_data_,                     // B*
+    //                                                       residuals_dim_,                     // ldb
+    //                                                       0.0,                                // beta
+    //                                                       JTJ_device,                         // C*
+    //                                                       param_dim_, {jac_event});
+
+    // // C := J^T * R (params x params) (m x n)
+    // auto res_jtb = oneapi::math::blas::column_major::gemv(backend,
+    //                                                       oneapi::math::transpose::trans,  // op(A)
+    //                                                       residuals_dim_,                  // m
+    //                                                       param_dim_,                      // n
+    //                                                       1.0,                             // alpha
+    //                                                       jacobian_data_,                  // A*
+    //                                                       residuals_dim_,                  // lda
+    //                                                       residual_data_,                  // X*
+    //                                                       1,                               // incX
+    //                                                       0.0,                             // beta
+    //                                                       JTb_device,                      // Y
+    //                                                       1,                               // incY)
+    //                                                       {jac_event});
+
+    // Eigen::MatrixXd JTJ(param_dim_, param_dim_);
+    // Eigen::VectorXd JTB(param_dim_);
+    // double Sum;
+
+    // res_jtb.wait();
+    // res_jtj.wait();
+    // queue_.copy<double>(cost_reduction_, &Sum, 1).wait();
+    // stop = t0.stop();
+    // logger_->log(ILog::Level::DEBUG, "Sycl kernel jacobian: took: {} us", stop);
+    // t0.start();
+    // queue_.copy<double>(JTJ_device, JTJ.data(), JTJ.size()).wait();
+    // queue_.copy<double>(JTb_device, JTB.data(), JTB.size()).wait();
+    // stop = t0.stop();
+    // logger_->log(ILog::Level::DEBUG, "Sycl result data copy took: {} us", stop);
+
+    // sycl::free(models_sycl_plus, queue_);
+    // sycl::free(model_sycl, queue_);
+    // sycl::free(JTJ_device, queue_);
+    // sycl::free(JTb_device, queue_);
+
+    // return {JTJ, JTB, Sum};
   }
 
  private:
@@ -351,13 +478,17 @@ class NumericalCostSycl : public ICost<T> {
   //   return {JTJ, JTB, Sum};
   // }
 
+  using ICost<T>::input_dim_;
+  using ICost<T>::observation_dim_;
+  using ICost<T>::param_dim_;
+  using ICost<T>::num_elements_;
+
+  using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
+
   std::shared_ptr<ILog> logger_;
 
   const T* input_;
   const T* observations_;
-  const size_t output_dim_;
-  const size_t residuals_dim_;
-  const size_t param_dim_;
 
   T* input_sycl_;
   T* observations_sycl_;
@@ -365,7 +496,6 @@ class NumericalCostSycl : public ICost<T> {
   T* jacobian_data_;
   T* residual_data_;
   T* residual_plus_data_;
-  T* residual_minus_data_;
   sycl::queue queue_;
 };
 

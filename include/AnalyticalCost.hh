@@ -32,7 +32,7 @@ class AnalyticalCost : public ICost<T> {
 
   const T* input_;
   const T* observations_;
-  
+
   std::shared_ptr<IJacobianModel<T>> model_;
 };
 }  // namespace moptim
