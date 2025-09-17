@@ -15,14 +15,19 @@ class NumericalCostForwardEuler : public ICost<T> {
 
   ~NumericalCostForwardEuler() override = default;
 
-  NumericalCostForwardEuler(const T* input, const T* observations, size_t num_elements, size_t output_dim,
-                            size_t param_dim, const std::shared_ptr<IModel<T>>& model);
+  NumericalCostForwardEuler(const T* input, const T* observations, size_t input_dim, size_t observation_dim,
+                            size_t param_dim, size_t num_elements, const std::shared_ptr<IModel<T>>& model);
 
   T computeCost(const T* x) override;
 
   void computeLinearSystem(const T* x, T* JTJ, T* JTb, T* cost) override;
 
  private:
+  using ICost<T>::input_dim_;
+  using ICost<T>::observation_dim_;
+  using ICost<T>::param_dim_;
+  using ICost<T>::num_elements_;
+
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
 
@@ -30,14 +35,8 @@ class NumericalCostForwardEuler : public ICost<T> {
   VectorT residual_data_;
   VectorT residual_data_plus_;
 
-  using ICost<T>::num_elements_;
-  using ICost<T>::dimensions_;
-
   const T* input_;
   const T* observations_;
-  const size_t output_dim_;
-  const size_t param_dim_;
-  const size_t residuals_dim_;
   std::shared_ptr<IModel<T>> model_;
 };
 

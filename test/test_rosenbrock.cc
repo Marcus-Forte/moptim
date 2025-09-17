@@ -27,7 +27,7 @@ TEST(TestRosenbrock, TestRosenbrock) {
   Eigen::VectorXd x{{3.0, -1.0}};
 
   const auto model = std::make_shared<Rosenbrock>();
-  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(x.data(), x.data(), 1, 2, 2, model);
+  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(x.data(), x.data(), 1, 2, 2, 1, model);
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
 

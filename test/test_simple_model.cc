@@ -30,8 +30,8 @@ TYPED_TEST(SimpleModelTest, GaussNewton) {
   Eigen::Vector<T, Eigen::Dynamic> x{{0.9, 0.2}};
 
   const auto model = std::make_shared<SimpleModel<T>>();
-  auto cost = std::make_shared<NumericalCostForwardEuler<T>>(this->x_data_.data(), this->y_data_.data(),
-                                                             this->x_data_.size(), 1, 2, model);
+  auto cost = std::make_shared<NumericalCostForwardEuler<T>>(this->x_data_.data(), this->y_data_.data(), 1, 1, 2,
+                                                             this->x_data_.size(), model);
 
   GaussNewton<T> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::DEBUG));
 
@@ -50,8 +50,8 @@ TYPED_TEST(SimpleModelTest, GaussNewtonAnalytical) {
   Eigen::Vector<T, Eigen::Dynamic> x{{0.9, 0.2}};
 
   const auto model = std::make_shared<SimpleModel<T>>();
-  auto cost = std::make_shared<AnalyticalCost<T>>(this->x_data_.data(), this->y_data_.data(), this->x_data_.size(), 1,
-                                                  2, model);
+  auto cost = std::make_shared<AnalyticalCost<T>>(this->x_data_.data(), this->y_data_.data(), 1, 1, 2,
+                                                  this->x_data_.size(), model);
   GaussNewton<T> solver(2, std::make_shared<ConsoleLogger>());
 
   solver.addCost(cost);
@@ -67,8 +67,8 @@ TYPED_TEST(SimpleModelTest, LevenbergMarquardt) {
   Eigen::Vector<T, Eigen::Dynamic> x{{0.9, 0.2}};
 
   const auto model = std::make_shared<SimpleModel<T>>();
-  auto cost = std::make_shared<AnalyticalCost<T>>(this->x_data_.data(), this->y_data_.data(), this->x_data_.size(), 1,
-                                                  2, model);
+  auto cost = std::make_shared<AnalyticalCost<T>>(this->x_data_.data(), this->y_data_.data(), 1, 1, 2,
+                                                  this->x_data_.size(), model);
 
   LevenbergMarquardt<T> solver(2, std::make_shared<ConsoleLogger>());
 
@@ -85,8 +85,8 @@ TYPED_TEST(SimpleModelTest, LevenbergMarquardtAnalytical) {
   Eigen::Vector<T, Eigen::Dynamic> x{{0.9, 0.2}};
 
   const auto model = std::make_shared<SimpleModel<T>>();
-  auto cost = std::make_shared<AnalyticalCost<T>>(this->x_data_.data(), this->y_data_.data(), this->x_data_.size(), 1,
-                                                  2, model);
+  auto cost = std::make_shared<AnalyticalCost<T>>(this->x_data_.data(), this->y_data_.data(), 1, 1, 2,
+                                                  this->x_data_.size(), model);
 
   LevenbergMarquardt<T> solver(2, std::make_shared<ConsoleLogger>());
 

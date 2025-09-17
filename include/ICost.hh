@@ -9,7 +9,8 @@ class ICost {
  public:
   ICost(const ICost&) = delete;
   virtual ~ICost() = default;
-  ICost(size_t dimensions, size_t num_elements) : dimensions_(dimensions), num_elements_(num_elements) {}
+  ICost(size_t input_dim, size_t observation_dim, size_t param_dim, size_t num_elements)
+      : input_dim_(input_dim), observation_dim_(observation_dim), param_dim_(param_dim), num_elements_(num_elements) {}
 
   /**
    * @brief Compute the cost given parameters x
@@ -30,7 +31,9 @@ class ICost {
   virtual void computeLinearSystem(const T* x, T* JTJ, T* JTb, T* cost) = 0;
 
  protected:
-  const size_t dimensions_;
+  const size_t input_dim_;
+  const size_t observation_dim_;
+  const size_t param_dim_;
   const size_t num_elements_;
 };
 }  // namespace moptim

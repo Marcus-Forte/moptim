@@ -2,11 +2,12 @@
 
 #include "AnalyticalCost.hh"
 #include "ConsoleLogger.hh"
-#include "NumericalCost.hh"
+#include "NumericalCostForwardEuler.hh"
 #include "NumericalCostSycl.hh"
 #include "test_models.hh"
 
 using namespace test_models;
+using namespace moptim;
 
 /// \todo pipelines with differnet machines
 TEST(TestCost, NumericalCostEquivalenceSycl) {
@@ -15,8 +16,9 @@ TEST(TestCost, NumericalCostEquivalenceSycl) {
 
   const auto model = std::make_shared<SimpleModel>();
 
-  NumericalCostSycl<SimpleModel> num_cost_sycl(logger, queue, x_data_.data(), y_data_.data(), x_data_.size(), 1, 2);
-  NumericalCost num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
+  NumericalCostSycl<double, SimpleModel> num_cost_sycl(logger, queue, x_data_.data(), y_data_.data(), x_data_.size(), 1,
+                                                       2);
+  NumericalCostForwardEuler<double> num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
 
   Eigen::VectorXd x{{0.0, 0.0}};
 

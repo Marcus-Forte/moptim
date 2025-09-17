@@ -68,7 +68,7 @@ int main(int argc, char** argv) {
   const auto model = std::make_shared<Point2Distance>();
 
   auto cost = std::make_shared<NumericalCostForwardEuler<double>>(
-      transformed_pointcloud[0].data(), pointcloud[0].data(), transformed_pointcloud.size(), 2, 3, model);
+      transformed_pointcloud[0].data(), pointcloud[0].data(), 2, 2, 3, transformed_pointcloud.size(), model);
 
   Eigen::VectorXd x0{{0, 0, 0}};
 

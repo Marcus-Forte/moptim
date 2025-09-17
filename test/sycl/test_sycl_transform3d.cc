@@ -3,11 +3,13 @@
 #include "AnalyticalCost.hh"
 #include "AsyncConsoleLogger.hh"
 #include "ConsoleLogger.hh"
-#include "NumericalCost.hh"
+#include "NumericalCostForwardEuler.hh"
 #include "NumericalCostSycl.hh"
 #include "Timer.hh"
 #include "test_helper.hh"
 #include "transform3d.hh"
+
+using namespace moptim;
 
 const double sycl_vs_cpu_tolerance = 1e-2;
 
@@ -23,8 +25,8 @@ TEST_P(TestTransform3D, SyclCost) {
 
   const auto model = std::make_shared<Point3Distance>();
 
-  auto normal_cost = std::make_shared<NumericalCost>(transformed_pointcloud_[0].data(), pointcloud_[0].data(),
-                                                     num_elements, 3, 6, model);
+  auto normal_cost = std::make_shared<NumericalCostForwardEuler<double>>(
+      transformed_pointcloud_[0].data(), pointcloud_[0].data(), num_elements, 3, 6, model);
 
   auto sycl_cost = std::make_shared<NumericalCostSycl<Point3Distance>>(logger, queue, transformed_pointcloud_[0].data(),
                                                                        pointcloud_[0].data(), num_elements, 3, 6);

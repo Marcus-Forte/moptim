@@ -6,7 +6,6 @@ include(CTest)
 
 option(USE_CLANG_TIDY "Enable clang-tidy" OFF)
 option(WITH_SYCL "Use SYCL compilation for parallel computation" OFF)
-add_compile_definitions(EIGEN_ARM64_USE_SVE EIGEN_DONT_VECTORIZE)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(code-format)
@@ -32,6 +31,7 @@ add_library(moptim
   src/LevenbergMarquardt.cc)
 
 if(WITH_SYCL)
+  add_compile_definitions(EIGEN_ARM64_USE_SVE)
   find_package(oneMath  REQUIRED)
   include(CheckCXXCompilerFlag)
   check_cxx_compiler_flag("-fsycl" COMPILER_SUPPORTS_FSYCL)

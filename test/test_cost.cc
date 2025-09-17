@@ -18,8 +18,8 @@ TEST(TestCost, CostEquivalence) {
 
   const auto model = std::make_shared<SimpleModel<double>>();
 
-  AnalyticalCost<double> an_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
-  NumericalCostForwardEuler<double> num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
+  AnalyticalCost<double> an_cost(x_data_.data(), y_data_.data(), 1, 1, 2, x_data_.size(), model);
+  NumericalCostForwardEuler<double> num_cost(x_data_.data(), y_data_.data(), 1, 1, 2, x_data_.size(), model);
 
   const auto an_cost_result = an_cost.computeCost(x.data());
   const auto num_cost_result = num_cost.computeCost(x.data());
@@ -33,8 +33,8 @@ TEST(TestCost, JacobianEquivalence) {
 
   const auto model = std::make_shared<SimpleModel<double>>();
 
-  AnalyticalCost<double> an_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
-  NumericalCostForwardEuler<double> num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, model);
+  AnalyticalCost<double> an_cost(x_data_.data(), y_data_.data(), 1, 1, 2, x_data_.size(), model);
+  NumericalCostForwardEuler<double> num_cost(x_data_.data(), y_data_.data(), 1, 1, 2, x_data_.size(), model);
   Eigen::MatrixXd num_jtj(2, 2);
   Eigen::VectorXd num_jtb(2);
   double num_total = 0.0;

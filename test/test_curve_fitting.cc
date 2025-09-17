@@ -50,8 +50,8 @@ struct CuveFittingModel : public IJacobianModel<double> {
 
 TEST(CurveFitting, SolvingWithNumericalCost) {
   const auto model = std::make_shared<CuveFittingModel>();
-  auto cost =
-      std::make_shared<NumericalCostForwardEuler<double>>(input.data(), observations.data(), input.size(), 1, 2, model);
+  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(input.data(), observations.data(), 1, 1, 2,
+                                                                  input.size(), model);
 
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
@@ -65,7 +65,7 @@ TEST(CurveFitting, SolvingWithNumericalCost) {
 
 TEST(CurveFitting, SolvingWithAnalyticalCost) {
   const auto model = std::make_shared<CuveFittingModel>();
-  auto cost = std::make_shared<AnalyticalCost<double>>(input.data(), observations.data(), input.size(), 1, 2, model);
+  auto cost = std::make_shared<AnalyticalCost<double>>(input.data(), observations.data(), 1, 1, 2, input.size(), model);
 
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
@@ -84,8 +84,8 @@ TEST(CurveFitting, CurveFittingLMNumerical) {
   for (int i = 0; i < 10000; ++i) {
     const auto startTime = std::chrono::high_resolution_clock::now();
 
-    auto cost = std::make_shared<NumericalCostForwardEuler<double>>(input.data(), observations.data(), input.size(), 1,
-                                                                    2, model);
+    auto cost = std::make_shared<NumericalCostForwardEuler<double>>(input.data(), observations.data(), 1, 1, 2,
+                                                                    input.size(), model);
 
     LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
     solver.addCost(cost);
@@ -108,7 +108,8 @@ TEST(CurveFitting, CurveFittingLMAnalytical) {
   for (int i = 0; i < 10000; ++i) {
     const auto startTime = std::chrono::high_resolution_clock::now();
 
-    auto cost = std::make_shared<AnalyticalCost<double>>(input.data(), observations.data(), input.size(), 1, 2, model);
+    auto cost =
+        std::make_shared<AnalyticalCost<double>>(input.data(), observations.data(), 1, 1, 2, input.size(), model);
 
     LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
     solver.addCost(cost);

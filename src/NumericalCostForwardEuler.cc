@@ -5,19 +5,16 @@
 namespace moptim {
 
 template <class T>
-NumericalCostForwardEuler<T>::NumericalCostForwardEuler(const T* input, const T* observations, size_t num_elements,
-                                                        size_t output_dim, size_t param_dim,
+NumericalCostForwardEuler<T>::NumericalCostForwardEuler(const T* input, const T* observations, size_t input_dim,
+                                                        size_t observation_dim, size_t param_dim, size_t num_elements,
                                                         const std::shared_ptr<IModel<T>>& model)
-    : ICost<T>(param_dim, num_elements),
+    : ICost<T>(input_dim, observation_dim, param_dim, num_elements),
       input_(input),
       observations_(observations),
-      output_dim_(output_dim),
-      param_dim_(param_dim),
-      model_(model),
-      residuals_dim_{num_elements * output_dim} {
-  jacobian_data_.resize(residuals_dim_, param_dim_);
-  residual_data_.resize(residuals_dim_);
-  residual_data_plus_.resize(residuals_dim_);
+      model_(model) {
+  jacobian_data_.resize(observation_dim_ * num_elements_, param_dim_);
+  residual_data_.resize(observation_dim_ * num_elements_);
+  residual_data_plus_.resize(observation_dim_ * num_elements);
 }
 
 /// \todo shared between analytical and numerical
@@ -26,8 +23,8 @@ template <class T>
 T NumericalCostForwardEuler<T>::computeCost(const T* x) {
   model_->setup(x);
 
-  for (int i = 0; i < residuals_dim_; i += output_dim_) {
-    model_->f(&input_[i], &observations_[i], &residual_data_[i]);
+  for (int i = 0; i < num_elements_; ++i) {
+    model_->f(&input_[i * input_dim_], &observations_[i * observation_dim_], &residual_data_[i * observation_dim_]);
   }
 
   return residual_data_.squaredNorm();
@@ -38,8 +35,8 @@ void NumericalCostForwardEuler<T>::computeLinearSystem(const T* x, T* JTJ, T* JT
   model_->setup(x);
 
   // Compute residuals
-  for (int i = 0; i < residuals_dim_; i += output_dim_) {
-    model_->f(&input_[i], &observations_[i], &residual_data_[i]);
+  for (int i = 0; i < num_elements_; ++i) {
+    model_->f(&input_[i * input_dim_], &observations_[i * observation_dim_], &residual_data_[i * observation_dim_]);
   }
 
   Eigen::Map<const VectorT> x_vec(x, param_dim_);
@@ -52,8 +49,9 @@ void NumericalCostForwardEuler<T>::computeLinearSystem(const T* x, T* JTJ, T* JT
 
     model_->setup(x_plus.data());
 
-    for (int j = 0; j < residuals_dim_; j += output_dim_) {
-      model_->f(&input_[j], &observations_[j], &residual_data_plus_[j]);
+    for (int j = 0; j < num_elements_; ++j) {
+      model_->f(&input_[j * input_dim_], &observations_[j * observation_dim_],
+                &residual_data_plus_[j * observation_dim_]);
     }
 
     jacobian_data_.col(i) = (residual_data_plus_ - residual_data_) / g_step;

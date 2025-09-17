@@ -2,19 +2,23 @@
 
 #include "AnalyticalCost.hh"
 #include "ConsoleLogger.hh"
-#include "NumericalCost.hh"
+#include "NumericalCostForwardEuler.hh"
 #include "NumericalCostSycl.hh"
 #include "test_helper.hh"
 #include "test_models.hh"
+
 using namespace test_models;
+using namespace moptim;
 
 /// \todo pipelines with differnet machines
 TEST(TestJacobian, NumericalJacobianEquivalenceSycl) {
   sycl::queue queue{sycl::default_selector_v};
   auto logger = std::make_shared<ConsoleLogger>();
 
-  NumericalCostSycl<SimpleModel> num_cost_sycl(logger, queue, x_data_.data(), y_data_.data(), x_data_.size(), 1, 2);
-  NumericalCost num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2, std::make_shared<SimpleModel>());
+  NumericalCostSycl<double, SimpleModel> num_cost_sycl(logger, queue, x_data_.data(), y_data_.data(), x_data_.size(), 1,
+                                                       2);
+  moptim::NumericalCostForwardEuler<double> num_cost(x_data_.data(), y_data_.data(), x_data_.size(), 1, 2,
+                                                     std::make_shared<SimpleModel>());
 
   Eigen::VectorXd x{{0.1, 0.1}};
 
