@@ -10,7 +10,7 @@ add_library(test_helper
 target_link_libraries(test_helper moptim)
 link_libraries(test_helper gtest)
 
-add_executable(moptim_tests
+add_executable(test_moptim
   test_main.cc
   test_simple_model.cc
   test_curve_fitting.cc
@@ -20,19 +20,19 @@ add_executable(moptim_tests
   test_cost.cc
 )
 add_subdirectory(nist) # TODO fix
-target_link_libraries(moptim_tests test_helper)
-gtest_discover_tests(moptim_tests)
+target_link_libraries(test_moptim test_helper)
+gtest_discover_tests(test_moptim)
 
 if(WITH_SYCL)
-  add_executable(moptim_sycl_tests
+  add_executable(test_moptim_sycl
     sycl/test_sycl_cost.cc
-    # sycl/test_sycl_jacobian.cc
+    sycl/test_sycl_jacobian.cc
     # sycl/test_sycl_transform2d.cc
     # sycl/test_sycl_transform3d.cc
   )
-  target_include_directories(moptim_sycl_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  target_link_libraries(moptim_sycl_tests gtest gtest_main)
-  gtest_discover_tests(moptim_sycl_tests)
+  target_include_directories(test_moptim_sycl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(test_moptim_sycl gtest gtest_main)
+  gtest_discover_tests(test_moptim_sycl)
   # Bug reproduction
   # add_executable(bug_reduction
   # sycl/bug_reduction.cc

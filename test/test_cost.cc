@@ -10,16 +10,15 @@
 using namespace test_models;
 using namespace moptim;
 
-const std::vector<double> x_data_{0.038, 0.194, 0.425, 0.626, 1.253, 2.5, 3.70};        // model
-const std::vector<double> y_data_{0.05, 0.127, 0.094, 0.2122, 0.2729, 0.2665, 0.3317};  // measurement
-
 TEST(TestCost, CostEquivalence) {
   Eigen::VectorXd x{{0.1, 0.1}};
 
   const auto model = std::make_shared<SimpleModel<double>>();
 
-  AnalyticalCost<double> an_cost(x_data_.data(), y_data_.data(), 1, 1, 2, x_data_.size(), model);
-  NumericalCostForwardEuler<double> num_cost(x_data_.data(), y_data_.data(), 1, 1, 2, x_data_.size(), model);
+  AnalyticalCost<double> an_cost(TestData<double>::x_data_, TestData<double>::y_data_, 1, 1, 2,
+                                 TestData<double>::num_measurements, model);
+  NumericalCostForwardEuler<double> num_cost(TestData<double>::x_data_, TestData<double>::y_data_, 1, 1, 2,
+                                             TestData<double>::num_measurements, model);
 
   const auto an_cost_result = an_cost.computeCost(x.data());
   const auto num_cost_result = num_cost.computeCost(x.data());
@@ -33,8 +32,12 @@ TEST(TestCost, JacobianEquivalence) {
 
   const auto model = std::make_shared<SimpleModel<double>>();
 
-  AnalyticalCost<double> an_cost(x_data_.data(), y_data_.data(), 1, 1, 2, x_data_.size(), model);
-  NumericalCostForwardEuler<double> num_cost(x_data_.data(), y_data_.data(), 1, 1, 2, x_data_.size(), model);
+  const auto* x_data_ = TestData<double>::x_data_;
+  const auto* y_data_ = TestData<double>::y_data_;
+  const auto num_measurements = TestData<double>::num_measurements;
+
+  AnalyticalCost<double> an_cost(x_data_, y_data_, 1, 1, 2, num_measurements, model);
+  NumericalCostForwardEuler<double> num_cost(x_data_, y_data_, 1, 1, 2, num_measurements, model);
   Eigen::MatrixXd num_jtj(2, 2);
   Eigen::VectorXd num_jtb(2);
   double num_total = 0.0;
