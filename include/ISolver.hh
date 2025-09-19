@@ -11,11 +11,11 @@ class ISolver {
   virtual ~ISolver() = default;
 
   /**
-   * @brief Solve the linear system Ax = b
+   * @brief Solve the linear system `Ax = b` for x.
    *
-   * @param A Matrix A
-   * @param b Vector b
-   * @param x
+   * @param[in] A Matrix A
+   * @param[in] b Vector b
+   * @param[out] x
    */
   virtual void solve(const T* A, const T* b, T* x) const = 0;
 

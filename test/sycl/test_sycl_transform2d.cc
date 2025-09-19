@@ -4,7 +4,7 @@
 
 #include "ConsoleLogger.hh"
 #include "LevenbergMarquardt.hh"
-#include "NumericalCost.hh"
+#include "NumericalCostForwardEuler.hh"
 #include "NumericalCostSycl.hh"
 #include "Timer.hh"
 #include "test_helper.hh"
@@ -21,11 +21,13 @@ TEST_F(TestTransform2D, SyclCostAndJacobian) {
 
   const auto model = std::make_shared<Point2Distance>();
 
-  NumericalCostSycl<Point2Distance> num_cost_sycl(logger, queue, transformed_pointcloud_[0].data(),
-                                                  pointcloud_[0].data(), num_elements, 2, 3);
-  NumericalCost num_cost(transformed_pointcloud_[0].data(), pointcloud_[0].data(), num_elements, 2, 3, model);
+  NumericalCostSycl<double, Point2Distance> num_cost_sycl(logger, queue, transformed_pointcloud_[0].data(),
+                                                          pointcloud_[0].data(), 2, 2, 3, num_elements);
 
-  Eigen::VectorXd x{{0.0, 0.0, 0.0}};
+  NumericalCostForwardEuler<double> num_cost(transformed_pointcloud_[0].data(), pointcloud_[0].data(), 2, 2, 3,
+                                             num_elements, model);
+
+  double x[]{0.0, 0.0, 0.0};
 
   const auto sycl_cost_result = num_cost_sycl.computeCost(x);
   const auto cost_result = num_cost.computeCost(x);
@@ -36,22 +38,31 @@ TEST_F(TestTransform2D, SyclCostAndJacobian) {
   Timer t0;
   t0.start();
 
-  const auto [num_jtj_sycl, num_jtb_sycl, num_total_sycl] = num_cost_sycl.computeLinearSystem(x);
+  Eigen::Matrix<double, 3, 3> jtj_sycl;
+  Eigen::Matrix<double, 3, 1> jtb_sycl;
+  double total_sycl = 0.0;
+
+  Eigen::Matrix<double, 3, 3> jtj;
+  Eigen::Matrix<double, 3, 1> jtb;
+  double total = 0.0;
+
+  num_cost_sycl.computeLinearSystem(x, jtj_sycl.data(), jtb_sycl.data(), &total_sycl);
+
   auto stop = t0.stop();
   std::cout << "Sycl cost jacobian: took " << stop << " us" << std::endl;
 
   t0.start();
-  const auto [num_jtj, num_jtb, num_total] = num_cost.computeLinearSystem(x);
+  num_cost.computeLinearSystem(x, jtj.data(), jtb.data(), &total);
   stop = t0.stop();
   std::cout << "Known cost jacobian: took " << stop << " us" << std::endl;
 
-  std::cout << "num_jtj_sycl:\n" << num_jtj_sycl << " " << std::endl;
-  std::cout << "num_jtj:\n" << num_jtj << " " << std::endl;
+  std::cout << "num_jtj_sycl:\n" << jtj_sycl << " " << std::endl;
+  std::cout << "num_jtj:\n" << jtj << " " << std::endl;
 
-  EXPECT_NEAR(num_total_sycl, num_total, sycl_vs_cpu_tolerance);
+  EXPECT_NEAR(total_sycl, total, sycl_vs_cpu_tolerance);
 
-  compareMatrices(num_jtj_sycl, num_jtj, sycl_vs_cpu_tolerance);
-  compareMatrices(num_jtb_sycl, num_jtb, sycl_vs_cpu_tolerance);
+  compareMatrices(jtj_sycl, jtj, sycl_vs_cpu_tolerance);
+  compareMatrices(jtb_sycl, jtb, sycl_vs_cpu_tolerance);
 }
 
 TEST_F(TestTransform2D, Sycl2DTransformLM) {
@@ -61,18 +72,21 @@ TEST_F(TestTransform2D, Sycl2DTransformLM) {
   Timer t0;
   t0.start();
   sycl::queue queue{sycl::default_selector_v};
-  solver_ = std::make_shared<LevenbergMarquardt>(logger);
+  auto solver = std::make_shared<LevenbergMarquardt<double>>(3, logger);
 
-  auto cost = std::make_shared<NumericalCostSycl<Point2Distance>>(logger, queue, transformed_pointcloud_[0].data(),
-                                                                  pointcloud_[0].data(), num_elements, 2, 3);
+  auto cost = std::make_shared<NumericalCostSycl<double, Point2Distance>>(
+      logger, queue, transformed_pointcloud_[0].data(), pointcloud_[0].data(), 2, 2, 3, num_elements);
 
-  auto model = std::make_shared<Point2Distance>();
-  Eigen::VectorXd x0{{0, 0, 0}};
-  const auto [jtj, jtb, res] = cost->computeLinearSystem(x0);
+  // const auto model = std::make_shared<Point2Distance>();
+  // auto cost = std::make_shared<NumericalCostForwardEuler<double>>(transformed_pointcloud_[0].data(),
+  //                                                                 pointcloud_[0].data(), 2, 2, 3, num_elements,
+  //                                                                 model);
 
-  solver_->addCost(cost);
+  double x0[]{0, 0, 0};
 
-  solver_->optimize(x0);
+  solver->addCost(cost);
+
+  solver->optimize(x0);
 
   EXPECT_NEAR(x0[0], -x0_ref[0], 1e-3);
   EXPECT_NEAR(x0[1], -x0_ref[1], 1e-3);

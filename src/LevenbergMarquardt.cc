@@ -14,6 +14,7 @@ LevenbergMarquardt<T>::LevenbergMarquardt(size_t dimensions, const std::shared_p
 template <class T>
 LevenbergMarquardt<T>::LevenbergMarquardt(size_t dimensions, const std::shared_ptr<ILog>& logger)
     : IOptimizer<T>(dimensions), logger_(logger), solver_(std::make_shared<EigenSolver<T>>(logger, dimensions)) {}
+
 template <class T>
 Status LevenbergMarquardt<T>::step(T* x) const {
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
@@ -29,7 +30,6 @@ Status LevenbergMarquardt<T>::step(T* x) const {
   VectorT DeltaVec(this->dimensions_);
   Eigen::Map<VectorT> XVec(x, this->dimensions_);
 
-  T totalCost = 0.0;
   T initCost = 0.0;
 
   // Compute Hessian
@@ -48,6 +48,7 @@ Status LevenbergMarquardt<T>::step(T* x) const {
   T nu = 2.0;
 
   HessianDiagnonal = Hessian.diagonal().asDiagonal();
+  T totalCost = 0.0;
   for (int i = 0; i < lm_iterations_; ++i) {
     // Refine Hessian
     Hessian += lm_lambda_ * HessianDiagnonal;

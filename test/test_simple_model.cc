@@ -17,7 +17,7 @@ TYPED_TEST_SUITE(SimpleModelTest, TestTypes);
 TYPED_TEST(SimpleModelTest, GaussNewton) {
   using T = TypeParam;
 
-  Eigen::Vector<T, Eigen::Dynamic> x{{0.9, 0.2}};
+  T x[]{0.9, 0.2};
 
   const auto model = std::make_shared<SimpleModel<T>>();
   auto cost = std::make_shared<NumericalCostForwardEuler<T>>(this->test_data_.x_data_, this->test_data_.y_data_, 1, 1,
@@ -27,7 +27,7 @@ TYPED_TEST(SimpleModelTest, GaussNewton) {
 
   solver.addCost(cost);
 
-  auto status = solver.optimize(x.data());
+  auto status = solver.optimize(x);
 
   std::cout << "Optimization status: " << static_cast<int>(status) << std::endl;
 

@@ -27,7 +27,7 @@ if(WITH_SYCL)
   add_executable(test_moptim_sycl
     sycl/test_sycl_cost.cc
     sycl/test_sycl_jacobian.cc
-    # sycl/test_sycl_transform2d.cc
+    sycl/test_sycl_transform2d.cc
     # sycl/test_sycl_transform3d.cc
   )
   target_include_directories(test_moptim_sycl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

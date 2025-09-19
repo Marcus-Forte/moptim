@@ -15,8 +15,8 @@ class LevenbergMarquardt : public IOptimizer<T> {
   Status optimize(T* x) const override;
 
  private:
-  mutable double lm_init_lambda_factor_;
-  mutable double lm_lambda_;
+  mutable T lm_init_lambda_factor_;
+  mutable T lm_lambda_;
   size_t lm_iterations_ = 3;
   std::shared_ptr<ISolver<T>> solver_;
   std::shared_ptr<ILog> logger_;
