@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Eigen/Dense>
-
 #include "IModel.hh"
+#include "gtest/gtest.h"
 
 /**
  * @brief Common model to be used in the tests.
@@ -16,6 +15,12 @@ struct TestData {
   static constexpr int num_measurements = 7;
   static constexpr T x_data_[num_measurements]{0.038, 0.194, 0.425, 0.626, 1.253, 2.5, 3.70};
   static constexpr T y_data_[num_measurements]{0.05, 0.127, 0.094, 0.2122, 0.2729, 0.2665, 0.3317};
+};
+
+template <typename T>
+class SimpleModelTest : public ::testing::Test {
+ protected:
+  TestData<T> test_data_;
 };
 
 template <class T>

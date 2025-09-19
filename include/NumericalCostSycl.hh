@@ -70,15 +70,14 @@ class NumericalCostSycl : public ICost<T> {
     logger_->log(ILog::Level::DEBUG, "Sycl compute cost items: {}", num_elements_);
 
     queue_.submit([&](sycl::handler& cgh) {
-      auto sum = sycl::reduction<double>(cost_reduction_, 0.0, sycl::plus<double>{},
-                                         sycl::property::reduction::initialize_to_identity{});
+      auto sum = sycl::reduction<T>(cost_reduction_, 0.0, sycl::plus<T>{},
+                                    sycl::property::reduction::initialize_to_identity{});
 
       const auto* input_capture = input_sycl_;
       const auto* observations_capture = observations_sycl_;
       const auto observation_dim_capture = observation_dim_;
       auto* residual_data_capture = residual_data_;
 
-      // const auto workers = sycl::nd_range<1>(sycl::range<1>(num_elements_), sycl::range<1>(1));
       const auto workers = sycl::range<1>(num_elements_);
 
       cgh.parallel_for(workers, sum, [=](sycl::item<1> id, auto& reduction) {
@@ -91,8 +90,8 @@ class NumericalCostSycl : public ICost<T> {
 
     queue_.wait();
 
-    double result;
-    queue_.copy<double>(cost_reduction_, &result, 1).wait();
+    T result;
+    queue_.copy<T>(cost_reduction_, &result, 1).wait();
 
     sycl::free(model_sycl, queue_);
     return result;

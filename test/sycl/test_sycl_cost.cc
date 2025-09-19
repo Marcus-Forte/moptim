@@ -9,21 +9,26 @@
 using namespace test_models;
 using namespace moptim;
 
+using TestTypes = ::testing::Types<double, float>;
+
+TYPED_TEST_SUITE(SimpleModelTest, TestTypes);
+
 /// \todo pipelines with differnet machines
-TEST(TestCost, NumericalCostEquivalenceSycl) {
+TYPED_TEST(SimpleModelTest, NumericalCostEquivalenceSycl) {
+  using T = TypeParam;
+
   sycl::queue queue{sycl::default_selector_v};
   auto logger = std::make_shared<ConsoleLogger>();
 
-  const auto model = std::make_shared<SimpleModel<double>>();
+  const auto model = std::make_shared<SimpleModel<T>>();
 
-  const auto* x_data_ = TestData<double>::x_data_;
-  const auto* y_data_ = TestData<double>::y_data_;
-  const auto num_measurements = TestData<double>::num_measurements;
+  NumericalCostSycl<T, SimpleModel<T>> num_cost_sycl(logger, queue, this->test_data_.x_data_, this->test_data_.y_data_,
+                                                     1, 1, 2, this->test_data_.num_measurements);
 
-  NumericalCostSycl<double, SimpleModel<double>> num_cost_sycl(logger, queue, x_data_, y_data_, 1, 1, 2, 7);
-  NumericalCostForwardEuler<double> num_cost(x_data_, y_data_, 1, 1, 2, 7, model);
+  NumericalCostForwardEuler<T> num_cost(this->test_data_.x_data_, this->test_data_.y_data_, 1, 1, 2,
+                                        this->test_data_.num_measurements, model);
 
-  double x[2]{0.0, 0.0};
+  T x[2]{0.0, 0.0};
 
   const auto sycl_cost_result = num_cost_sycl.computeCost(x);
   const auto cpu_cost_result = num_cost.computeCost(x);
