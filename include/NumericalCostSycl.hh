@@ -9,7 +9,7 @@
 #include "Timer.hh"
 
 namespace moptim {
-template <class T, class Model, oneapi::math::backend Backend = oneapi::math::backend::generic>
+template <class T, class Model, oneapi::math::backend Backend = oneapi::math::backend::netlib>
 class NumericalCostSycl : public ICost<T> {
  public:
   NumericalCostSycl(const NumericalCostSycl&) = delete;
@@ -144,11 +144,13 @@ class NumericalCostSycl : public ICost<T> {
       });
     });
 
+    auto start_time = jac_event.template get_profiling_info<sycl::info::event_profiling::command_start>();
+    auto end_time = jac_event.template get_profiling_info<sycl::info::event_profiling::command_end>();
+
+    logger_->log(ILog::Level::DEBUG, "Sycl kernel jacobian: took: {} us", (end_time - start_time) / 1000);
+
     auto* JTJ_device = sycl::malloc_device<T>(param_dim_ * param_dim_, queue_);
     auto* JTb_device = sycl::malloc_device<T>(param_dim_, queue_);
-
-    auto jtj_reset_event = queue_.memset(JTJ_device, 0, sizeof(T) * param_dim_ * param_dim_);
-    auto jtb_reset_event = queue_.memset(JTb_device, 0, sizeof(T) * param_dim_);
 
     // // J := residuals x params
     // // A := J^T (params x residuals) (m x k)
@@ -158,24 +160,36 @@ class NumericalCostSycl : public ICost<T> {
     // // n := params
     // // k := residuals
 
+
     const oneapi::math::backend_selector<Backend> backend(queue_);
 
     // // C := J^T * J (params x params) (m x n)
-    auto res_jtj = oneapi::math::blas::column_major::gemm(backend,
-                                                          oneapi::math::transpose::trans,     // op(a)
-                                                          oneapi::math::transpose::nontrans,  // op(b)
-                                                          param_dim_,                         // m
-                                                          param_dim_,                         // n
-                                                          observation_dim_ * num_elements_,   // k
-                                                          1.0,                                // alpha
-                                                          jacobian_data_,                     // A*
-                                                          observation_dim_ * num_elements_,   // lda
-                                                          jacobian_data_,                     // B*
-                                                          observation_dim_ * num_elements_,   // ldb
-                                                          0.0,                                // beta
-                                                          JTJ_device,                         // C*
-                                                          param_dim_, {jac_event, jtj_reset_event});
+    const auto res_jtj = oneapi::math::blas::column_major::syrk(backend,
+                                                                oneapi::math::uplo::upper,         // triangle part
+                                                                oneapi::math::transpose::trans,    // op(A)
+                                                                param_dim_,                        // n
+                                                                observation_dim_ * num_elements_,  // k
+                                                                1.0,                               // alpha
+                                                                jacobian_data_,                    // A*
+                                                                observation_dim_ * num_elements_,  // lda
+                                                                0.0,                               // beta
+                                                                JTJ_device,                        // C*
+                                                                param_dim_,                        // ldc
+                                                                {jac_event});
 
+    // Copy the upper part to the lower part
+    const auto mirror_jtj = queue_.submit([&](sycl::handler& cgh) {
+      cgh.depends_on(std::move(res_jtj));
+      auto* JTJ_device_capture = JTJ_device;
+      const auto param_dim_capture = param_dim_;
+      cgh.parallel_for(sycl::range<2>(param_dim_capture, param_dim_capture), [=](sycl::item<2> id) {
+        const auto row = id.get_id(0);
+        const auto col = id.get_id(1);
+        if (row > col) {
+          JTJ_device_capture[row + param_dim_capture * col] = JTJ_device_capture[col + param_dim_capture * row];
+        }
+      });
+    });
     // // C := J^T * R (params x params) (m x n)
     auto res_jtb = oneapi::math::blas::column_major::gemv(backend,
                                                           oneapi::math::transpose::trans,    // op(A)
@@ -189,37 +203,25 @@ class NumericalCostSycl : public ICost<T> {
                                                           0.0,                               // beta
                                                           JTb_device,                        // Y
                                                           1,                                 // incY)
-                                                          {jac_event, jtb_reset_event});
+                                                          {jac_event});
 
-    sycl::event::wait({res_jtb, res_jtj});
+    sycl::event::wait({res_jtb, res_jtj, mirror_jtj});
 
-    // queue_
-    //     .submit([&](sycl::handler& cgh) {
-    //       const auto param_dim_capture = param_dim_;
-    //       cgh.depends_on({res_jtb, res_jtj});
-    //       cgh.single_task([=] {
-    //         // Copy results
-    //         for (size_t i = 0; i < param_dim_capture * param_dim_capture; ++i) {
-    //           JTJ_device[i] = (T)i;
-    //         }
+    start_time = res_jtj.template get_profiling_info<sycl::info::event_profiling::command_start>();
+    end_time = res_jtj.template get_profiling_info<sycl::info::event_profiling::command_end>();
+    logger_->log(ILog::Level::DEBUG, "Sycl kernel syrk: took: {} us", (end_time - start_time) / 1000);
 
-    //         // for (size_t i = 0; i < param_dim_; ++i) {
-    //         //   JTb[i] = JTb_device[i];
-    //         // }
-    //       });
-    //     })
-    //     .wait();
-    queue_.wait();
+    start_time = res_jtb.template get_profiling_info<sycl::info::event_profiling::command_start>();
+    end_time = res_jtb.template get_profiling_info<sycl::info::event_profiling::command_end>();
+    logger_->log(ILog::Level::DEBUG, "Sycl kernel gemv: took: {} us", (end_time - start_time) / 1000);
+
     stop = t0.stop();
     logger_->log(ILog::Level::DEBUG, "Sycl kernel jacobian: took: {} us", stop);
 
     queue_.copy<T>(cost_reduction_, cost, 1).wait();
 
-    t0.start();
     queue_.copy<T>(JTJ_device, JTJ, param_dim_ * param_dim_).wait();
     queue_.copy<T>(JTb_device, JTb, param_dim_).wait();
-    stop = t0.stop();
-    logger_->log(ILog::Level::DEBUG, "Sycl result data copy took: {} us", stop);
 
     sycl::free(models_sycl_plus, queue_);
     sycl::free(model_sycl, queue_);

@@ -13,7 +13,7 @@
 const double sycl_vs_cpu_tolerance = 1e-1;
 
 TEST_F(TestTransform2D, SyclCostAndJacobian) {
-  sycl::queue queue{sycl::default_selector_v};
+  sycl::queue queue{sycl::default_selector_v, sycl::property::queue::enable_profiling{}};
 
   auto logger = std::make_shared<ConsoleLogger>();
 
@@ -71,16 +71,11 @@ TEST_F(TestTransform2D, Sycl2DTransformLM) {
 
   Timer t0;
   t0.start();
-  sycl::queue queue{sycl::default_selector_v};
+  sycl::queue queue{sycl::default_selector_v, sycl::property::queue::enable_profiling{}};
   auto solver = std::make_shared<LevenbergMarquardt<double>>(3, logger);
 
   auto cost = std::make_shared<NumericalCostSycl<double, Point2Distance>>(
-      logger, queue, transformed_pointcloud_[0].data(), pointcloud_[0].data(), 2, 2, 3, num_elements);
-
-  // const auto model = std::make_shared<Point2Distance>();
-  // auto cost = std::make_shared<NumericalCostForwardEuler<double>>(transformed_pointcloud_[0].data(),
-  //                                                                 pointcloud_[0].data(), 2, 2, 3, num_elements,
-  //                                                                 model);
+      logger, queue, transformed_pointcloud_[0].data(), pointcloud_[0].data(), 2, 2, 3, num_elements);                                                         
 
   double x0[]{0, 0, 0};
 

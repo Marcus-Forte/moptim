@@ -12,7 +12,7 @@ using namespace moptim;
 
 /// \todo pipelines with differnet machines
 TEST(TestJacobian, NumericalJacobianEquivalenceSycl) {
-  sycl::queue queue{sycl::default_selector_v};
+  sycl::queue queue{sycl::default_selector_v, sycl::property::queue::enable_profiling{}};
   auto logger = std::make_shared<ConsoleLogger>();
 
   const auto* x_data_ = TestData<double>::x_data_;

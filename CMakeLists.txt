@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(CTest)
 
 option(USE_CLANG_TIDY "Enable clang-tidy" OFF)
-option(WITH_SYCL "Use SYCL compilation for parallel computation" OFF)
+option(WITH_SYCL "Use SYCL compilation for parallel computation" ON)
 
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(code-format)
@@ -32,7 +32,8 @@ add_library(moptim
 
 if(WITH_SYCL)
   add_compile_definitions(EIGEN_ARM64_USE_SVE)
-  find_package(oneMath  REQUIRED)
+  find_package(oneMath REQUIRED)
+  message(STATUS "Found oneMath: ${oneMath_DIR}")
   include(CheckCXXCompilerFlag)
   check_cxx_compiler_flag("-fsycl" COMPILER_SUPPORTS_FSYCL)
   if(NOT COMPILER_SUPPORTS_FSYCL)
@@ -41,7 +42,7 @@ if(WITH_SYCL)
   set(SYCL_FLAGS -fsycl -fsycl-targets=native_cpu,nvptx64-nvidia-cuda,spir64)
   target_compile_options(moptim PUBLIC ${SYCL_FLAGS})
   target_link_options(moptim PUBLIC ${SYCL_FLAGS})
-  link_libraries(ONEMATH::onemath onemath_blas_generic) # The onemath library must have been compiled in the base container.
+  link_libraries(ONEMATH::onemath ONEMATH::onemath_blas_netlib gfortran) # The onemath library must have been compiled in the base container.
   # If `onemath_blas_cublas` is used, make sure to link `cuda` as well.
 endif()
 target_include_directories(moptim PUBLIC include)
