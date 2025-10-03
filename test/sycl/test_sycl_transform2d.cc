@@ -75,7 +75,7 @@ TEST_F(TestTransform2D, Sycl2DTransformLM) {
   auto solver = std::make_shared<LevenbergMarquardt<double>>(3, logger);
 
   auto cost = std::make_shared<NumericalCostSycl<double, Point2Distance>>(
-      logger, queue, transformed_pointcloud_[0].data(), pointcloud_[0].data(), 2, 2, 3, num_elements);                                                         
+      logger, queue, transformed_pointcloud_[0].data(), pointcloud_[0].data(), 2, 2, 3, num_elements);
 
   double x0[]{0, 0, 0};
 
