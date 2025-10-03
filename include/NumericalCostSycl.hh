@@ -160,7 +160,6 @@ class NumericalCostSycl : public ICost<T> {
     // // n := params
     // // k := residuals
 
-
     const oneapi::math::backend_selector<Backend> backend(queue_);
 
     // // C := J^T * J (params x params) (m x n)

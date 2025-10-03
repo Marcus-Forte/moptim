@@ -8,7 +8,8 @@
             "extensions": [
                 "ms-vscode.cpptools-extension-pack",
                 "llvm-vs-code-extensions.vscode-clangd",
-                "cschlosser.doxdocgen"
+                "cschlosser.doxdocgen",
+                "jebbs.plantuml"
             ],
             "settings": {
                 "clangd.arguments": [

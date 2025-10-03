@@ -4,14 +4,10 @@
 #include <algorithm>
 
 #include "AsyncConsoleLogger.hh"
-#include "ConsoleLogger.hh"
 #include "LevenbergMarquardt.hh"
 #include "NumericalCostForwardEuler.hh"
 #include "test_helper.hh"
 #include "transform2d.hh"
-
-// One the same CPU, sumulate load with:
-//
 
 namespace {
 int SetRealTimePriority() {
@@ -19,6 +15,7 @@ int SetRealTimePriority() {
   sch.sched_priority = 99;
   return sched_setscheduler(0, SCHED_FIFO, &sch);
 }
+
 void printUsage() {
   std::cout << "Usage: test_realtime <interval_us> <realtime>\n"
             << "  <interval_us> : Loop period in microseconds (e.g., 10000)\n"
@@ -59,7 +56,7 @@ int main(int argc, char** argv) {
                  [&](const Eigen::Vector2d& pt) { return transform * pt; });
 
   auto logger = std::make_shared<AsyncConsoleLogger>();
-  logger->setLevel(ILog::Level::DEBUG);
+  logger->setLevel(ILog::Level::INFO);
 
   std::chrono::high_resolution_clock::time_point last_start =
       std::chrono::high_resolution_clock::now() - std::chrono::microseconds(expected_period);
