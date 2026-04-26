@@ -21,11 +21,13 @@ TEST_F(TestTransform2D, SyclCostAndJacobian) {
 
   const auto model = std::make_shared<Point2Distance>();
 
-  NumericalCostSycl<double, Point2Distance> num_cost_sycl(logger, queue, transformed_pointcloud_[0].data(),
-                                                          pointcloud_[0].data(), 2, 2, 3, num_elements);
+    NumericalCostSycl<double, Point2Distance> num_cost_sycl(
+      logger, queue, std::span<const double>(transformed_pointcloud_[0].data(), transformed_pointcloud_.size() * 2),
+      std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3, num_elements);
 
-  NumericalCostForwardEuler<double> num_cost(transformed_pointcloud_[0].data(), pointcloud_[0].data(), 2, 2, 3,
-                                             num_elements, model);
+    NumericalCostForwardEuler<double> num_cost(
+      std::span<const double>(transformed_pointcloud_[0].data(), transformed_pointcloud_.size() * 2),
+      std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3, num_elements, model);
 
   double x[]{0.0, 0.0, 0.0};
 
@@ -46,13 +48,15 @@ TEST_F(TestTransform2D, SyclCostAndJacobian) {
   Eigen::Matrix<double, 3, 1> jtb;
   double total = 0.0;
 
-  num_cost_sycl.computeLinearSystem(x, jtj_sycl.data(), jtb_sycl.data(), &total_sycl);
+  num_cost_sycl.computeLinearSystem(x, std::span<double>(jtj_sycl.data(), jtj_sycl.size()),
+                                    std::span<double>(jtb_sycl.data(), jtb_sycl.size()), total_sycl);
 
   auto stop = t0.stop();
   std::cout << "Sycl cost jacobian: took " << stop << " us" << std::endl;
 
   t0.start();
-  num_cost.computeLinearSystem(x, jtj.data(), jtb.data(), &total);
+  num_cost.computeLinearSystem(x, std::span<double>(jtj.data(), jtj.size()), std::span<double>(jtb.data(), jtb.size()),
+                               total);
   stop = t0.stop();
   std::cout << "Known cost jacobian: took " << stop << " us" << std::endl;
 
@@ -75,7 +79,8 @@ TEST_F(TestTransform2D, Sycl2DTransformLM) {
   auto solver = std::make_shared<LevenbergMarquardt<double>>(3, logger);
 
   auto cost = std::make_shared<NumericalCostSycl<double, Point2Distance>>(
-      logger, queue, transformed_pointcloud_[0].data(), pointcloud_[0].data(), 2, 2, 3, num_elements);
+      logger, queue, std::span<const double>(transformed_pointcloud_[0].data(), transformed_pointcloud_.size() * 2),
+      std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3, num_elements);
 
   double x0[]{0, 0, 0};
 

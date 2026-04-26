@@ -12,7 +12,7 @@ using namespace moptim;
  *
  */
 struct Point3Distance : public IJacobianModel<double> {
-  void setup(const double* x) final {
+  void setup(std::span<const double> x) final {
     transform_.setIdentity();
     Eigen::AngleAxisd rollAngle(x[3], Eigen::Vector3d::UnitX());
     Eigen::AngleAxisd pitchAngle(x[4], Eigen::Vector3d::UnitY());
@@ -21,17 +21,17 @@ struct Point3Distance : public IJacobianModel<double> {
     transform_.translate(Eigen::Vector3d{x[0], x[1], x[2]});
   }
 
-  void f(const double* input, const double* measurement, double* f_x) final {
-    Eigen::Map<const Eigen::Vector3d> input_map{input};
-    Eigen::Map<const Eigen::Vector3d> measurement_map{measurement};
-    Eigen::Map<Eigen::Vector3d> f_x_map{f_x};
+  void f(std::span<const double> input, std::span<const double> measurement, std::span<double> f_x) final {
+    Eigen::Map<const Eigen::Vector3d> input_map{input.data()};
+    Eigen::Map<const Eigen::Vector3d> measurement_map{measurement.data()};
+    Eigen::Map<Eigen::Vector3d> f_x_map{f_x.data()};
 
     f_x_map = measurement_map - transform_ * input_map;
   }
 
-  void df(const double* input, const double* measurement, double* df_x) final {
-    Eigen::Map<const Eigen::Vector3d> input_map{input};
-    Eigen::Map<const Eigen::Vector3d> measurement_map{measurement};
+  void df(std::span<const double> input, std::span<const double> measurement, std::span<double> df_x) final {
+    Eigen::Map<const Eigen::Vector3d> input_map{input.data()};
+    Eigen::Map<const Eigen::Vector3d> measurement_map{measurement.data()};
     // f_x_map = measurement_map - transform_ * input_map;
     throw std::runtime_error("Unimplemented 3d point jacobian!");
   }

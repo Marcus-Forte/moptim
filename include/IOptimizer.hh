@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <span>
 #include <vector>
 
 #include "ICost.hh"
@@ -15,8 +16,8 @@ class IOptimizer {
  public:
   IOptimizer(size_t dimensions) : dimensions_(dimensions) {}
 
-  virtual Status step(T* x) const = 0;
-  virtual Status optimize(T* x) const = 0;
+  virtual Status step(std::span<T> x) const = 0;
+  virtual Status optimize(std::span<T> x) const = 0;
 
   inline void setMaxIterations(size_t max_iterations) { max_iterations_ = max_iterations; }
 

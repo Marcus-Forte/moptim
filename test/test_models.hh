@@ -25,16 +25,16 @@ class SimpleModelTest : public ::testing::Test {
 
 template <class T>
 struct SimpleModel : public IJacobianModel<T> {
-  void setup(const T* x) final {
+  void setup(std::span<const T> x) final {
     x_[0] = x[0];
     x_[1] = x[1];
   }
 
-  void f(const T* input, const T* measurement, T* f_x) final {
+  void f(std::span<const T> input, std::span<const T> measurement, std::span<T> f_x) final {
     f_x[0] = measurement[0] - x_[0] * input[0] / (x_[1] + input[0]);
   }
 
-  void df(const T* input, const T* measurement, T* df_x) final {
+  void df(std::span<const T> input, std::span<const T> measurement, std::span<T> df_x) final {
     const auto den = (x_[1] + input[0]);
     df_x[0] = -input[0] / den;
     df_x[1] = x_[0] * input[0] / (den * den);

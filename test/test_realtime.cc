@@ -65,7 +65,9 @@ int main(int argc, char** argv) {
   const auto model = std::make_shared<Point2Distance>();
 
   auto cost = std::make_shared<NumericalCostForwardEuler<double>>(
-      transformed_pointcloud[0].data(), pointcloud[0].data(), 2, 2, 3, transformed_pointcloud.size(), model);
+      std::span<const double>(transformed_pointcloud[0].data(), transformed_pointcloud.size() * 2),
+      std::span<const double>(pointcloud[0].data(), pointcloud.size() * 2), 2, 2, 3, transformed_pointcloud.size(),
+      model);
 
   Eigen::VectorXd x0{{0, 0, 0}};
 
@@ -78,7 +80,7 @@ int main(int argc, char** argv) {
     solver->clearCosts();
     solver->addCost(cost);
     x0.setZero();
-    solver->optimize(x0.data());
+    solver->optimize(std::span<double>(x0.data(), x0.size()));
     logger->log(ILog::Level::INFO, "Estimated: x={} y={} yaw={}", x0[0], x0[1], x0[2]);
 
     const uint64_t real_period = std::chrono::duration_cast<std::chrono::microseconds>(start - last_start).count();

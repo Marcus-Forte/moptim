@@ -17,7 +17,7 @@ GaussNewton<T>::GaussNewton(size_t dimensions, const std::shared_ptr<ILog>& logg
     : IOptimizer<T>(dimensions), logger_(logger), solver_(std::make_shared<EigenSolver<T>>(logger, dimensions)) {}
 
 template <class T>
-Status GaussNewton<T>::step(T* x) const {
+Status GaussNewton<T>::step(std::span<T> x) const {
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
 
@@ -27,19 +27,20 @@ Status GaussNewton<T>::step(T* x) const {
   MatrixT Hessian = MatrixT::Zero(this->dimensions_, this->dimensions_);
   VectorT BVec = VectorT::Zero(this->dimensions_);
   VectorT DeltaVec(this->dimensions_);
-  Eigen::Map<VectorT> XVec(x, this->dimensions_);
+  Eigen::Map<VectorT> XVec(x.data(), this->dimensions_);
   T totalCost = 0.0;
 
   // Compute Hessian
   for (const auto& cost : this->costs_) {
     T cost_val = 0.0;
-    cost->computeLinearSystem(x, JTJ.data(), JTb.data(), &cost_val);
+    cost->computeLinearSystem(x, std::span<T>(JTJ.data(), JTJ.size()), std::span<T>(JTb.data(), JTb.size()), cost_val);
     Hessian += JTJ;
     BVec += JTb;
     totalCost += cost_val;
   }
 
-  solver_->solve(Hessian.data(), BVec.data(), DeltaVec.data());
+  solver_->solve(std::span<const T>(Hessian.data(), Hessian.size()), std::span<const T>(BVec.data(), BVec.size()),
+                 std::span<T>(DeltaVec.data(), DeltaVec.size()));
   XVec += DeltaVec;
 
   logger_->log(ILog::Level::DEBUG, " Cost: {} ", totalCost);
@@ -48,7 +49,7 @@ Status GaussNewton<T>::step(T* x) const {
     return Status::CONVERGED;
   }
 
-  if (isDeltaSmall(DeltaVec.data(), this->dimensions_)) {
+  if (isDeltaSmall(std::span<const T>(DeltaVec.data(), DeltaVec.size()))) {
     logger_->log(ILog::Level::DEBUG, " Delta < {} ", std::sqrt(std::numeric_limits<T>::epsilon()));
     return Status::SMALL_DELTA;
   }
@@ -59,7 +60,7 @@ Status GaussNewton<T>::step(T* x) const {
 // Automate steps:
 // Verify: rel_tolerance, abs_tolerance, max iterations, cost
 template <class T>
-Status GaussNewton<T>::optimize(T* x) const {
+Status GaussNewton<T>::optimize(std::span<T> x) const {
   for (int i = 0; i < this->max_iterations_; i++) {
     static Timer timer;
     const auto delta = timer.stop();

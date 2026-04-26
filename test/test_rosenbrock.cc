@@ -11,11 +11,11 @@ using namespace moptim;
  *
  */
 struct Rosenbrock : public IModel<double> {
-  void setup(const double* x) override {
+  void setup(std::span<const double> x) override {
     x_[0] = x[0];
     x_[1] = x[1];
   }
-  void f(const double* /*input*/, const double* /*measurement*/, double* f_x) override {
+  void f(std::span<const double> /*input*/, std::span<const double> /*measurement*/, std::span<double> f_x) override {
     f_x[0] = 10 * (x_[1] - x_[0] * x_[0]);
     f_x[1] = 1 - x_[0];
   }
@@ -27,11 +27,13 @@ TEST(TestRosenbrock, TestRosenbrock) {
   Eigen::VectorXd x{{3.0, -1.0}};
 
   const auto model = std::make_shared<Rosenbrock>();
-  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(x.data(), x.data(), 1, 2, 2, 1, model);
+  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(x.data(), x.size()),
+                                                                  std::span<const double>(x.data(), x.size()), 1, 2, 2,
+                                                                  1, model);
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
 
-  solver.optimize(x.data());
+  solver.optimize(std::span<double>(x.data(), x.size()));
   EXPECT_NEAR(x[0], 1.0, 1e-5);
   EXPECT_NEAR(x[1], 1.0, 1e-5);
 }

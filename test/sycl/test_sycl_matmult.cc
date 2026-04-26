@@ -29,12 +29,12 @@ int main(int argc, char** argv) {
   Timer t;
   t.start();
   logger_.log(ILog::Level::DEBUG, "CPU -> GPU Copy...");
-  double* d_A = sycl::malloc_device<double>(DIM * DIM, queue);
-  double* d_B = sycl::malloc_device<double>(DIM * DIM, queue);
-  double* d_C = sycl::malloc_device<double>(DIM * DIM, queue);
+  std::span<double> d_A(sycl::malloc_device<double>(DIM * DIM, queue), DIM * DIM);
+  std::span<double> d_B(sycl::malloc_device<double>(DIM * DIM, queue), DIM * DIM);
+  std::span<double> d_C(sycl::malloc_device<double>(DIM * DIM, queue), DIM * DIM);
 
-  queue.copy<double>(A.data(), d_A, DIM * DIM).wait();
-  queue.copy<double>(B.data(), d_B, DIM * DIM).wait();
+  queue.copy<double>(A.data(), d_A.data(), DIM * DIM).wait();
+  queue.copy<double>(B.data(), d_B.data(), DIM * DIM).wait();
   auto delta_us = t.stop();
   logger_.log(ILog::Level::DEBUG, "Done. Took: {} us", delta_us);
 
@@ -44,7 +44,8 @@ int main(int argc, char** argv) {
     t.start();
     auto res = oneapi::math::blas::generic::column_major::gemm(queue, oneapi::math::transpose::nontrans,
                                                                oneapi::math::transpose::nontrans, DIM, DIM, DIM, 1.0,
-                                                               d_A, DIM, d_B, DIM, 0.0, d_C, DIM, {});
+                                                               d_A.data(), DIM, d_B.data(), DIM, 0.0, d_C.data(), DIM,
+                                                               {});
 
     res.wait();
     delta_us = t.stop();
@@ -60,7 +61,11 @@ int main(int argc, char** argv) {
   res.get();
 
   Eigen::MatrixXd d_C_copy(DIM, DIM);
-  queue.copy(d_C, d_C_copy.data(), DIM * DIM).wait();
+  queue.copy(d_C.data(), d_C_copy.data(), DIM * DIM).wait();
+
+  sycl::free(d_A.data(), queue);
+  sycl::free(d_B.data(), queue);
+  sycl::free(d_C.data(), queue);
 
   // std::cout << "CPU C = \n" << C << std::endl;
   // std::cout << "GPU C = \n" << d_C_copy << std::endl;

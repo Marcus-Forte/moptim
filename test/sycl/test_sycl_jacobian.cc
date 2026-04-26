@@ -15,8 +15,8 @@ TEST(TestJacobian, NumericalJacobianEquivalenceSycl) {
   sycl::queue queue{sycl::default_selector_v, sycl::property::queue::enable_profiling{}};
   auto logger = std::make_shared<ConsoleLogger>();
 
-  const auto* x_data_ = TestData<double>::x_data_;
-  const auto* y_data_ = TestData<double>::y_data_;
+  const auto x_data_ = std::span<const double>(TestData<double>::x_data_, TestData<double>::num_measurements);
+  const auto y_data_ = std::span<const double>(TestData<double>::y_data_, TestData<double>::num_measurements);
   const auto num_measurements = TestData<double>::num_measurements;
 
   NumericalCostSycl<double, SimpleModel<double>> num_cost_sycl(logger, queue, x_data_, y_data_, 1, 1, 2,
@@ -35,8 +35,10 @@ TEST(TestJacobian, NumericalJacobianEquivalenceSycl) {
   Eigen::Matrix<double, 2, 1> jtb;
   double total = 0.0;
 
-  num_cost_sycl.computeLinearSystem(x, jtj_sycl.data(), jtb_sycl.data(), &total_sycl);
-  num_cost.computeLinearSystem(x, jtj.data(), jtb.data(), &total);
+  num_cost_sycl.computeLinearSystem(x, std::span<double>(jtj_sycl.data(), jtj_sycl.size()),
+                                    std::span<double>(jtb_sycl.data(), jtb_sycl.size()), total_sycl);
+  num_cost.computeLinearSystem(x, std::span<double>(jtj.data(), jtj.size()), std::span<double>(jtb.data(), jtb.size()),
+                               total);
 
   std::cout << "num_jtj_sycl: " << jtj_sycl << std::endl;
   std::cout << "num_jtb_sycl: " << jtb_sycl << std::endl;

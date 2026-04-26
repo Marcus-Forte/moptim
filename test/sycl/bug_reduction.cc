@@ -36,21 +36,21 @@ int main() {
 
   /* Sycl */
 
-  auto* d_elements = sycl::malloc_device<int>(g_num_elements, queue);
-  queue.copy<int>(h_elements.data(), d_elements, g_num_elements).wait();
+  std::span<int> d_elements(sycl::malloc_device<int>(g_num_elements, queue), g_num_elements);
+  queue.copy<int>(h_elements.data(), d_elements.data(), g_num_elements).wait();
 
-  auto* d_sum = sycl::malloc_device<int>(1, queue);
-  auto* d_atomic_sum = sycl::malloc_device<int>(1, queue);
+  std::span<int> d_sum(sycl::malloc_device<int>(1, queue), 1);
+  std::span<int> d_atomic_sum(sycl::malloc_device<int>(1, queue), 1);
 
-  queue.memset(d_atomic_sum, 0, sizeof(int)).wait();
+  queue.memset(d_atomic_sum.data(), 0, sizeof(int)).wait();
 
   queue
       .submit([&](sycl::handler& cgh) {
         auto reduction =
-            sycl::reduction<int>(d_sum, 0, sycl::plus<>(), sycl::property::reduction::initialize_to_identity{});
+            sycl::reduction<int>(d_sum.data(), 0, sycl::plus<>(), sycl::property::reduction::initialize_to_identity{});
 
         auto reduction_atomic =
-            sycl::atomic_ref<int, sycl::memory_order::relaxed, sycl::memory_scope::device>(*d_atomic_sum);
+            sycl::atomic_ref<int, sycl::memory_order::relaxed, sycl::memory_scope::device>(*d_atomic_sum.data());
 
         auto out = sycl::stream(1024, 768, cgh);
 
@@ -76,14 +76,14 @@ int main() {
 
   int d_sum_result;
   int d_atomic_sum_result;
-  queue.copy<int>(d_sum, &d_sum_result, 1).wait();
-  queue.copy<int>(d_atomic_sum, &d_atomic_sum_result, 1).wait();
+  queue.copy<int>(d_sum.data(), &d_sum_result, 1).wait();
+  queue.copy<int>(d_atomic_sum.data(), &d_atomic_sum_result, 1).wait();
 
   std::cout << "h Sum (ground truth): " << h_sum << std::endl;
   std::cout << "d reduction Sum: " << d_sum_result << std::endl;
   std::cout << "d Atmoic Add Sum: " << d_atomic_sum_result << std::endl;
 
-  sycl::free(d_elements, queue);
-  sycl::free(d_sum, queue);
-  sycl::free(d_atomic_sum, queue);
+  sycl::free(d_elements.data(), queue);
+  sycl::free(d_sum.data(), queue);
+  sycl::free(d_atomic_sum.data(), queue);
 }

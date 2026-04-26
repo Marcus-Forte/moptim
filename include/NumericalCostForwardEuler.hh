@@ -2,6 +2,7 @@
 
 #include <Eigen/Dense>
 #include <memory>
+#include <span>
 
 #include "ICost.hh"
 #include "IModel.hh"
@@ -15,12 +16,12 @@ class NumericalCostForwardEuler : public ICost<T> {
 
   ~NumericalCostForwardEuler() override = default;
 
-  NumericalCostForwardEuler(const T* input, const T* observations, size_t input_dim, size_t observation_dim,
+  NumericalCostForwardEuler(std::span<const T> input, std::span<const T> observations, size_t input_dim, size_t observation_dim,
                             size_t param_dim, size_t num_elements, const std::shared_ptr<IModel<T>>& model);
 
-  T computeCost(const T* x) override;
+  T computeCost(std::span<const T> x) override;
 
-  void computeLinearSystem(const T* x, T* JTJ, T* JTb, T* cost) override;
+  void computeLinearSystem(std::span<const T> x, std::span<T> JTJ, std::span<T> JTb, T& cost) override;
 
  private:
   using ICost<T>::input_dim_;
@@ -35,8 +36,8 @@ class NumericalCostForwardEuler : public ICost<T> {
   VectorT residual_data_;
   VectorT residual_data_plus_;
 
-  const T* input_;
-  const T* observations_;
+  std::span<const T> input_;
+  std::span<const T> observations_;
   std::shared_ptr<IModel<T>> model_;
 };
 

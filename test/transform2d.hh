@@ -14,21 +14,21 @@ using namespace moptim;
  *
  */
 struct Point2Distance : public IJacobianModel<double> {
-  void setup(const double* x) final {
+  void setup(std::span<const double> x) final {
     transform_.setIdentity();
     transform_.rotate(x[2]);
     transform_.translate(Eigen::Vector2d{x[0], x[1]});
   }
 
-  void f(const double* input, const double* measurement, double* f_x) final {
-    Eigen::Map<const Eigen::Vector2d> target{measurement};
-    Eigen::Map<const Eigen::Vector2d> source{input};
-    Eigen::Map<Eigen::Vector2d> transformed_point{f_x};
+  void f(std::span<const double> input, std::span<const double> measurement, std::span<double> f_x) final {
+    Eigen::Map<const Eigen::Vector2d> target{measurement.data()};
+    Eigen::Map<const Eigen::Vector2d> source{input.data()};
+    Eigen::Map<Eigen::Vector2d> transformed_point{f_x.data()};
 
     transformed_point = target - transform_ * source;
   }
 
-  void df(const double* input, const double* measurement, double* df_x) final {
+  void df(std::span<const double> input, std::span<const double> measurement, std::span<double> df_x) final {
     throw std::runtime_error("Unimplemented 2d point jacobian!");
     // const auto* target = reinterpret_cast<const Eigen::Vector2d*>(measurement);
     // const auto* source = reinterpret_cast<const Eigen::Vector2d*>(input);

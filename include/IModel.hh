@@ -1,5 +1,7 @@
 #pragma once
 
+#include <span>
+
 template <class T>
 class IModel {
  public:
@@ -9,7 +11,7 @@ class IModel {
    *
    * @param x
    */
-  virtual void setup(const T* x) = 0;
+  virtual void setup(std::span<const T> x) = 0;
 
   /**
    * @brief Compute the model output f(x) for given input and measurement
@@ -18,7 +20,7 @@ class IModel {
    * @param measurement
    * @param[out] f_x
    */
-  virtual void f(const T* input, const T* measurement, T* f_x) = 0;
+  virtual void f(std::span<const T> input, std::span<const T> measurement, std::span<T> f_x) = 0;
 };
 
 template <class T>
@@ -33,5 +35,5 @@ class IJacobianModel : public IModel<T> {
    * @param measurement
    * @param[out] df_x
    */
-  virtual void df(const T* input, const T* measurement, T* df_x) = 0;
+  virtual void df(std::span<const T> input, std::span<const T> measurement, std::span<T> df_x) = 0;
 };

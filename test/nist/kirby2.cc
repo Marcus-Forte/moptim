@@ -43,13 +43,13 @@ const static std::vector<double> x_data{
     353.93E0, 355.83E0, 358.32E0, 360.20E0, 362.67E0, 364.53E0, 367.00E0, 371.30E0};
 
 struct Model : public IModel<double> {
-  void setup(const double* x) override {
+  void setup(std::span<const double> x) override {
     x_[0] = x[0];
     x_[1] = x[1];
     x_[2] = x[2];
   }
 
-  void f(const double* input, const double* measurement, double* f_x) override {
+  void f(std::span<const double> input, std::span<const double> measurement, std::span<double> f_x) override {
     const auto num = x_[0] + x_[1] * input[0] + x_[2] * input[0] * input[0];
     const auto den = 1 + x_[3] * input[0] + x_[4] * input[0] * input[0];
     f_x[0] = measurement[0] - num / den;
@@ -61,8 +61,9 @@ struct Model : public IModel<double> {
 TEST(kirby2, kirby2) {
   double x0[] = {2.0000000000E+00, -1.0000000000E-01, 3.0000000000E-03, -1.0000000000E-03, 1.0000000000E-05};
   const auto model = std::make_shared<Model>();
-  auto cost =
-      std::make_shared<NumericalCostForwardEuler<double>>(x_data.data(), y_data.data(), x_data.size(), 1, 3, model);
+  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(x_data),
+                                                                  std::span<const double>(y_data), x_data.size(), 1,
+                                                                  3, model);
   const auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::DEBUG);
   LevenbergMarquardt<double> solver(3, logger);

@@ -31,16 +31,16 @@ const std::vector<double> input = {
     4.800000e+00, 4.875000e+00, 4.950000e+00};
 
 struct CuveFittingModel : public IJacobianModel<double> {
-  void setup(const double* x) final {
+  void setup(std::span<const double> x) final {
     x_[0] = x[0];
     x_[1] = x[1];
   }
 
-  void f(const double* input, const double* measurement, double* f_x) final {
+  void f(std::span<const double> input, std::span<const double> measurement, std::span<double> f_x) final {
     f_x[0] = measurement[0] - std::exp(x_[0] * input[0] + x_[1]);
   }
 
-  void df(const double* input, const double* measurement, double* df_x) final {
+  void df(std::span<const double> input, std::span<const double> measurement, std::span<double> df_x) final {
     df_x[0] = -input[0] * std::exp(x_[0] * input[0] + x_[1]);
     df_x[1] = -std::exp(x_[0] * input[0] + x_[1]);
   }
@@ -50,14 +50,15 @@ struct CuveFittingModel : public IJacobianModel<double> {
 
 TEST(CurveFitting, SolvingWithNumericalCost) {
   const auto model = std::make_shared<CuveFittingModel>();
-  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(input.data(), observations.data(), 1, 1, 2,
+  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(input),
+                                                                  std::span<const double>(observations), 1, 1, 2,
                                                                   input.size(), model);
 
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
   Eigen::VectorXd x{{0.0, 0.0}};
 
-  solver.optimize(x.data());
+  solver.optimize(std::span<double>(x.data(), x.size()));
 
   EXPECT_NEAR(x[0], 0.291861, 5e-5);
   EXPECT_NEAR(x[1], 0.131439, 5e-5);
@@ -65,13 +66,14 @@ TEST(CurveFitting, SolvingWithNumericalCost) {
 
 TEST(CurveFitting, SolvingWithAnalyticalCost) {
   const auto model = std::make_shared<CuveFittingModel>();
-  auto cost = std::make_shared<AnalyticalCost<double>>(input.data(), observations.data(), 1, 1, 2, input.size(), model);
+  auto cost = std::make_shared<AnalyticalCost<double>>(std::span<const double>(input), std::span<const double>(observations), 1, 1,
+                                                       2, input.size(), model);
 
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
   Eigen::VectorXd x{{0.0, 0.0}};
 
-  solver.optimize(x.data());
+  solver.optimize(std::span<double>(x.data(), x.size()));
 
   EXPECT_NEAR(x[0], 0.291861, 5e-5);
   EXPECT_NEAR(x[1], 0.131439, 5e-5);
@@ -84,13 +86,14 @@ TEST(CurveFitting, CurveFittingLMNumerical) {
   for (int i = 0; i < 10000; ++i) {
     const auto startTime = std::chrono::high_resolution_clock::now();
 
-    auto cost = std::make_shared<NumericalCostForwardEuler<double>>(input.data(), observations.data(), 1, 1, 2,
-                                                                    input.size(), model);
+    auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(input),
+                                    std::span<const double>(observations), 1, 1, 2,
+                                    input.size(), model);
 
     LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
     solver.addCost(cost);
 
-    solver.optimize(x.data());
+    solver.optimize(std::span<double>(x.data(), x.size()));
     const auto deltaTime =
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now() - startTime)
             .count();
@@ -108,13 +111,14 @@ TEST(CurveFitting, CurveFittingLMAnalytical) {
   for (int i = 0; i < 10000; ++i) {
     const auto startTime = std::chrono::high_resolution_clock::now();
 
-    auto cost =
-        std::make_shared<AnalyticalCost<double>>(input.data(), observations.data(), 1, 1, 2, input.size(), model);
+    auto cost = std::make_shared<AnalyticalCost<double>>(std::span<const double>(input),
+                               std::span<const double>(observations), 1, 1, 2, input.size(),
+                               model);
 
     LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
     solver.addCost(cost);
 
-    solver.optimize(x.data());
+    solver.optimize(std::span<double>(x.data(), x.size()));
     const auto deltaTime =
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::high_resolution_clock::now() - startTime)
             .count();
