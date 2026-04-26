@@ -1,5 +1,7 @@
 CompileFlags:
+  Compiler: /opt/sycl/bin/clang++
   Add: [-I/opt/sycl/include/]
+  Remove: [-fsycl-targets=*]
 Diagnostics:
   Suppress:
     - drv_unknown_argument
