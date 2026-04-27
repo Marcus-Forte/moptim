@@ -58,8 +58,7 @@ TEST(nelson, nelson) {
   const auto model = std::make_shared<Model>();
   auto cost = std::make_shared<NumericalCostForwardEuler<double>>(
       std::span<const double>(x_data, sizeof(x_data) / sizeof(double)),
-      std::span<const double>(y_data, sizeof(y_data) / sizeof(double)), 2, 1, 3,
-      model);
+      std::span<const double>(y_data, sizeof(y_data) / sizeof(double)), 2, 1, 3, model);
   const auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::DEBUG);
   LevenbergMarquardt<double> solver(3, logger);

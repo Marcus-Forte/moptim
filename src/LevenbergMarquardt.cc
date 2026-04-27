@@ -11,11 +11,11 @@ namespace moptim {
 template <class T>
 LevenbergMarquardt<T>::LevenbergMarquardt(size_t dimensions, const std::shared_ptr<ILog>& logger,
                                           const std::shared_ptr<ISolver<T>>& solver)
-    : IOptimizer<T>(dimensions), logger_(logger), solver_(solver) {}
+    : IOptimizer<T>(dimensions), solver_(solver), logger_(logger) {}
 
 template <class T>
 LevenbergMarquardt<T>::LevenbergMarquardt(size_t dimensions, const std::shared_ptr<ILog>& logger)
-    : IOptimizer<T>(dimensions), logger_(logger), solver_(std::make_shared<EigenSolver<T>>(logger, dimensions)) {}
+    : IOptimizer<T>(dimensions), solver_(std::make_shared<EigenSolver<T>>(logger, dimensions)), logger_(logger) {}
 
 template <class T>
 Status LevenbergMarquardt<T>::step(std::span<T> x) const {
@@ -58,7 +58,7 @@ Status LevenbergMarquardt<T>::step(std::span<T> x) const {
     Hessian += lm_lambda_ * HessianDiagnonal;
 
     solver_->solve(std::span<const T>(Hessian.data(), Hessian.size()), std::span<const T>(BVec.data(), BVec.size()),
-             std::span<T>(DeltaVec.data(), DeltaVec.size()));
+                   std::span<T>(DeltaVec.data(), DeltaVec.size()));
 
     XiVec = XVec + DeltaVec;
 

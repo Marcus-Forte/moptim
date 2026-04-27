@@ -21,9 +21,8 @@ TYPED_TEST(SimpleModelTest, GaussNewton) {
 
   const auto model = std::make_shared<SimpleModel<T>>();
   auto cost = std::make_shared<NumericalCostForwardEuler<T>>(
-      std::span<const T>(this->test_data_.x_data_, this->test_data_.num_measurements),
-      std::span<const T>(this->test_data_.y_data_, this->test_data_.num_measurements), 1, 1, 2,
-      model);
+      std::mdspan(this->test_data_.x_data_, this->test_data_.num_measurements, 1),
+      std::mdspan(this->test_data_.y_data_, this->test_data_.num_measurements, 1), 2, model);
 
   GaussNewton<T> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::DEBUG));
 
@@ -43,9 +42,8 @@ TYPED_TEST(SimpleModelTest, GaussNewtonAnalytical) {
 
   const auto model = std::make_shared<SimpleModel<T>>();
   auto cost = std::make_shared<AnalyticalCost<T>>(
-      std::span<const T>(this->test_data_.x_data_, this->test_data_.num_measurements),
-      std::span<const T>(this->test_data_.y_data_, this->test_data_.num_measurements), 1, 1, 2,
-      model);
+      std::mdspan(this->test_data_.x_data_, this->test_data_.num_measurements, 1),
+      std::mdspan(this->test_data_.y_data_, this->test_data_.num_measurements, 1), 2, model);
   GaussNewton<T> solver(2, std::make_shared<ConsoleLogger>());
 
   solver.addCost(cost);
@@ -62,9 +60,8 @@ TYPED_TEST(SimpleModelTest, LevenbergMarquardt) {
 
   const auto model = std::make_shared<SimpleModel<T>>();
   auto cost = std::make_shared<AnalyticalCost<T>>(
-      std::span<const T>(this->test_data_.x_data_, this->test_data_.num_measurements),
-      std::span<const T>(this->test_data_.y_data_, this->test_data_.num_measurements), 1, 1, 2,
-      model);
+      std::mdspan(this->test_data_.x_data_, this->test_data_.num_measurements, 1),
+      std::mdspan(this->test_data_.y_data_, this->test_data_.num_measurements, 1), 2, model);
 
   LevenbergMarquardt<T> solver(2, std::make_shared<ConsoleLogger>());
 
@@ -82,9 +79,8 @@ TYPED_TEST(SimpleModelTest, LevenbergMarquardtAnalytical) {
 
   const auto model = std::make_shared<SimpleModel<T>>();
   auto cost = std::make_shared<AnalyticalCost<T>>(
-      std::span<const T>(this->test_data_.x_data_, this->test_data_.num_measurements),
-      std::span<const T>(this->test_data_.y_data_, this->test_data_.num_measurements), 1, 1, 2,
-      model);
+      std::mdspan(this->test_data_.x_data_, this->test_data_.num_measurements, 1),
+      std::mdspan(this->test_data_.y_data_, this->test_data_.num_measurements, 1), 2, model);
 
   LevenbergMarquardt<T> solver(2, std::make_shared<ConsoleLogger>());
 

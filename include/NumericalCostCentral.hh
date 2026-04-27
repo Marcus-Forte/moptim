@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <mdspan>
 #include <memory>
 #include <span>
 
@@ -16,8 +17,9 @@ class NumericalCostCentral : public ICost<T> {
 
   ~NumericalCostCentral() override = default;
 
-  NumericalCostCentral(std::span<const T> input, std::span<const T> observations, size_t input_dim,
-                       size_t observation_dim, size_t param_dim, const std::shared_ptr<IModel<T>>& model);
+  NumericalCostCentral(std::mdspan<const T, std::dextents<size_t, 2>> input,
+                       std::mdspan<const T, std::dextents<size_t, 2>> observations, size_t param_dim,
+                       const std::shared_ptr<IModel<T>>& model);
 
   T computeCost(std::span<const T> x) override;
 
@@ -37,8 +39,8 @@ class NumericalCostCentral : public ICost<T> {
   VectorT residual_data_plus_;
   VectorT residual_data_minus_;
 
-  std::span<const T> input_;
-  std::span<const T> observations_;
+  std::mdspan<const T, std::dextents<size_t, 2>> input_elements_;
+  std::mdspan<const T, std::dextents<size_t, 2>> observation_elements_;
   std::shared_ptr<IModel<T>> model_;
 };
 

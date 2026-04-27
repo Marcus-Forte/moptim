@@ -7,6 +7,8 @@ option(WITH_SYCL "Use SYCL compilation for parallel computation" ON)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(code-format)
 
+add_compile_options("-Wall")
+
 # \todo Clang tidy does not work with sycl
 if(USE_CLANG_TIDY)
   set(CMAKE_CXX_CLANG_TIDY "clang-tidy")

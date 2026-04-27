@@ -1,41 +1,35 @@
 #include "NumericalCostForwardEuler.hh"
-#include "CostSizeUtils.hh"
 
 #include <cassert>
 #include <cmath>
 #include <limits>
+#include <ranges>
+
+#include "CostComputeUtils.hh"
 
 namespace moptim {
 
 template <class T>
-NumericalCostForwardEuler<T>::NumericalCostForwardEuler(std::span<const T> input, std::span<const T> observations, size_t input_dim,
-                                                        size_t observation_dim, size_t param_dim,
-                                                        const std::shared_ptr<IModel<T>>& model)
-    : ICost<T>(input_dim, observation_dim, param_dim,
-               detail::inferNumElements(input, observations, input_dim, observation_dim)),
-      input_(input),
-      observations_(observations),
+NumericalCostForwardEuler<T>::NumericalCostForwardEuler(std::mdspan<const T, std::dextents<size_t, 2>> input,
+                                                        std::mdspan<const T, std::dextents<size_t, 2>> observations,
+                                                        size_t param_dim, const std::shared_ptr<IModel<T>>& model)
+    : ICost<T>(input.extent(1), observations.extent(1), param_dim, input.extent(0)),
+      input_elements_(input),
+      observation_elements_(observations),
       model_(model) {
+  if (input.extent(0) != observations.extent(0)) {
+    throw std::invalid_argument("Input and observation must have the same number of elements");
+  }
   jacobian_data_.resize(observation_dim_ * num_elements_, param_dim_);
   residual_data_.resize(observation_dim_ * num_elements_);
   residual_data_plus_.resize(observation_dim_ * num_elements_);
 }
 
-/// \todo shared between analytical and numerical
 /// \todo Eigen::Map?
 template <class T>
 T NumericalCostForwardEuler<T>::computeCost(std::span<const T> x) {
-  assert(x.size() == param_dim_);
-
-  model_->setup(x);
-
-  for (size_t i = 0; i < num_elements_; ++i) {
-    const auto row = i * observation_dim_;
-    model_->f(input_.subspan(i * input_dim_, input_dim_), observations_.subspan(row, observation_dim_),
-              std::span<T>(residual_data_.data() + row, observation_dim_));
-  }
-
-  return residual_data_.squaredNorm();
+  return detail::computeCost(x, param_dim_, *model_, input_elements_, observation_elements_,
+                             std::span<T>(residual_data_.data(), residual_data_.size()));
 }
 
 template <class T>
@@ -48,9 +42,12 @@ void NumericalCostForwardEuler<T>::computeLinearSystem(std::span<const T> x, std
   model_->setup(x);
 
   const auto computeResiduals = [this](std::span<T> residual_out) {
-    for (size_t i = 0; i < num_elements_; ++i) {
+    const auto* input_data = input_elements_.data_handle();
+    const auto* observation_data = observation_elements_.data_handle();
+    for (const size_t i : std::views::iota(size_t{0}, input_elements_.extent(0))) {
       const auto row = i * observation_dim_;
-      model_->f(input_.subspan(i * input_dim_, input_dim_), observations_.subspan(row, observation_dim_),
+      model_->f(std::span<const T>(input_data + (i * input_dim_), input_dim_),
+                std::span<const T>(observation_data + row, observation_dim_),
                 residual_out.subspan(row, observation_dim_));
     }
   };

@@ -37,12 +37,12 @@ struct CuveFittingModel : public IJacobianModel<double> {
   }
 
   void f(std::span<const double> input, std::span<const double> measurement, std::span<double> f_x) final {
-    f_x[0] = measurement[0] - std::exp(x_[0] * input[0] + x_[1]);
+    f_x[0] = measurement[0] - std::exp((x_[0] * input[0]) + x_[1]);
   }
 
   void df(std::span<const double> input, std::span<const double> measurement, std::span<double> df_x) final {
-    df_x[0] = -input[0] * std::exp(x_[0] * input[0] + x_[1]);
-    df_x[1] = -std::exp(x_[0] * input[0] + x_[1]);
+    df_x[0] = -input[0] * std::exp((x_[0] * input[0]) + x_[1]);
+    df_x[1] = -std::exp((x_[0] * input[0]) + x_[1]);
   }
 
   Eigen::Vector2d x_;
@@ -50,8 +50,8 @@ struct CuveFittingModel : public IJacobianModel<double> {
 
 TEST(CurveFitting, SolvingWithNumericalCost) {
   const auto model = std::make_shared<CuveFittingModel>();
-  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(input),
-                                                                  std::span<const double>(observations), 1, 1, 2, model);
+  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(
+      std::mdspan(input.data(), input.size(), 1), std::mdspan(observations.data(), observations.size(), 1), 2, model);
 
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
@@ -65,8 +65,8 @@ TEST(CurveFitting, SolvingWithNumericalCost) {
 
 TEST(CurveFitting, SolvingWithAnalyticalCost) {
   const auto model = std::make_shared<CuveFittingModel>();
-  auto cost = std::make_shared<AnalyticalCost<double>>(std::span<const double>(input), std::span<const double>(observations), 1, 1,
-                                                       2, model);
+  auto cost = std::make_shared<AnalyticalCost<double>>(
+      std::mdspan(input.data(), input.size(), 1), std::mdspan(observations.data(), observations.size(), 1), 2, model);
 
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
@@ -85,8 +85,8 @@ TEST(CurveFitting, CurveFittingLMNumerical) {
   for (int i = 0; i < 10000; ++i) {
     const auto startTime = std::chrono::high_resolution_clock::now();
 
-    auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(input),
-                                    std::span<const double>(observations), 1, 1, 2, model);
+    auto cost = std::make_shared<NumericalCostForwardEuler<double>>(
+        std::mdspan(input.data(), input.size(), 1), std::mdspan(observations.data(), observations.size(), 1), 2, model);
 
     LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
     solver.addCost(cost);
@@ -109,8 +109,8 @@ TEST(CurveFitting, CurveFittingLMAnalytical) {
   for (int i = 0; i < 10000; ++i) {
     const auto startTime = std::chrono::high_resolution_clock::now();
 
-    auto cost = std::make_shared<AnalyticalCost<double>>(std::span<const double>(input),
-                               std::span<const double>(observations), 1, 1, 2, model);
+    auto cost = std::make_shared<AnalyticalCost<double>>(
+        std::mdspan(input.data(), input.size(), 1), std::mdspan(observations.data(), observations.size(), 1), 2, model);
 
     LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
     solver.addCost(cost);

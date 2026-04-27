@@ -61,9 +61,8 @@ TEST(TestPowell, TestPowell) {
   const std::array<double, 4> input{0.0, 0.0, 0.0, 0.0};
   const std::array<double, 4> measurement{0.0, 0.0, 0.0, 0.0};
 
-  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(input),
-                                                                  std::span<const double>(measurement), 4, 4, 4,
-                                                                  model);
+  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::mdspan(input.data(), 1, 4),
+                                                                  std::mdspan(measurement.data(), 1, 4), 4, model);
   GaussNewton<double> solver(4, std::make_shared<ConsoleLogger>());
   solver.setMaxIterations(20);
   solver.addCost(cost);
@@ -137,18 +136,14 @@ TEST(TestPowell, TestPowerllSplit) {
   const std::array<double, 4> input{0.0, 0.0, 0.0, 0.0};
   const std::array<double, 1> measurement{0.0};
 
-    auto cost1 = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(input),
-                                     std::span<const double>(measurement), 4, 1,
-                                     4, std::make_shared<PowellF0>());
-    auto cost2 = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(input),
-                                     std::span<const double>(measurement), 4, 1,
-                                     4, std::make_shared<PowellF1>());
-    auto cost3 = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(input),
-                                     std::span<const double>(measurement), 4, 1,
-                                     4, std::make_shared<PowellF2>());
-    auto cost4 = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(input),
-                                     std::span<const double>(measurement), 4, 1,
-                                     4, std::make_shared<PowellF3>());
+  auto cost1 = std::make_shared<NumericalCostForwardEuler<double>>(
+      std::mdspan(input.data(), 1, 4), std::mdspan(measurement.data(), 1, 1), 4, std::make_shared<PowellF0>());
+  auto cost2 = std::make_shared<NumericalCostForwardEuler<double>>(
+      std::mdspan(input.data(), 1, 4), std::mdspan(measurement.data(), 1, 1), 4, std::make_shared<PowellF1>());
+  auto cost3 = std::make_shared<NumericalCostForwardEuler<double>>(
+      std::mdspan(input.data(), 1, 4), std::mdspan(measurement.data(), 1, 1), 4, std::make_shared<PowellF2>());
+  auto cost4 = std::make_shared<NumericalCostForwardEuler<double>>(
+      std::mdspan(input.data(), 1, 4), std::mdspan(measurement.data(), 1, 1), 4, std::make_shared<PowellF3>());
 
   auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::INFO);

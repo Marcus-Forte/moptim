@@ -29,9 +29,8 @@ TEST(TestRosenbrock, TestRosenbrock) {
   const std::array<double, 2> measurement{0.0, 0.0};
 
   const auto model = std::make_shared<Rosenbrock>();
-  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(input),
-                                                                  std::span<const double>(measurement), 2, 2, 2,
-                                                                  model);
+  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::mdspan(input.data(), 1, 2),
+                                                                  std::mdspan(measurement.data(), 1, 2), 2, model);
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
 

@@ -1,37 +1,28 @@
 #include "AnalyticalCost.hh"
-#include "CostSizeUtils.hh"
 
 #include <cassert>
+#include <ranges>
+
+#include "CostComputeUtils.hh"
 
 namespace moptim {
 template <class T>
-AnalyticalCost<T>::AnalyticalCost(std::span<const T> input, std::span<const T> observations, size_t input_dim,
-                                  size_t observation_dim, size_t param_dim,
+AnalyticalCost<T>::AnalyticalCost(std::mdspan<const T, std::dextents<size_t, 2>> input,
+                                  std::mdspan<const T, std::dextents<size_t, 2>> observations, size_t param_dim,
                                   const std::shared_ptr<IJacobianModel<T>>& model)
-    : ICost<T>(input_dim, observation_dim, param_dim,
-               detail::inferNumElements(input, observations, input_dim, observation_dim)),
-      input_{input},
-      observations_{observations},
+    : ICost<T>(input.extent(1), observations.extent(1), param_dim, input.extent(0)),
+      input_elements_(input),
+      observation_elements_(observations),
       model_{model} {
   // We fill the jacobian transposed already
   jacobian_transposed_data_.resize(param_dim_, observation_dim_ * num_elements_);
   residual_data_.resize(observation_dim_ * num_elements_);
 }
 
-/// \todo shared between analytical and numerical
 template <class T>
 T AnalyticalCost<T>::computeCost(std::span<const T> x) {
-  assert(x.size() == param_dim_);
-
-  model_->setup(x);
-
-  for (size_t i = 0; i < num_elements_; ++i) {
-    const auto row = i * observation_dim_;
-    model_->f(input_.subspan(i * input_dim_, input_dim_), observations_.subspan(row, observation_dim_),
-              std::span<T>(residual_data_.data() + row, observation_dim_));
-  }
-
-  return residual_data_.squaredNorm();
+  return detail::computeCost(x, param_dim_, *model_, input_elements_, observation_elements_,
+                             std::span<T>(residual_data_.data(), residual_data_.size()));
 }
 
 template <class T>
@@ -42,12 +33,16 @@ void AnalyticalCost<T>::computeLinearSystem(std::span<const T> x, std::span<T> J
 
   model_->setup(x);
 
+  const auto* input_data = input_elements_.data_handle();
+  const auto* observation_data = observation_elements_.data_handle();
   size_t k = 0;
-  for (size_t i = 0; i < num_elements_; ++i) {
+  for (const size_t i : std::views::iota(size_t{0}, input_elements_.extent(0))) {
     const auto row = i * observation_dim_;
-    model_->f(input_.subspan(i * input_dim_, input_dim_), observations_.subspan(row, observation_dim_),
+    model_->f(std::span<const T>(input_data + (i * input_dim_), input_dim_),
+              std::span<const T>(observation_data + row, observation_dim_),
               std::span<T>(residual_data_.data() + row, observation_dim_));
-    model_->df(input_.subspan(i * input_dim_, input_dim_), observations_.subspan(row, observation_dim_),
+    model_->df(std::span<const T>(input_data + (i * input_dim_), input_dim_),
+               std::span<const T>(observation_data + row, observation_dim_),
                std::span<T>(jacobian_transposed_data_.data() + k, param_dim_ * observation_dim_));
     k += param_dim_ * observation_dim_;
   }

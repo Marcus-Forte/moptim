@@ -72,9 +72,8 @@ struct Model : public IModel<double> {
 TEST(chwirut1, chwirut1) {
   double x0[3] = {0.1, 0.01, 0.02};
   const auto model = std::make_shared<Model>();
-  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(x_data),
-                                                                  std::span<const double>(y_data), 1, 1, 3,
-                                                                  model);
+  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(
+      std::mdspan(x_data.data(), x_data.size(), 1), std::mdspan(y_data.data(), y_data.size(), 1), 3, model);
   const auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::DEBUG);
   LevenbergMarquardt<double> solver(3, logger);

@@ -61,9 +61,8 @@ struct Model : public IModel<double> {
 TEST(kirby2, kirby2) {
   double x0[] = {2.0000000000E+00, -1.0000000000E-01, 3.0000000000E-03, -1.0000000000E-03, 1.0000000000E-05};
   const auto model = std::make_shared<Model>();
-  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(x_data),
-                                                                  std::span<const double>(y_data), x_data.size(), 1,
-                                                                  3, model);
+  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(
+      std::span<const double>(x_data), std::span<const double>(y_data), x_data.size(), 1, 3, model);
   const auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::DEBUG);
   LevenbergMarquardt<double> solver(3, logger);

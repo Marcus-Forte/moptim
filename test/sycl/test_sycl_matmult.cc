@@ -42,10 +42,9 @@ int main(int argc, char** argv) {
   auto res = std::async(std::launch::async, [&]() {
     logger_.log(ILog::Level::DEBUG, "GPU Computing...");
     t.start();
-    auto res = oneapi::math::blas::generic::column_major::gemm(queue, oneapi::math::transpose::nontrans,
-                                                               oneapi::math::transpose::nontrans, DIM, DIM, DIM, 1.0,
-                                                               d_A.data(), DIM, d_B.data(), DIM, 0.0, d_C.data(), DIM,
-                                                               {});
+    auto res = oneapi::math::blas::generic::column_major::gemm(
+        queue, oneapi::math::transpose::nontrans, oneapi::math::transpose::nontrans, DIM, DIM, DIM, 1.0, d_A.data(),
+        DIM, d_B.data(), DIM, 0.0, d_C.data(), DIM, {});
 
     res.wait();
     delta_us = t.stop();

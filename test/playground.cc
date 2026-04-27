@@ -26,5 +26,4 @@ int main(int argc, char** argv) {
 
   const auto delta = t0.stop(false);
   logger.log(ILog::Level::INFO, "Elapsed time: {} us", delta);
-
 }

@@ -21,11 +21,11 @@ TEST_F(TestTransform2D, SyclCostAndJacobian) {
 
   const auto model = std::make_shared<Point2Distance>();
 
-    NumericalCostSycl<double, Point2Distance> num_cost_sycl(
+  NumericalCostSycl<double, Point2Distance> num_cost_sycl(
       logger, queue, std::span<const double>(transformed_pointcloud_[0].data(), transformed_pointcloud_.size() * 2),
       std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3, num_elements);
 
-    NumericalCostForwardEuler<double> num_cost(
+  NumericalCostForwardEuler<double> num_cost(
       std::span<const double>(transformed_pointcloud_[0].data(), transformed_pointcloud_.size() * 2),
       std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3, model);
 

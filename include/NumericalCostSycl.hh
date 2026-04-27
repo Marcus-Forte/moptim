@@ -49,8 +49,8 @@ class NumericalCostSycl : public ICost<T> {
     cost_reduction_ = std::span<T>(sycl::malloc_device<T>(1, queue_), 1);
     jacobian_data_ = std::span<T>(sycl::malloc_device<T>(observation_dim_ * num_elements * param_dim_, queue_),
                                   observation_dim_ * num_elements * param_dim_);
-    residual_data_ = std::span<T>(sycl::malloc_device<T>(observation_dim_ * num_elements, queue_),
-                                  observation_dim_ * num_elements);
+    residual_data_ =
+        std::span<T>(sycl::malloc_device<T>(observation_dim_ * num_elements, queue_), observation_dim_ * num_elements);
     // One per column
     residual_plus_data_ = std::span<T>(sycl::malloc_device<T>(observation_dim_ * num_elements * param_dim_, queue_),
                                        observation_dim_ * num_elements * param_dim_);
@@ -145,8 +145,8 @@ class NumericalCostSycl : public ICost<T> {
         Eigen::Map<VectorT> jacobian_map(jacobian_data_capture, residuals_dim_capture, param_dim_capture);
 
         models_sycl_plus[ItemCol].f(std::span<const T>(&input_capture[ItemRow], output_dim_capture),
-                  std::span<const T>(&observations_capture[ItemRow], output_dim_capture),
-                  std::span<T>(residual_plus_map.data(), output_dim_capture));
+                                    std::span<const T>(&observations_capture[ItemRow], output_dim_capture),
+                                    std::span<T>(residual_plus_map.data(), output_dim_capture));
 
         jacobian_map.block(ItemRow, ItemCol, output_dim_capture, 1) = (residual_plus_map - residual_map) / g_step;
       });
@@ -261,8 +261,8 @@ class NumericalCostSycl : public ICost<T> {
         const auto ItemRow = id.get_id() * observation_dim_capture;
         Eigen::Map<VectorT> residual_map(&residual_data_capture[ItemRow], observation_dim_capture);
         model_sycl[0].f(std::span<const T>(&input_capture[ItemRow], observation_dim_capture),
-                std::span<const T>(&observations_capture[ItemRow], observation_dim_capture),
-                std::span<T>(&residual_data_capture[ItemRow], observation_dim_capture));
+                        std::span<const T>(&observations_capture[ItemRow], observation_dim_capture),
+                        std::span<T>(&residual_data_capture[ItemRow], observation_dim_capture));
         reduction += residual_map.squaredNorm();
       });
     });

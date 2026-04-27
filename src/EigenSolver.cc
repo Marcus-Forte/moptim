@@ -1,8 +1,7 @@
 #include "EigenSolver.hh"
 
-#include <cassert>
-
 #include <Eigen/Dense>
+#include <cassert>
 
 template <typename T>
 void EigenSolver<T>::solve(std::span<const T> A, std::span<const T> b, std::span<T> x) const {

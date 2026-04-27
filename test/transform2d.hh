@@ -2,8 +2,8 @@
 
 #include <gtest/gtest.h>
 
-#include <cmath>
 #include <Eigen/Dense>
+#include <cmath>
 
 #include "IModel.hh"
 #include "IOptimizer.hh"

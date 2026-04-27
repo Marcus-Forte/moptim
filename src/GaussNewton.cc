@@ -11,11 +11,11 @@ namespace moptim {
 template <class T>
 GaussNewton<T>::GaussNewton(size_t dimensions, const std::shared_ptr<ILog>& logger,
                             const std::shared_ptr<ISolver<T>>& solver)
-    : IOptimizer<T>(dimensions), logger_(logger), solver_(solver) {}
+    : IOptimizer<T>(dimensions), solver_(solver), logger_(logger) {}
 
 template <class T>
 GaussNewton<T>::GaussNewton(size_t dimensions, const std::shared_ptr<ILog>& logger)
-    : IOptimizer<T>(dimensions), logger_(logger), solver_(std::make_shared<EigenSolver<T>>(logger, dimensions)) {}
+    : IOptimizer<T>(dimensions), solver_(std::make_shared<EigenSolver<T>>(logger, dimensions)), logger_(logger) {}
 
 template <class T>
 Status GaussNewton<T>::step(std::span<T> x) const {
