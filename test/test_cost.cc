@@ -13,14 +13,12 @@ using namespace moptim;
 TEST(TestCost, CostEquivalence) {
   Eigen::VectorXd x{{0.1, 0.1}};
 
-  const auto model = std::make_shared<SimpleModel<double>>();
-
-  AnalyticalCost<double> an_cost(std::mdspan(TestData<double>::x_data_, TestData<double>::num_measurements, 1),
+  AnalyticalCost<SimpleModel<double>, double> an_cost(std::mdspan(TestData<double>::x_data_, TestData<double>::num_measurements, 1),
                                  std::mdspan(TestData<double>::y_data_, TestData<double>::num_measurements, 1), 2,
-                                 model);
-  NumericalCostForwardEuler<double> num_cost(
+                                 SimpleModel<double>{});
+  NumericalCostForwardEuler<SimpleModel<double>, double> num_cost(
       std::mdspan(TestData<double>::x_data_, TestData<double>::num_measurements, 1),
-      std::mdspan(TestData<double>::y_data_, TestData<double>::num_measurements, 1), 2, model);
+      std::mdspan(TestData<double>::y_data_, TestData<double>::num_measurements, 1), 2, SimpleModel<double>{});
 
   const auto an_cost_result = an_cost.computeCost(std::span<const double>(x.data(), x.size()));
   const auto num_cost_result = num_cost.computeCost(std::span<const double>(x.data(), x.size()));
@@ -32,14 +30,12 @@ TEST(TestCost, CostEquivalence) {
 TEST(TestCost, JacobianEquivalence) {
   Eigen::VectorXd x{{0.1, 0.1}};
 
-  const auto model = std::make_shared<SimpleModel<double>>();
-
-  AnalyticalCost<double> an_cost(std::mdspan(TestData<double>::x_data_, TestData<double>::num_measurements, 1),
+  AnalyticalCost<SimpleModel<double>, double> an_cost(std::mdspan(TestData<double>::x_data_, TestData<double>::num_measurements, 1),
                                  std::mdspan(TestData<double>::y_data_, TestData<double>::num_measurements, 1), 2,
-                                 model);
-  NumericalCostForwardEuler<double> num_cost(
+                                 SimpleModel<double>{});
+  NumericalCostForwardEuler<SimpleModel<double>, double> num_cost(
       std::mdspan(TestData<double>::x_data_, TestData<double>::num_measurements, 1),
-      std::mdspan(TestData<double>::y_data_, TestData<double>::num_measurements, 1), 2, model);
+      std::mdspan(TestData<double>::y_data_, TestData<double>::num_measurements, 1), 2, SimpleModel<double>{});
   Eigen::MatrixXd num_jtj(2, 2);
   Eigen::VectorXd num_jtb(2);
   double num_total = 0.0;

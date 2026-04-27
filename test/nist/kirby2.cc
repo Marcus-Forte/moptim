@@ -42,19 +42,13 @@ const static std::vector<double> x_data{
     329.01E0, 331.56E0, 333.56E0, 336.10E0, 338.08E0, 340.60E0, 342.57E0, 345.08E0, 347.02E0, 349.52E0, 351.44E0,
     353.93E0, 355.83E0, 358.32E0, 360.20E0, 362.67E0, 364.53E0, 367.00E0, 371.30E0};
 
-struct Model : public IModel<double> {
-  void setup(std::span<const double> x) override {
-    x_[0] = x[0];
-    x_[1] = x[1];
-    x_[2] = x[2];
+struct Model : public ElementModel<Model, double> {
+  void residual(std::span<const double> x, std::span<const double> input, std::span<const double> obs,
+                std::span<double> res) {
+    const auto num = x[0] + x[1] * input[0] + x[2] * input[0] * input[0];
+    const auto den = 1 + x[3] * input[0] + x[4] * input[0] * input[0];
+    res[0] = obs[0] - num / den;
   }
-
-  void f(std::span<const double> input, std::span<const double> measurement, std::span<double> f_x) override {
-    const auto num = x_[0] + x_[1] * input[0] + x_[2] * input[0] * input[0];
-    const auto den = 1 + x_[3] * input[0] + x_[4] * input[0] * input[0];
-    f_x[0] = measurement[0] - num / den;
-  }
-  double x_[3];
 };
 
 // Todo fix!

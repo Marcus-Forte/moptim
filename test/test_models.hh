@@ -24,23 +24,16 @@ class SimpleModelTest : public ::testing::Test {
 };
 
 template <class T>
-struct SimpleModel : public IJacobianModel<T> {
-  void setup(std::span<const T> x) final {
-    x_[0] = x[0];
-    x_[1] = x[1];
+struct SimpleModel : public ElementJacobianModel<SimpleModel<T>, T> {
+  void residual(std::span<const T> x, std::span<const T> input, std::span<const T> obs, std::span<T> res) {
+    res[0] = obs[0] - x[0] * input[0] / (x[1] + input[0]);
   }
 
-  void f(std::span<const T> input, std::span<const T> measurement, std::span<T> f_x) final {
-    f_x[0] = measurement[0] - x_[0] * input[0] / (x_[1] + input[0]);
+  void jacobian(std::span<const T> x, std::span<const T> input, std::span<const T> /*obs*/, std::span<T> jac) {
+    const auto den = x[1] + input[0];
+    jac[0] = -input[0] / den;
+    jac[1] = x[0] * input[0] / (den * den);
   }
-
-  void df(std::span<const T> input, std::span<const T> measurement, std::span<T> df_x) final {
-    const auto den = (x_[1] + input[0]);
-    df_x[0] = -input[0] / den;
-    df_x[1] = x_[0] * input[0] / (den * den);
-  }
-
-  T x_[2];
 };
 
 }  // namespace test_models

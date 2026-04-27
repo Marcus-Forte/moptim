@@ -14,42 +14,33 @@ using namespace moptim;
  * @brief 2D Point distance model
  *
  */
-struct Point2Distance : public IJacobianModel<double> {
-  void setup(std::span<const double> x) final {
-    x_ = Eigen::Map<const Eigen::Vector3d>(x.data());
-    transform_.setIdentity();
-    transform_.rotate(x_[2]);
-    transform_.translate(Eigen::Vector2d{x_[0], x_[1]});
-  }
-
-  void f(std::span<const double> input, std::span<const double> measurement, std::span<double> f_x) final {
-    Eigen::Map<const Eigen::Vector2d> target{measurement.data()};
+struct Point2Distance : public ElementJacobianModel<Point2Distance, double> {
+  static void residual(std::span<const double> x, std::span<const double> input, std::span<const double> obs,
+                std::span<double> res) {
+    Eigen::Affine2d transform;
+    transform.setIdentity();
+    transform.rotate(x[2]);
+    transform.translate(Eigen::Vector2d{x[0], x[1]});
+    Eigen::Map<const Eigen::Vector2d> target{obs.data()};
     Eigen::Map<const Eigen::Vector2d> source{input.data()};
-    Eigen::Map<Eigen::Vector2d> transformed_point{f_x.data()};
-
-    transformed_point = target - transform_ * source;
+    Eigen::Map<Eigen::Vector2d> result{res.data()};
+    result = target - transform * source;
   }
 
-  void df(std::span<const double> input, std::span<const double> measurement, std::span<double> df_x) final {
-    (void)measurement;
-    Eigen::Map<Eigen::Matrix<double, 3, 2>> jac_t(df_x.data());
-
-    const auto c = std::cos(x_[2]);
-    const auto s = std::sin(x_[2]);
-    const auto u = input[0] + x_[0];
-    const auto v = input[1] + x_[1];
-
+  static void jacobian(std::span<const double> x, std::span<const double> input, std::span<const double> /*obs*/,
+                std::span<double> jac) {
+    const auto c = std::cos(x[2]);
+    const auto s = std::sin(x[2]);
+    Eigen::Map<Eigen::Matrix<double, 3, 2>> jac_t(jac.data());
+    const auto u = input[0] + x[0];
+    const auto v = input[1] + x[1];
     jac_t(0, 0) = -c;
     jac_t(1, 0) = s;
     jac_t(2, 0) = s * u + c * v;
-
     jac_t(0, 1) = -s;
     jac_t(1, 1) = -c;
     jac_t(2, 1) = -c * u + s * v;
   }
-
-  Eigen::Vector3d x_;
-  Eigen::Affine2d transform_;
 };
 
 class TestTransform2D : public ::testing::Test {

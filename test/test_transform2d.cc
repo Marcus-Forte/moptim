@@ -13,9 +13,9 @@ TEST_F(TestTransform2D, 2DTransformLM) {
   t0.start();
   auto solver = std::make_shared<LevenbergMarquardt<double>>(3, logger);
   const auto model = std::make_shared<Point2Distance>();
-  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(
+  auto cost = std::make_shared<NumericalCostForwardEuler<Point2Distance, double>>(
       std::mdspan(transformed_pointcloud_[0].data(), transformed_pointcloud_.size(), 2),
-      std::mdspan(pointcloud_[0].data(), pointcloud_.size(), 2), 3, model);
+      std::mdspan(pointcloud_[0].data(), pointcloud_.size(), 2), 3, Point2Distance{});
   solver->addCost(cost);
   Eigen::VectorXd x0{{0, 0, 0}};
   solver->optimize(std::span<double>(x0.data(), x0.size()));
@@ -30,9 +30,9 @@ TEST_F(TestTransform2D, 2DTransformLMAnalytical) {
   auto logger = std::make_shared<ConsoleLogger>();
   auto solver = std::make_shared<LevenbergMarquardt<double>>(3, logger);
   const auto model = std::make_shared<Point2Distance>();
-  auto cost = std::make_shared<AnalyticalCost<double>>(
+  auto cost = std::make_shared<AnalyticalCost<Point2Distance, double>>(
       std::mdspan(transformed_pointcloud_[0].data(), transformed_pointcloud_.size(), 2),
-      std::mdspan(pointcloud_[0].data(), pointcloud_.size(), 2), 3, model);
+      std::mdspan(pointcloud_[0].data(), pointcloud_.size(), 2), 3, Point2Distance{});
 
   solver->addCost(cost);
   Eigen::VectorXd x0{{0, 0, 0}};

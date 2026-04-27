@@ -10,17 +10,12 @@ using namespace moptim;
  * @brief Model for the Rosenbrock function. No inputs or measurements, only parameters.
  *
  */
-struct Rosenbrock : public IModel<double> {
-  void setup(std::span<const double> x) override {
-    x_[0] = x[0];
-    x_[1] = x[1];
+struct Rosenbrock : public ElementModel<Rosenbrock, double> {
+  void residual(std::span<const double> x, std::span<const double> /*input*/, std::span<const double> /*obs*/,
+                std::span<double> res) {
+    res[0] = 10 * (x[1] - x[0] * x[0]);
+    res[1] = 1 - x[0];
   }
-  void f(std::span<const double> /*input*/, std::span<const double> /*measurement*/, std::span<double> f_x) override {
-    f_x[0] = 10 * (x_[1] - x_[0] * x_[0]);
-    f_x[1] = 1 - x_[0];
-  }
-
-  double x_[2];
 };
 
 TEST(TestRosenbrock, TestRosenbrock) {
@@ -28,9 +23,8 @@ TEST(TestRosenbrock, TestRosenbrock) {
   const std::array<double, 2> input{0.0, 0.0};
   const std::array<double, 2> measurement{0.0, 0.0};
 
-  const auto model = std::make_shared<Rosenbrock>();
-  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::mdspan(input.data(), 1, 2),
-                                                                  std::mdspan(measurement.data(), 1, 2), 2, model);
+  auto cost = std::make_shared<NumericalCostForwardEuler<Rosenbrock, double>>(std::mdspan(input.data(), 1, 2),
+                                                                  std::mdspan(measurement.data(), 1, 2), 2, Rosenbrock{});
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
 

@@ -17,7 +17,7 @@ void EigenSolver<T>::solve(std::span<const T> A, std::span<const T> b, std::span
   Eigen::Map<const VectorT> vecb(b.data(), dimensions);
   Eigen::Map<VectorT> vecx(x.data(), dimensions);
 
-  Eigen::LDLT<MatrixT> solver(matA);
+  Eigen::LDLT<MatrixT> solver(matA.template selfadjointView<Eigen::Lower>());
 
   vecx = solver.solve(-vecb);
 }

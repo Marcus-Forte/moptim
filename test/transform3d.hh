@@ -11,32 +11,26 @@ using namespace moptim;
  * @brief 3D Point distance model
  *
  */
-struct Point3Distance : public IJacobianModel<double> {
-  void setup(std::span<const double> x) final {
-    transform_.setIdentity();
+struct Point3Distance : public ElementJacobianModel<Point3Distance, double> {
+  void residual(std::span<const double> x, std::span<const double> input, std::span<const double> obs,
+                std::span<double> res) {
+    Eigen::Affine3d transform;
+    transform.setIdentity();
     Eigen::AngleAxisd rollAngle(x[3], Eigen::Vector3d::UnitX());
     Eigen::AngleAxisd pitchAngle(x[4], Eigen::Vector3d::UnitY());
     Eigen::AngleAxisd yawAngle(x[5], Eigen::Vector3d::UnitZ());
-    transform_.rotate(rollAngle * pitchAngle * yawAngle);
-    transform_.translate(Eigen::Vector3d{x[0], x[1], x[2]});
+    transform.rotate(rollAngle * pitchAngle * yawAngle);
+    transform.translate(Eigen::Vector3d{x[0], x[1], x[2]});
+    Eigen::Map<const Eigen::Vector3d> source{input.data()};
+    Eigen::Map<const Eigen::Vector3d> target{obs.data()};
+    Eigen::Map<Eigen::Vector3d> result{res.data()};
+    result = target - transform * source;
   }
 
-  void f(std::span<const double> input, std::span<const double> measurement, std::span<double> f_x) final {
-    Eigen::Map<const Eigen::Vector3d> input_map{input.data()};
-    Eigen::Map<const Eigen::Vector3d> measurement_map{measurement.data()};
-    Eigen::Map<Eigen::Vector3d> f_x_map{f_x.data()};
-
-    f_x_map = measurement_map - transform_ * input_map;
-  }
-
-  void df(std::span<const double> input, std::span<const double> measurement, std::span<double> df_x) final {
-    Eigen::Map<const Eigen::Vector3d> input_map{input.data()};
-    Eigen::Map<const Eigen::Vector3d> measurement_map{measurement.data()};
-    // f_x_map = measurement_map - transform_ * input_map;
+  void jacobian(std::span<const double> /*x*/, std::span<const double> /*input*/, std::span<const double> /*obs*/,
+                std::span<double> /*jac*/) {
     throw std::runtime_error("Unimplemented 3d point jacobian!");
   }
-
-  Eigen::Affine3d transform_;
 };
 
 /**

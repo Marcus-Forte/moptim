@@ -21,9 +21,6 @@ find_package(Eigen3 REQUIRED)
 add_subdirectory(utils)
 
 add_library(moptim 
-  src/NumericalCostCentral.cc
-  src/NumericalCostForwardEuler.cc  
-  src/AnalyticalCost.cc
   src/EigenSolver.cc
   src/GaussNewton.cc
   src/LevenbergMarquardt.cc)

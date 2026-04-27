@@ -28,30 +28,24 @@ const std::vector<double> input = {
     3.000000e+00, 3.075000e+00, 3.150000e+00, 3.225000e+00, 3.300000e+00, 3.375000e+00, 3.450000e+00, 3.525000e+00,
     3.600000e+00, 3.675000e+00, 3.750000e+00, 3.825000e+00, 3.900000e+00, 3.975000e+00, 4.050000e+00, 4.125000e+00,
     4.200000e+00, 4.275000e+00, 4.350000e+00, 4.425000e+00, 4.500000e+00, 4.575000e+00, 4.650000e+00, 4.725000e+00,
-    4.800000e+00, 4.875000e+00, 4.950000e+00};
+    4.800000e+00, 4.875000e+00, 4.950000e+00}; 
 
-struct CuveFittingModel : public IJacobianModel<double> {
-  void setup(std::span<const double> x) final {
-    x_[0] = x[0];
-    x_[1] = x[1];
+struct CuveFittingModel : public ElementJacobianModel<CuveFittingModel, double> {
+  void residual(std::span<const double> x, std::span<const double> input, std::span<const double> obs,
+                std::span<double> res) {
+    res[0] = obs[0] - std::exp(x[0] * input[0] + x[1]);
   }
 
-  void f(std::span<const double> input, std::span<const double> measurement, std::span<double> f_x) final {
-    f_x[0] = measurement[0] - std::exp((x_[0] * input[0]) + x_[1]);
+  void jacobian(std::span<const double> x, std::span<const double> input, std::span<const double> /*obs*/,
+                std::span<double> jac) {
+    jac[0] = -input[0] * std::exp(x[0] * input[0] + x[1]);
+    jac[1] = -std::exp(x[0] * input[0] + x[1]);
   }
-
-  void df(std::span<const double> input, std::span<const double> measurement, std::span<double> df_x) final {
-    df_x[0] = -input[0] * std::exp((x_[0] * input[0]) + x_[1]);
-    df_x[1] = -std::exp((x_[0] * input[0]) + x_[1]);
-  }
-
-  Eigen::Vector2d x_;
 };
 
 TEST(CurveFitting, SolvingWithNumericalCost) {
-  const auto model = std::make_shared<CuveFittingModel>();
-  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(
-      std::mdspan(input.data(), input.size(), 1), std::mdspan(observations.data(), observations.size(), 1), 2, model);
+  auto cost = std::make_shared<NumericalCostForwardEuler<CuveFittingModel, double>>(
+      std::mdspan(input.data(), input.size(), 1), std::mdspan(observations.data(), observations.size(), 1), 2, CuveFittingModel{});
 
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
@@ -64,9 +58,8 @@ TEST(CurveFitting, SolvingWithNumericalCost) {
 }
 
 TEST(CurveFitting, SolvingWithAnalyticalCost) {
-  const auto model = std::make_shared<CuveFittingModel>();
-  auto cost = std::make_shared<AnalyticalCost<double>>(
-      std::mdspan(input.data(), input.size(), 1), std::mdspan(observations.data(), observations.size(), 1), 2, model);
+  auto cost = std::make_shared<AnalyticalCost<CuveFittingModel, double>>(
+      std::mdspan(input.data(), input.size(), 1), std::mdspan(observations.data(), observations.size(), 1), 2, CuveFittingModel{});
 
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
@@ -81,12 +74,11 @@ TEST(CurveFitting, SolvingWithAnalyticalCost) {
 TEST(CurveFitting, CurveFittingLMNumerical) {
   Eigen::VectorXd x{{0.0, 0.0}};
   size_t total = 0;
-  const auto model = std::make_shared<CuveFittingModel>();
   for (int i = 0; i < 10000; ++i) {
     const auto startTime = std::chrono::high_resolution_clock::now();
 
-    auto cost = std::make_shared<NumericalCostForwardEuler<double>>(
-        std::mdspan(input.data(), input.size(), 1), std::mdspan(observations.data(), observations.size(), 1), 2, model);
+    auto cost = std::make_shared<NumericalCostForwardEuler<CuveFittingModel, double>>(
+        std::mdspan(input.data(), input.size(), 1), std::mdspan(observations.data(), observations.size(), 1), 2, CuveFittingModel{});
 
     LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
     solver.addCost(cost);
@@ -105,12 +97,11 @@ TEST(CurveFitting, CurveFittingLMNumerical) {
 TEST(CurveFitting, CurveFittingLMAnalytical) {
   Eigen::VectorXd x{{0.0, 0.0}};
   size_t total = 0;
-  const auto model = std::make_shared<CuveFittingModel>();
   for (int i = 0; i < 10000; ++i) {
     const auto startTime = std::chrono::high_resolution_clock::now();
 
-    auto cost = std::make_shared<AnalyticalCost<double>>(
-        std::mdspan(input.data(), input.size(), 1), std::mdspan(observations.data(), observations.size(), 1), 2, model);
+    auto cost = std::make_shared<AnalyticalCost<CuveFittingModel, double>>(
+        std::mdspan(input.data(), input.size(), 1), std::mdspan(observations.data(), observations.size(), 1), 2, CuveFittingModel{});
 
     LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
     solver.addCost(cost);
