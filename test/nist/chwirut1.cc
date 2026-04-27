@@ -74,7 +74,7 @@ TEST(chwirut1, chwirut1) {
   const auto model = std::make_shared<Model>();
   auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(x_data),
                                                                   std::span<const double>(y_data), 1, 1, 3,
-                                                                  x_data.size(), model);
+                                                                  model);
   const auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::DEBUG);
   LevenbergMarquardt<double> solver(3, logger);

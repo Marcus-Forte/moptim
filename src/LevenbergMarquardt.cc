@@ -1,5 +1,7 @@
 #include "LevenbergMarquardt.hh"
 
+#include <cassert>
+
 #include "Convergence.hh"
 #include "EigenSolver.hh"
 #include "Timer.hh"
@@ -19,6 +21,8 @@ template <class T>
 Status LevenbergMarquardt<T>::step(std::span<T> x) const {
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
+
+  assert(x.size() == this->dimensions_);
 
   MatrixT JTJ(this->dimensions_, this->dimensions_);
   VectorT JTb(this->dimensions_, 1);
@@ -49,7 +53,7 @@ Status LevenbergMarquardt<T>::step(std::span<T> x) const {
 
   HessianDiagnonal = Hessian.diagonal().asDiagonal();
   T totalCost = 0.0;
-  for (int i = 0; i < lm_iterations_; ++i) {
+  for (size_t i = 0; i < lm_iterations_; ++i) {
     // Refine Hessian
     Hessian += lm_lambda_ * HessianDiagnonal;
 
@@ -58,6 +62,7 @@ Status LevenbergMarquardt<T>::step(std::span<T> x) const {
 
     XiVec = XVec + DeltaVec;
 
+    totalCost = 0.0;
     for (const auto& cost : this->costs_) {
       totalCost += cost->computeCost(std::span<const T>(XiVec.data(), XiVec.size()));
     }
@@ -95,7 +100,7 @@ Status LevenbergMarquardt<T>::optimize(std::span<T> x) const {
   lm_init_lambda_factor_ = 1e-9;
   lm_lambda_ = -1.0;
   static Timer timer;
-  for (int i = 0; i < this->max_iterations_; i++) {
+  for (size_t i = 0; i < this->max_iterations_; ++i) {
     timer.start();
     const auto status = step(x);
 

@@ -22,8 +22,7 @@ TEST(TestJacobian, NumericalJacobianEquivalenceSycl) {
   NumericalCostSycl<double, SimpleModel<double>> num_cost_sycl(logger, queue, x_data_, y_data_, 1, 1, 2,
                                                                num_measurements);
 
-  NumericalCostForwardEuler<double> num_cost(x_data_, y_data_, 1, 1, 2, num_measurements,
-                                             std::make_shared<SimpleModel<double>>());
+  NumericalCostForwardEuler<double> num_cost(x_data_, y_data_, 1, 1, 2, std::make_shared<SimpleModel<double>>());
 
   double x[2]{0.1, 0.1};
 

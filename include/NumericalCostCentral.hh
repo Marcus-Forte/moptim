@@ -16,8 +16,8 @@ class NumericalCostCentral : public ICost<T> {
 
   ~NumericalCostCentral() override = default;
 
-  NumericalCostCentral(std::span<const T> input, std::span<const T> observations, size_t input_dim, size_t observation_dim,
-                       size_t param_dim, size_t num_elements, const std::shared_ptr<IModel<T>>& model);
+  NumericalCostCentral(std::span<const T> input, std::span<const T> observations, size_t input_dim,
+                       size_t observation_dim, size_t param_dim, const std::shared_ptr<IModel<T>>& model);
 
   T computeCost(std::span<const T> x) override;
 

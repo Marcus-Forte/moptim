@@ -1,5 +1,6 @@
 #include "GaussNewton.hh"
 
+#include <cassert>
 #include <cmath>
 
 #include "Convergence.hh"
@@ -20,6 +21,8 @@ template <class T>
 Status GaussNewton<T>::step(std::span<T> x) const {
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
+
+  assert(x.size() == this->dimensions_);
 
   MatrixT JTJ(this->dimensions_, this->dimensions_);
   VectorT JTb(this->dimensions_, 1);
@@ -61,7 +64,7 @@ Status GaussNewton<T>::step(std::span<T> x) const {
 // Verify: rel_tolerance, abs_tolerance, max iterations, cost
 template <class T>
 Status GaussNewton<T>::optimize(std::span<T> x) const {
-  for (int i = 0; i < this->max_iterations_; i++) {
+  for (size_t i = 0; i < this->max_iterations_; ++i) {
     static Timer timer;
     const auto delta = timer.stop();
     logger_->log(ILog::Level::DEBUG, "GN Iteration: {}/{} (took: {} us)", i + 1, this->max_iterations_, delta);

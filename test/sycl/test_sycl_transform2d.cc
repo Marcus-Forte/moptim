@@ -27,7 +27,7 @@ TEST_F(TestTransform2D, SyclCostAndJacobian) {
 
     NumericalCostForwardEuler<double> num_cost(
       std::span<const double>(transformed_pointcloud_[0].data(), transformed_pointcloud_.size() * 2),
-      std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3, num_elements, model);
+      std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3, model);
 
   double x[]{0.0, 0.0, 0.0};
 

@@ -56,9 +56,9 @@ struct Model : public IModel<double> {
 TEST(nelson, nelson) {
   double x0[3]{2, 0.0001, -0.01};
   const auto model = std::make_shared<Model>();
-    auto cost = std::make_shared<NumericalCostForwardEuler<double>>(
+  auto cost = std::make_shared<NumericalCostForwardEuler<double>>(
       std::span<const double>(x_data, sizeof(x_data) / sizeof(double)),
-      std::span<const double>(y_data, sizeof(y_data) / sizeof(double)), 2, 1, 3, sizeof(y_data) / sizeof(double),
+      std::span<const double>(y_data, sizeof(y_data) / sizeof(double)), 2, 1, 3,
       model);
   const auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::DEBUG);

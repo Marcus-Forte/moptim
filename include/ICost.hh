@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstddef>
-#include <span>
+#include <mdspan>
 
 namespace moptim {
 

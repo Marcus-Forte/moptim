@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <Eigen/Dense>
 
 #include "IModel.hh"
@@ -15,9 +16,10 @@ using namespace moptim;
  */
 struct Point2Distance : public IJacobianModel<double> {
   void setup(std::span<const double> x) final {
+    x_ = Eigen::Map<const Eigen::Vector3d>(x.data());
     transform_.setIdentity();
-    transform_.rotate(x[2]);
-    transform_.translate(Eigen::Vector2d{x[0], x[1]});
+    transform_.rotate(x_[2]);
+    transform_.translate(Eigen::Vector2d{x_[0], x_[1]});
   }
 
   void f(std::span<const double> input, std::span<const double> measurement, std::span<double> f_x) final {
@@ -29,25 +31,24 @@ struct Point2Distance : public IJacobianModel<double> {
   }
 
   void df(std::span<const double> input, std::span<const double> measurement, std::span<double> df_x) final {
-    throw std::runtime_error("Unimplemented 2d point jacobian!");
-    // const auto* target = reinterpret_cast<const Eigen::Vector2d*>(measurement);
-    // const auto* source = reinterpret_cast<const Eigen::Vector2d*>(input);
-    // auto* jacobian = reinterpret_cast<Eigen::Matrix<double, 2, 3>*>(df_x);
+    (void)measurement;
+    Eigen::Map<Eigen::Matrix<double, 3, 2>> jac_t(df_x.data());
 
-    // *jacobian = jacobian(*source, *target);
+    const auto c = std::cos(x_[2]);
+    const auto s = std::sin(x_[2]);
+    const auto u = input[0] + x_[0];
+    const auto v = input[1] + x_[1];
 
-    // Eigen::Matrix<double, 2, 3> jac;
-    // const auto cos_theta = std::cos(x_[2]);
-    // const auto sin_theta = std::sin(x_[2]);
-    // jac(0, 0) = -1;
-    // jac(0, 1) = 0;
-    // jac(0, 2) = -cos_theta * source[0] + sin_theta * source[1];
+    jac_t(0, 0) = -c;
+    jac_t(1, 0) = s;
+    jac_t(2, 0) = s * u + c * v;
 
-    // jac(1, 0) = 0;
-    // jac(1, 1) = -1;
-    // jac(1, 2) = sin_theta * source[0] + cos_theta * source[1];
+    jac_t(0, 1) = -s;
+    jac_t(1, 1) = -c;
+    jac_t(2, 1) = -c * u + s * v;
   }
 
+  Eigen::Vector3d x_;
   Eigen::Affine2d transform_;
 };
 

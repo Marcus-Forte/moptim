@@ -51,8 +51,7 @@ struct CuveFittingModel : public IJacobianModel<double> {
 TEST(CurveFitting, SolvingWithNumericalCost) {
   const auto model = std::make_shared<CuveFittingModel>();
   auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(input),
-                                                                  std::span<const double>(observations), 1, 1, 2,
-                                                                  input.size(), model);
+                                                                  std::span<const double>(observations), 1, 1, 2, model);
 
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
@@ -67,7 +66,7 @@ TEST(CurveFitting, SolvingWithNumericalCost) {
 TEST(CurveFitting, SolvingWithAnalyticalCost) {
   const auto model = std::make_shared<CuveFittingModel>();
   auto cost = std::make_shared<AnalyticalCost<double>>(std::span<const double>(input), std::span<const double>(observations), 1, 1,
-                                                       2, input.size(), model);
+                                                       2, model);
 
   LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
   solver.addCost(cost);
@@ -87,8 +86,7 @@ TEST(CurveFitting, CurveFittingLMNumerical) {
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     auto cost = std::make_shared<NumericalCostForwardEuler<double>>(std::span<const double>(input),
-                                    std::span<const double>(observations), 1, 1, 2,
-                                    input.size(), model);
+                                    std::span<const double>(observations), 1, 1, 2, model);
 
     LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
     solver.addCost(cost);
@@ -112,8 +110,7 @@ TEST(CurveFitting, CurveFittingLMAnalytical) {
     const auto startTime = std::chrono::high_resolution_clock::now();
 
     auto cost = std::make_shared<AnalyticalCost<double>>(std::span<const double>(input),
-                               std::span<const double>(observations), 1, 1, 2, input.size(),
-                               model);
+                               std::span<const double>(observations), 1, 1, 2, model);
 
     LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
     solver.addCost(cost);

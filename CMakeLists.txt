@@ -1,12 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 project(moptim)
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(CTest)
 
 option(USE_CLANG_TIDY "Enable clang-tidy" OFF)
 option(WITH_SYCL "Use SYCL compilation for parallel computation" ON)
-
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(code-format)
 
@@ -18,7 +15,6 @@ else()
 endif()
 
 find_package(Eigen3 REQUIRED)
-find_package(Boost REQUIRED)
 
 add_subdirectory(utils)
 

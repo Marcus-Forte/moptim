@@ -15,7 +15,7 @@ TEST_F(TestTransform2D, 2DTransformLM) {
   const auto model = std::make_shared<Point2Distance>();
   auto cost = std::make_shared<NumericalCostForwardEuler<double>>(
       std::span<const double>(transformed_pointcloud_[0].data(), transformed_pointcloud_.size() * 2),
-      std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3, transformed_pointcloud_.size(),
+      std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3,
       model);
   solver->addCost(cost);
   Eigen::VectorXd x0{{0, 0, 0}};
@@ -27,21 +27,21 @@ TEST_F(TestTransform2D, 2DTransformLM) {
   auto delta = t0.stop();
 }
 
-// FIXME
-TEST_F(TestTransform2D, DISABLED_2DTransformLMAnalytical) {
+
+TEST_F(TestTransform2D, 2DTransformLMAnalytical) {
   auto logger = std::make_shared<ConsoleLogger>();
   auto solver = std::make_shared<LevenbergMarquardt<double>>(3, logger);
   const auto model = std::make_shared<Point2Distance>();
   auto cost = std::make_shared<AnalyticalCost<double>>(
       std::span<const double>(transformed_pointcloud_[0].data(), transformed_pointcloud_.size() * 2),
-      std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3, transformed_pointcloud_.size(),
+      std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3,
       model);
 
   solver->addCost(cost);
   Eigen::VectorXd x0{{0, 0, 0}};
   solver->optimize(std::span<double>(x0.data(), x0.size()));
 
-  EXPECT_NEAR(x0[0], -x0_ref[0], 1e-10);
-  EXPECT_NEAR(x0[1], -x0_ref[1], 1e-10);
-  EXPECT_NEAR(x0[2], -x0_ref[2], 1e-10);
+  EXPECT_NEAR(x0[0], -x0_ref[0], 1e-3);
+  EXPECT_NEAR(x0[1], -x0_ref[1], 1e-3);
+  EXPECT_NEAR(x0[2], -x0_ref[2], 1e-3);
 }

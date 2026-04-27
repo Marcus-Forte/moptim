@@ -1,5 +1,14 @@
 
 add_compile_definitions(-DTEST_PATH="${CMAKE_CURRENT_SOURCE_DIR}/data")
+
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG        v1.16.0
+)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
 find_package(GTest REQUIRED)
 
 add_library(test_helper
@@ -50,7 +59,5 @@ add_executable(moptim_playground
 )
 target_link_libraries(moptim_playground moptim)
 
-add_executable(test_realtime test_realtime.cc)
-target_link_libraries(test_realtime moptim)
 
 

@@ -13,8 +13,8 @@ class AnalyticalCost : public ICost<T> {
  public:
   AnalyticalCost(const AnalyticalCost&) = delete;
 
-  AnalyticalCost<T>(std::span<const T> input, std::span<const T> observations, size_t input_dim, size_t observation_dim, size_t param_dim,
-                    size_t num_elements, const std::shared_ptr<IJacobianModel<T>>& model);
+  AnalyticalCost<T>(std::span<const T> input, std::span<const T> observations, size_t input_dim, size_t observation_dim,
+                    size_t param_dim, const std::shared_ptr<IJacobianModel<T>>& model);
 
   T computeCost(std::span<const T> x) override;
 

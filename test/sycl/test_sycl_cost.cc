@@ -29,7 +29,7 @@ TYPED_TEST(SimpleModelTest, NumericalCostEquivalenceSycl) {
 
   NumericalCostForwardEuler<T> num_cost(std::span<const T>(this->test_data_.x_data_, this->test_data_.num_measurements),
                                         std::span<const T>(this->test_data_.y_data_, this->test_data_.num_measurements),
-                                        1, 1, 2, this->test_data_.num_measurements, model);
+                                        1, 1, 2, model);
 
   T x[2]{0.0, 0.0};
 
