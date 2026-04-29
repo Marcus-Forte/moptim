@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <random>
 
 static std::vector<Eigen::Vector3d> generateCloud3D(size_t n_points) {
@@ -34,6 +35,6 @@ void TestTransform3D::SetUp() {
 
   transform.translate(Eigen::Vector3d{x0_ref[0], x0_ref[1], x0_ref[2]});
   transform.rotate(rollAngle * pitchAngle * yawAngle);
-  std::transform(pointcloud_.begin(), pointcloud_.end(), std::back_inserter(transformed_pointcloud_),
-                 [&](const Eigen::Vector3d& pt) { return transform * pt; });
+  std::ranges::transform(pointcloud_, std::back_inserter(transformed_pointcloud_),
+                         [&](const Eigen::Vector3d& pt) { return transform * pt; });
 }

@@ -26,6 +26,7 @@ add_executable(test_moptim
   test_powell.cc
   test_rosenbrock.cc
   test_transform2d.cc
+  test_transform3d.cc
   test_cost.cc
 )
 add_subdirectory(nist) # TODO fix

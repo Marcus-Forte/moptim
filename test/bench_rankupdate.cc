@@ -49,8 +49,8 @@ void bench(const char* label, int num_residuals, int reps) {
   double rank_ns = std::chrono::duration<double, std::nano>(t3 - t2).count() / reps;
 
   (void)sink;
-  std::cout << label << "  param_dim=" << P << "  residuals=" << num_residuals
-            << "  full=" << full_ns << " ns  rankUpdate=" << rank_ns << " ns"
+  std::cout << label << "  param_dim=" << P << "  residuals=" << num_residuals << "  full=" << full_ns
+            << " ns  rankUpdate=" << rank_ns << " ns"
             << "  speedup=" << full_ns / rank_ns << "x\n";
 }
 
@@ -58,8 +58,8 @@ int main() {
   const int reps = 100000;
   std::cout << "J^T J benchmark (avg over " << reps << " reps)\n";
   std::cout << "---------------------------------------------------\n";
-  bench<2> ("tiny  ", 200, reps);
-  bench<3> ("small ", 200, reps);
-  bench<6> ("medium", 200, reps);
+  bench<2>("tiny  ", 200, reps);
+  bench<3>("small ", 200, reps);
+  bench<6>("medium", 200, reps);
   bench<12>("large ", 200, reps);
 }

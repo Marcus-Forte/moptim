@@ -5,33 +5,26 @@
 #include <Eigen/Dense>
 #include <cmath>
 
-#include "IModel.hh"
-#include "IOptimizer.hh"
-
-using namespace moptim;
-
 /**
  * @brief 2D Point distance model
  *
  */
-struct Point2Distance : public ElementJacobianModel<Point2Distance, double> {
-  static void residual(std::span<const double> x, std::span<const double> input, std::span<const double> obs,
-                std::span<double> res) {
+struct Point2Distance {
+  static void residual(const double* x, const double* input, const double* obs, double* res) {
     Eigen::Affine2d transform;
     transform.setIdentity();
     transform.rotate(x[2]);
     transform.translate(Eigen::Vector2d{x[0], x[1]});
-    Eigen::Map<const Eigen::Vector2d> target{obs.data()};
-    Eigen::Map<const Eigen::Vector2d> source{input.data()};
-    Eigen::Map<Eigen::Vector2d> result{res.data()};
+    Eigen::Map<const Eigen::Vector2d> target{obs};
+    Eigen::Map<const Eigen::Vector2d> source{input};
+    Eigen::Map<Eigen::Vector2d> result{res};
     result = target - transform * source;
   }
 
-  static void jacobian(std::span<const double> x, std::span<const double> input, std::span<const double> /*obs*/,
-                std::span<double> jac) {
+  static void jacobian(const double* x, const double* input, const double* /*obs*/, double* jac) {
     const auto c = std::cos(x[2]);
     const auto s = std::sin(x[2]);
-    Eigen::Map<Eigen::Matrix<double, 3, 2>> jac_t(jac.data());
+    Eigen::Map<Eigen::Matrix<double, 3, 2>> jac_t(jac);
     const auto u = input[0] + x[0];
     const auto v = input[1] + x[1];
     jac_t(0, 0) = -c;

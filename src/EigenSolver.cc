@@ -1,21 +1,17 @@
 #include "EigenSolver.hh"
 
 #include <Eigen/Dense>
-#include <cassert>
 
 template <typename T>
-void EigenSolver<T>::solve(std::span<const T> A, std::span<const T> b, std::span<T> x) const {
+void EigenSolver<T>::solve(const T* A, const T* b, T* x) const {
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
 
   const size_t dimensions = this->dimensions_;
-  assert(A.size() == dimensions * dimensions);
-  assert(b.size() == dimensions);
-  assert(x.size() == dimensions);
 
-  Eigen::Map<const MatrixT> matA(A.data(), dimensions, dimensions);
-  Eigen::Map<const VectorT> vecb(b.data(), dimensions);
-  Eigen::Map<VectorT> vecx(x.data(), dimensions);
+  Eigen::Map<const MatrixT> matA(A, dimensions, dimensions);
+  Eigen::Map<const VectorT> vecb(b, dimensions);
+  Eigen::Map<VectorT> vecx(x, dimensions);
 
   Eigen::LDLT<MatrixT> solver(matA.template selfadjointView<Eigen::Lower>());
 

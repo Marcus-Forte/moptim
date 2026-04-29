@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <span>
 
 #include "ILog.hh"
 
@@ -18,7 +17,7 @@ class ISolver {
    * @param[in] b Vector b
    * @param[out] x
    */
-  virtual void solve(std::span<const T> A, std::span<const T> b, std::span<T> x) const = 0;
+  virtual void solve(const T* A, const T* b, T* x) const = 0;
 
  protected:
   std::shared_ptr<ILog> logger_;

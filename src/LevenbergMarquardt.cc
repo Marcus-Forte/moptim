@@ -1,7 +1,5 @@
 #include "LevenbergMarquardt.hh"
 
-#include <cassert>
-
 #include "Convergence.hh"
 #include "EigenSolver.hh"
 #include "Timer.hh"
@@ -18,11 +16,9 @@ LevenbergMarquardt<T>::LevenbergMarquardt(size_t dimensions, const std::shared_p
     : IOptimizer<T>(dimensions), solver_(std::make_shared<EigenSolver<T>>(logger, dimensions)), logger_(logger) {}
 
 template <class T>
-Status LevenbergMarquardt<T>::step(std::span<T> x) const {
+Status LevenbergMarquardt<T>::step(T* x) const {
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
-
-  assert(x.size() == this->dimensions_);
 
   MatrixT JTJ(this->dimensions_, this->dimensions_);
   VectorT JTb(this->dimensions_, 1);
@@ -32,14 +28,14 @@ Status LevenbergMarquardt<T>::step(std::span<T> x) const {
   VectorT BVec = VectorT::Zero(this->dimensions_);
   VectorT XiVec = VectorT::Zero(this->dimensions_);
   VectorT DeltaVec(this->dimensions_);
-  Eigen::Map<VectorT> XVec(x.data(), this->dimensions_);
+  Eigen::Map<VectorT> XVec(x, this->dimensions_);
 
   T initCost = 0.0;
 
   // Compute Hessian
   for (const auto& cost : this->costs_) {
     T cost_val = 0.0;
-    cost->computeLinearSystem(x, std::span<T>(JTJ.data(), JTJ.size()), std::span<T>(JTb.data(), JTb.size()), cost_val);
+    cost->computeLinearSystem(x, JTJ.data(), JTb.data(), cost_val);
     Hessian += JTJ;
     BVec += JTb;
     initCost += cost_val;
@@ -57,14 +53,13 @@ Status LevenbergMarquardt<T>::step(std::span<T> x) const {
     // Refine Hessian
     Hessian += lm_lambda_ * HessianDiagnonal;
 
-    solver_->solve(std::span<const T>(Hessian.data(), Hessian.size()), std::span<const T>(BVec.data(), BVec.size()),
-                   std::span<T>(DeltaVec.data(), DeltaVec.size()));
+    solver_->solve(Hessian.data(), BVec.data(), DeltaVec.data());
 
     XiVec = XVec + DeltaVec;
 
     totalCost = 0.0;
     for (const auto& cost : this->costs_) {
-      totalCost += cost->computeCost(std::span<const T>(XiVec.data(), XiVec.size()));
+      totalCost += cost->computeCost(XiVec.data());
     }
     auto rho = (initCost - totalCost) / DeltaVec.dot(lm_lambda_ * DeltaVec - BVec);
 
@@ -75,7 +70,7 @@ Status LevenbergMarquardt<T>::step(std::span<T> x) const {
     // }
 
     if (rho < 0 || std::isnan(rho)) {
-      if (isDeltaSmall(std::span<const T>(DeltaVec.data(), DeltaVec.size()))) {
+      if (isDeltaSmall(DeltaVec.data(), DeltaVec.size())) {
         if (isCostSmall(totalCost)) {
           return Status::CONVERGED;
         }
@@ -96,7 +91,7 @@ Status LevenbergMarquardt<T>::step(std::span<T> x) const {
 }
 
 template <class T>
-Status LevenbergMarquardt<T>::optimize(std::span<T> x) const {
+Status LevenbergMarquardt<T>::optimize(T* x) const {
   lm_init_lambda_factor_ = 1e-9;
   lm_lambda_ = -1.0;
   static Timer timer;

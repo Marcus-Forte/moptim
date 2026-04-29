@@ -54,9 +54,8 @@ const static std::vector<double> x_data{
     1.7500E0, 1.7500E0, .5000E0,  .7500E0,  1.7500E0, 1.7500E0, 2.7500E0, 3.7500E0, 1.7500E0, 1.7500E0, .5000E0,
     .7500E0,  2.7500E0, 3.7500E0, 1.7500E0, 1.7500E0};
 
-struct Model : public ElementModel<Model, double> {
-  void residual(std::span<const double> x, std::span<const double> input, std::span<const double> obs,
-                std::span<double> res) {
+struct Model {
+  void residual(const double* x, const double* input, const double* obs, double* res) {
     const auto num = std::exp(-x[0] * input[0]);
     const auto den = x[1] + x[2] * input[0];
     res[0] = obs[0] - num / den;
@@ -65,8 +64,8 @@ struct Model : public ElementModel<Model, double> {
 
 TEST(chwirut1, chwirut1) {
   double x0[3] = {0.1, 0.01, 0.02};
-  auto cost = std::make_shared<NumericalCostForwardEuler<Model, double>>(
-      std::mdspan(x_data.data(), x_data.size(), 1), std::mdspan(y_data.data(), y_data.size(), 1), 3, Model{});
+  auto cost = std::make_shared<NumericalCostForwardEuler<Model, double>>(x_data.data(), y_data.data(), x_data.size(), 1,
+                                                                         1, 3, Model{});
   const auto logger = std::make_shared<ConsoleLogger>();
   logger->setLevel(ILog::Level::DEBUG);
   LevenbergMarquardt<double> solver(3, logger);

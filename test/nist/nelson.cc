@@ -38,9 +38,8 @@ const static double x_data[]{
     64E0, 225E0, 64E0, 225E0, 64E0, 225E0, 64E0, 250E0, 64E0, 250E0, 64E0, 250E0, 64E0, 250E0, 64E0, 275E0, 64E0, 275E0,
     64E0, 275E0, 64E0, 275E0};
 
-struct Model : public ElementModel<Model, double> {
-  void residual(std::span<const double> x, std::span<const double> input, std::span<const double> obs,
-                std::span<double> res) {
+struct Model {
+  void residual(const double* x, const double* input, const double* obs, double* res) {
     const auto f = x[0] - x[1] * input[0] * std::exp(-x[2] * input[1]);
     res[0] = obs[0] - f;
   }

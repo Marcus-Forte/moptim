@@ -1,7 +1,5 @@
 #pragma once
 
-#include <span>
-
 #include "ILog.hh"
 #include "IOptimizer.hh"
 #include "ISolver.hh"
@@ -13,8 +11,8 @@ class LevenbergMarquardt : public IOptimizer<T> {
   LevenbergMarquardt(size_t dimensions, const std::shared_ptr<ILog>& logger, const std::shared_ptr<ISolver<T>>& solver);
   LevenbergMarquardt(size_t dimensions, const std::shared_ptr<ILog>& logger);
 
-  Status step(std::span<T> x) const override;
-  Status optimize(std::span<T> x) const override;
+  Status step(T* x) const override;
+  Status optimize(T* x) const override;
 
  private:
   mutable T lm_init_lambda_factor_;

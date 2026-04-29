@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <mdspan>
 
 namespace moptim {
 
@@ -19,7 +18,7 @@ class ICost {
    * @param x Parameters
    * @return T Cost value
    */
-  virtual T computeCost(std::span<const T> x) = 0;
+  virtual T computeCost(const T* x) = 0;
 
   /**
    * @brief Compute the linear system: JTJ, JTb and cost
@@ -29,7 +28,7 @@ class ICost {
    * @param JTb Gradient (J^T * b)
    * @param cost Cost value
    */
-  virtual void computeLinearSystem(std::span<const T> x, std::span<T> JTJ, std::span<T> JTb, T& cost) = 0;
+  virtual void computeLinearSystem(const T* x, T* JTJ, T* JTb, T& cost) = 0;
 
  protected:
   const size_t input_dim_;

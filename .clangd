@@ -5,3 +5,5 @@ CompileFlags:
 Diagnostics:
   Suppress:
     - drv_unknown_argument
+    - readability-convert-member-functions-to-static
+    - readability-math-missing-parentheses

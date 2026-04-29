@@ -24,12 +24,12 @@ class SimpleModelTest : public ::testing::Test {
 };
 
 template <class T>
-struct SimpleModel : public ElementJacobianModel<SimpleModel<T>, T> {
-  void residual(std::span<const T> x, std::span<const T> input, std::span<const T> obs, std::span<T> res) {
+struct SimpleModel {
+  void residual(const T* x, const T* input, const T* obs, T* res) {
     res[0] = obs[0] - x[0] * input[0] / (x[1] + input[0]);
   }
 
-  void jacobian(std::span<const T> x, std::span<const T> input, std::span<const T> /*obs*/, std::span<T> jac) {
+  void jacobian(const T* x, const T* input, const T* /*obs*/, T* jac) {
     const auto den = x[1] + input[0];
     jac[0] = -input[0] / den;
     jac[1] = x[0] * input[0] / (den * den);

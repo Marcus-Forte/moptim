@@ -21,8 +21,7 @@ TYPED_TEST(SimpleModelTest, GaussNewton) {
 
   const auto model = std::make_shared<SimpleModel<T>>();
   auto cost = std::make_shared<NumericalCostForwardEuler<SimpleModel<T>, T>>(
-      std::mdspan(this->test_data_.x_data_, this->test_data_.num_measurements, 1),
-      std::mdspan(this->test_data_.y_data_, this->test_data_.num_measurements, 1), 2, SimpleModel<T>{});
+      this->test_data_.x_data_, this->test_data_.y_data_, this->test_data_.num_measurements, 1, 1, 2, SimpleModel<T>{});
 
   GaussNewton<T> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::DEBUG));
 
@@ -42,13 +41,12 @@ TYPED_TEST(SimpleModelTest, GaussNewtonAnalytical) {
 
   const auto model = std::make_shared<SimpleModel<T>>();
   auto cost = std::make_shared<AnalyticalCost<SimpleModel<T>, T>>(
-      std::mdspan(this->test_data_.x_data_, this->test_data_.num_measurements, 1),
-      std::mdspan(this->test_data_.y_data_, this->test_data_.num_measurements, 1), 2, SimpleModel<T>{});
+      this->test_data_.x_data_, this->test_data_.y_data_, this->test_data_.num_measurements, 1, 1, 2, SimpleModel<T>{});
   GaussNewton<T> solver(2, std::make_shared<ConsoleLogger>());
 
   solver.addCost(cost);
 
-  solver.optimize(std::span<T>(x.data(), x.size()));
+  solver.optimize(x.data());
 
   EXPECT_NEAR(x[0], 0.362, 0.01);
   EXPECT_NEAR(x[1], 0.556, 0.01);
@@ -60,14 +58,13 @@ TYPED_TEST(SimpleModelTest, LevenbergMarquardt) {
 
   const auto model = std::make_shared<SimpleModel<T>>();
   auto cost = std::make_shared<AnalyticalCost<SimpleModel<T>, T>>(
-      std::mdspan(this->test_data_.x_data_, this->test_data_.num_measurements, 1),
-      std::mdspan(this->test_data_.y_data_, this->test_data_.num_measurements, 1), 2, SimpleModel<T>{});
+      this->test_data_.x_data_, this->test_data_.y_data_, this->test_data_.num_measurements, 1, 1, 2, SimpleModel<T>{});
 
   LevenbergMarquardt<T> solver(2, std::make_shared<ConsoleLogger>());
 
   solver.addCost(cost);
 
-  solver.optimize(std::span<T>(x.data(), x.size()));
+  solver.optimize(x.data());
 
   EXPECT_NEAR(x[0], 0.362, 0.01);
   EXPECT_NEAR(x[1], 0.556, 0.01);
@@ -79,14 +76,13 @@ TYPED_TEST(SimpleModelTest, LevenbergMarquardtAnalytical) {
 
   const auto model = std::make_shared<SimpleModel<T>>();
   auto cost = std::make_shared<AnalyticalCost<SimpleModel<T>, T>>(
-      std::mdspan(this->test_data_.x_data_, this->test_data_.num_measurements, 1),
-      std::mdspan(this->test_data_.y_data_, this->test_data_.num_measurements, 1), 2, SimpleModel<T>{});
+      this->test_data_.x_data_, this->test_data_.y_data_, this->test_data_.num_measurements, 1, 1, 2, SimpleModel<T>{});
 
   LevenbergMarquardt<T> solver(2, std::make_shared<ConsoleLogger>());
 
   solver.addCost(cost);
 
-  solver.optimize(std::span<T>(x.data(), x.size()));
+  solver.optimize(x.data());
 
   EXPECT_NEAR(x[0], 0.362, 0.01);
   EXPECT_NEAR(x[1], 0.556, 0.01);
