@@ -2,31 +2,25 @@
   "version": 3,
   "configurePresets": [
     {
-        "name": "default",
-        "hidden": true,
-        "cacheVariables": {
-            "CMAKE_TOOLCHAIN_FILE": "/opt/toolchains/native.cmake"
-        }
-    },
-    {
-      "name": "default-with-sycl",
+      "name": "Sycl",
       "displayName": "Build with SYCL",
-      "description": "Build moptim with SYCL support enabled",
-      "inherits": "default",
+      "description": "Build moptim with SYCL support",
       "generator": "Ninja",
       "cacheVariables": {
+        "CMAKE_C_COMPILER": "/opt/sycl/bin/clang",
+        "CMAKE_CXX_COMPILER": "/opt/sycl/bin/clang++",
         "CMAKE_BUILD_TYPE": "Release",
         "WITH_SYCL": "ON"
       },
-      "binaryDir": "${sourceDir}/build-sycl"
+      "binaryDir": "${sourceDir}/out/build/${presetName}"
     },
     {
-      "name": "default-without-sycl",
+      "name": "no-sycl",
       "displayName": "Build without SYCL",
       "description": "Build moptim without SYCL support",
-      "inherits": "default",
       "generator": "Ninja",
       "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "/opt/toolchains/native.cmake",
         "CMAKE_BUILD_TYPE": "Release",
         "WITH_SYCL": "OFF"
       },

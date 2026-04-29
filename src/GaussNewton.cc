@@ -22,7 +22,7 @@ Status GaussNewton<T>::step(T* x) const {
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
 
   MatrixT JTJ(this->dimensions_, this->dimensions_);
-  VectorT JTb(this->dimensions_, 1);
+  VectorT JTb(this->dimensions_);
 
   MatrixT Hessian = MatrixT::Zero(this->dimensions_, this->dimensions_);
   VectorT BVec = VectorT::Zero(this->dimensions_);

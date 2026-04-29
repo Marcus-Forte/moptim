@@ -3,7 +3,7 @@ project(moptim)
 include(CTest)
 
 option(USE_CLANG_TIDY "Enable clang-tidy" OFF)
-option(WITH_SYCL "Use SYCL compilation for parallel computation" ON)
+option(WITH_SYCL "Use SYCL compilation for parallel computation" OFF)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(code-format)
 

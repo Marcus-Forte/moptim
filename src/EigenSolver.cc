@@ -13,9 +13,10 @@ void EigenSolver<T>::solve(const T* A, const T* b, T* x) const {
   Eigen::Map<const VectorT> vecb(b, dimensions);
   Eigen::Map<VectorT> vecx(x, dimensions);
 
-  Eigen::LDLT<MatrixT> solver(matA.template selfadjointView<Eigen::Lower>());
+  Eigen::LLT<MatrixT> solver(matA.template selfadjointView<Eigen::Lower>());
 
-  vecx = solver.solve(-vecb);
+  vecx = -vecb;
+  solver.solveInPlace(vecx);
 }
 
 template class EigenSolver<double>;
