@@ -30,6 +30,7 @@ class NumericalCostForwardEuler : public ICost<T> {
   }
 
   T computeCost(const T* x) override {
+    model_.setState(x);
     for (size_t i = 0; i < num_elements_; ++i) {
       model_.residual(x, &input_elements_[i, 0], &observation_elements_[i, 0], &residual_data_[i * observation_dim_]);
     }
@@ -38,6 +39,7 @@ class NumericalCostForwardEuler : public ICost<T> {
 
   void computeLinearSystem(const T* x, T* JTJ, T* JTb, T& cost) override {
     const auto callResiduals = [this](const T* params, T* residual_out) {
+      model_.setState(params);
       for (size_t i = 0; i < num_elements_; ++i) {
         model_.residual(params, &input_elements_[i, 0], &observation_elements_[i, 0],
                         &residual_out[i * observation_dim_]);

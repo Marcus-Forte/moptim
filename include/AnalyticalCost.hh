@@ -28,6 +28,7 @@ class AnalyticalCost : public ICost<T> {
   }
 
   T computeCost(const T* x) override {
+    model_.setState(x);
     for (size_t i = 0; i < num_elements_; ++i) {
       model_.residual(x, &input_elements_[i, 0], &observation_elements_[i, 0], &residual_data_[i * observation_dim_]);
     }
@@ -35,6 +36,7 @@ class AnalyticalCost : public ICost<T> {
   }
 
   void computeLinearSystem(const T* x, T* JTJ, T* JTb, T& cost) override {
+    model_.setState(x);
     for (size_t i = 0; i < num_elements_; ++i) {
       const T* in_i = &input_elements_[i, 0];
       const T* obs_i = &observation_elements_[i, 0];

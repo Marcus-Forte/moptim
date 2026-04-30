@@ -55,6 +55,8 @@ const static std::vector<double> x_data{
     .7500E0,  2.7500E0, 3.7500E0, 1.7500E0, 1.7500E0};
 
 struct Model {
+  void setState(const double* /*x*/) {}
+
   void residual(const double* x, const double* input, const double* obs, double* res) {
     const auto num = std::exp(-x[0] * input[0]);
     const auto den = x[1] + x[2] * input[0];

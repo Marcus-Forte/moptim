@@ -25,6 +25,8 @@ class SimpleModelTest : public ::testing::Test {
 
 template <class T>
 struct SimpleModel {
+  void setState(const T* /*x*/) {}
+
   void residual(const T* x, const T* input, const T* obs, T* res) {
     res[0] = obs[0] - x[0] * input[0] / (x[1] + input[0]);
   }

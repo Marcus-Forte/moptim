@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include "AnalyticalCost.hh"
+#include "ConsoleLogger.hh"
+#include "LevenbergMarquardt.hh"
 #include "NumericalCostCentral.hh"
 #include "transform3d.hh"
 
@@ -38,3 +40,28 @@ TEST_P(TestTransform3D, AnalyticalJacobianMatchesNumerical) {
 }
 
 INSTANTIATE_TEST_SUITE_P(Transform3DJacobian, TestTransform3D, ::testing::Values(50, 200));
+
+TEST_P(TestTransform3D, 3DTransformLMAnalytical) {
+  auto logger = std::make_shared<ConsoleLogger>();
+  auto solver = std::make_shared<LevenbergMarquardt<double>>(6, logger);
+
+  const size_t n = transformed_pointcloud_.size();
+  constexpr size_t obs_dim = 3;
+  constexpr size_t param_dim = 6;
+
+  auto cost = std::make_shared<AnalyticalCost<Point3Distance, double>>(
+      transformed_pointcloud_[0].data(), pointcloud_[0].data(), n, obs_dim, obs_dim, param_dim);
+  solver->addCost(cost);
+
+  Eigen::VectorXd x0 = Eigen::VectorXd::Zero(param_dim);
+  solver->optimize(x0.data());
+
+  EXPECT_NEAR(x0[0], -x0_ref[0], 1e-3);
+  EXPECT_NEAR(x0[1], -x0_ref[1], 1e-3);
+  EXPECT_NEAR(x0[2], -x0_ref[2], 1e-3);
+  EXPECT_NEAR(x0[3], -x0_ref[3], 1e-3);
+  EXPECT_NEAR(x0[4], -x0_ref[4], 1e-3);
+  EXPECT_NEAR(x0[5], -x0_ref[5], 1e-3);
+}
+
+INSTANTIATE_TEST_SUITE_P(Transform3DLM, TestTransform3D, ::testing::Values(50, 200));

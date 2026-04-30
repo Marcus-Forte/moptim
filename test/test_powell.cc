@@ -13,6 +13,8 @@ using namespace moptim;
  *   param_dim = 4, obs_dim = 4, num_elements = 1.
  */
 struct Powell {
+  void setState(const double* /*x*/) {}
+
   void residual(const double* x, const double* /*input*/, const double* /*obs*/, double* res) {
     res[0] = x[0] + 10 * x[1];
     res[1] = sqrt(5) * (x[2] - x[3]);
@@ -64,24 +66,28 @@ TEST(TestPowell, TestPowell) {
 }
 
 struct PowellF0 {
+  void setState(const double* /*x*/) {}
   void residual(const double* x, const double* /*input*/, const double* /*obs*/, double* res) {
     res[0] = x[0] + 10 * x[1];
   }
 };
 
 struct PowellF1 {
+  void setState(const double* /*x*/) {}
   void residual(const double* x, const double* /*input*/, const double* /*obs*/, double* res) {
     res[0] = sqrt(5) * (x[2] - x[3]);
   }
 };
 
 struct PowellF2 {
+  void setState(const double* /*x*/) {}
   void residual(const double* x, const double* /*input*/, const double* /*obs*/, double* res) {
     res[0] = (x[1] - 2 * x[2]) * (x[1] - 2 * x[2]);
   }
 };
 
 struct PowellF3 {
+  void setState(const double* /*x*/) {}
   void residual(const double* x, const double* /*input*/, const double* /*obs*/, double* res) {
     res[0] = sqrt(10) * (x[0] - x[3]) * (x[0] - x[3]);
   }

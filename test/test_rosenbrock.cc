@@ -11,6 +11,8 @@ using namespace moptim;
  *
  */
 struct Rosenbrock {
+  void setState(const double* /*x*/) {}
+
   void residual(const double* x, const double* /*input*/, const double* /*obs*/, double* res) {
     res[0] = 10 * (x[1] - x[0] * x[0]);
     res[1] = 1 - x[0];

@@ -31,6 +31,8 @@ const std::vector<double> input = {
     4.800000e+00, 4.875000e+00, 4.950000e+00};
 
 struct CuveFittingModel {
+  void setState(const double* /*x*/) {}
+
   void residual(const double* x, const double* input, const double* obs, double* res) {
     res[0] = obs[0] - std::exp(x[0] * input[0] + x[1]);
   }
