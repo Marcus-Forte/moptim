@@ -47,11 +47,11 @@ Status LevenbergMarquardt<T>::step(T* x) const {
 
   T nu = 2.0;
 
+  const MatrixT Hessian0 = Hessian;
   HessianDiagnonal = Hessian.diagonal().asDiagonal();
   T totalCost = 0.0;
   for (size_t i = 0; i < lm_iterations_; ++i) {
-    // Refine Hessian
-    Hessian += lm_lambda_ * HessianDiagnonal;
+    Hessian = Hessian0 + lm_lambda_ * HessianDiagnonal;
 
     solver_->solve(Hessian.data(), BVec.data(), DeltaVec.data());
 
@@ -63,11 +63,7 @@ Status LevenbergMarquardt<T>::step(T* x) const {
     }
     auto rho = (initCost - totalCost) / DeltaVec.dot(lm_lambda_ * DeltaVec - BVec);
 
-    // if (logger_) {
-    //   std::stringstream delta_str;
-    //   delta_str << delta.transpose();
     logger_->log(ILog::Level::DEBUG, "rho: {}, Cost: {} -> {}", rho, initCost, totalCost);
-    // }
 
     if (rho < 0 || std::isnan(rho)) {
       if (isDeltaSmall(DeltaVec.data(), DeltaVec.size())) {
@@ -92,7 +88,7 @@ Status LevenbergMarquardt<T>::step(T* x) const {
 
 template <class T>
 Status LevenbergMarquardt<T>::optimize(T* x) const {
-  lm_init_lambda_factor_ = 1e-9;
+  lm_init_lambda_factor_ = 1e-7;
   lm_lambda_ = -1.0;
   static Timer timer;
   for (size_t i = 0; i < this->max_iterations_; ++i) {
