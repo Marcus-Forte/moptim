@@ -2,7 +2,6 @@
 
 #include <Eigen/Dense>
 #include <cassert>
-#include <mdspan>
 
 #include "ICost.hh"
 #include "IModel.hh"
@@ -18,8 +17,8 @@ class AnalyticalCost : public ICost<T> {
   AnalyticalCost(const T* input, const T* observations, size_t num_elements, size_t input_dim, size_t observation_dim,
                  size_t param_dim, Model model = Model{})
       : ICost<T>(input_dim, observation_dim, param_dim, num_elements),
-        input_elements_(input, num_elements, input_dim),
-        observation_elements_(observations, num_elements, observation_dim),
+        input_elements_(input),
+        observation_elements_(observations),
         model_(std::move(model)) {
     // We fill the jacobian transposed already
     jacobian_transposed_data_.resize(param_dim_, observation_dim_ * num_elements_);
@@ -30,7 +29,7 @@ class AnalyticalCost : public ICost<T> {
   T computeCost(const T* x) override {
     model_.setState(x);
     for (size_t i = 0; i < num_elements_; ++i) {
-      model_.residual(x, &input_elements_[i, 0], &observation_elements_[i, 0], &residual_data_[i * observation_dim_]);
+      model_.residual(x, input_elements_ + i * input_dim_, observation_elements_ + i * observation_dim_, &residual_data_[i * observation_dim_]);
     }
     return residual_data_.squaredNorm();
   }
@@ -38,8 +37,8 @@ class AnalyticalCost : public ICost<T> {
   void computeLinearSystem(const T* x, T* JTJ, T* JTb, T& cost) override {
     model_.setState(x);
     for (size_t i = 0; i < num_elements_; ++i) {
-      const T* in_i = &input_elements_[i, 0];
-      const T* obs_i = &observation_elements_[i, 0];
+      const T* in_i = input_elements_ + i * input_dim_;
+      const T* obs_i = observation_elements_ + i * observation_dim_;
 
       model_.residual(x, in_i, obs_i, &residual_data_[i * observation_dim_]);
 
@@ -72,8 +71,8 @@ class AnalyticalCost : public ICost<T> {
   VectorT residual_data_;
   VectorT jac_elem_buf_;
 
-  std::mdspan<const T, std::dextents<size_t, 2>> input_elements_;
-  std::mdspan<const T, std::dextents<size_t, 2>> observation_elements_;
+  const T* input_elements_;
+  const T* observation_elements_;
   Model model_;
 };
 

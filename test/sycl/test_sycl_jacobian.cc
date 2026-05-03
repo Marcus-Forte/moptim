@@ -22,7 +22,7 @@ TEST(TestJacobian, NumericalJacobianEquivalenceSycl) {
   NumericalCostSycl<double, SimpleModel<double>> num_cost_sycl(logger, queue, x_data_, y_data_, 1, 1, 2,
                                                                num_measurements);
 
-  NumericalCostForwardEuler<double> num_cost(x_data_, y_data_, 1, 1, 2, std::make_shared<SimpleModel<double>>());
+  NumericalCostForwardEuler<SimpleModel<double>, double> num_cost(x_data_.data(), y_data_.data(), num_measurements, 1, 1, 2);
 
   double x[2]{0.1, 0.1};
 
@@ -34,10 +34,8 @@ TEST(TestJacobian, NumericalJacobianEquivalenceSycl) {
   Eigen::Matrix<double, 2, 1> jtb;
   double total = 0.0;
 
-  num_cost_sycl.computeLinearSystem(x, std::span<double>(jtj_sycl.data(), jtj_sycl.size()),
-                                    std::span<double>(jtb_sycl.data(), jtb_sycl.size()), total_sycl);
-  num_cost.computeLinearSystem(x, std::span<double>(jtj.data(), jtj.size()), std::span<double>(jtb.data(), jtb.size()),
-                               total);
+  num_cost_sycl.computeLinearSystem(x, jtj_sycl.data(), jtb_sycl.data(), total_sycl);
+  num_cost.computeLinearSystem(x, jtj.data(), jtb.data(), total);
 
   std::cout << "num_jtj_sycl: " << jtj_sycl << std::endl;
   std::cout << "num_jtb_sycl: " << jtb_sycl << std::endl;

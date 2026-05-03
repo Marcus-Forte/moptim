@@ -20,16 +20,13 @@ TYPED_TEST(SimpleModelTest, NumericalCostEquivalenceSycl) {
   sycl::queue queue{sycl::default_selector_v};
   auto logger = std::make_shared<ConsoleLogger>();
 
-  const auto model = std::make_shared<SimpleModel<T>>();
-
   NumericalCostSycl<T, SimpleModel<T>> num_cost_sycl(
       logger, queue, std::span<const T>(this->test_data_.x_data_, this->test_data_.num_measurements),
       std::span<const T>(this->test_data_.y_data_, this->test_data_.num_measurements), 1, 1, 2,
       this->test_data_.num_measurements);
 
-  NumericalCostForwardEuler<T> num_cost(std::span<const T>(this->test_data_.x_data_, this->test_data_.num_measurements),
-                                        std::span<const T>(this->test_data_.y_data_, this->test_data_.num_measurements),
-                                        1, 1, 2, model);
+  NumericalCostForwardEuler<SimpleModel<T>, T> num_cost(this->test_data_.x_data_, this->test_data_.y_data_,
+                                                        this->test_data_.num_measurements, 1, 1, 2);
 
   T x[2]{0.0, 0.0};
 

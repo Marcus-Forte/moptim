@@ -69,33 +69,39 @@ class NumericalCostSycl : public ICost<T> {
   }
 
   /// \todo if this is called before jacobian, we don't have to compute cost again.
-  T computeCost(std::span<const T> x) override {
+  T computeCost(const T* x) override {
     Model model;
-    model.setup(x);
+    model.setState(x);
     auto model_sycl = std::span<Model>(sycl::malloc_device<Model>(1, queue_), 1);
-    const auto copy_model_event = queue_.copy<Model>(&model, model_sycl.data(), 1);
+    auto x_device = std::span<T>(sycl::malloc_device<T>(param_dim_, queue_), param_dim_);
+    auto copy_model_event = queue_.copy<Model>(&model, model_sycl.data(), 1);
+    queue_.copy<T>(x, x_device.data(), param_dim_).wait();
 
     logger_->log(ILog::Level::DEBUG, "Sycl compute cost items: {}", num_elements_);
 
-    computeResiduals(copy_model_event, model_sycl).wait();
+    computeResiduals(copy_model_event, model_sycl, x_device.data()).wait();
 
     T result;
     queue_.copy<T>(cost_reduction_.data(), &result, 1).wait();
 
     sycl::free(model_sycl.data(), queue_);
+    sycl::free(x_device.data(), queue_);
     return result;
   }
 
-  void computeLinearSystem(std::span<const T> x, std::span<T> JTJ, std::span<T> JTb, T& cost) override {
-    Eigen::Map<const VectorT> x_vec(x.data(), param_dim_);
+  void computeLinearSystem(const T* x, T* JTJ, T* JTb, T& cost) override {
+    Eigen::Map<const VectorT> x_vec(x, param_dim_);
 
     Model model;
-    model.setup(x);
+    model.setState(x);
 
     Timer t0;
     t0.start();
     auto model_sycl = std::span<Model>(sycl::malloc_device<Model>(1, queue_), 1);
     auto copy_model_event = queue_.copy<Model>(&model, model_sycl.data(), 1);
+    auto x_device = std::span<T>(sycl::malloc_device<T>(param_dim_, queue_), param_dim_);
+    auto x_plus_device = std::span<T>(sycl::malloc_device<T>(param_dim_ * param_dim_, queue_), param_dim_ * param_dim_);
+    queue_.copy<T>(x, x_device.data(), param_dim_);
 
     // Initialize vector of models
     std::vector<std::shared_ptr<Model>> models_plus(param_dim_);
@@ -106,8 +112,9 @@ class NumericalCostSycl : public ICost<T> {
       VectorT x_plus(x_vec);
       x_plus[i] += g_step;
       models_plus[i] = std::make_shared<Model>();
-      models_plus[i]->setup(std::span<const T>(x_plus.data(), x_plus.size()));
+      models_plus[i]->setState(x_plus.data());
       queue_.copy<Model>(models_plus[i].get(), &models_sycl_plus[i], 1);
+      queue_.copy<T>(x_plus.data(), x_plus_device.data() + i * param_dim_, param_dim_);
     }
 
     queue_.wait();
@@ -117,7 +124,7 @@ class NumericalCostSycl : public ICost<T> {
 
     t0.start();
 
-    const auto compute_residuals_event = computeResiduals(copy_model_event, model_sycl);
+    const auto compute_residuals_event = computeResiduals(copy_model_event, model_sycl, x_device.data());
 
     auto jac_event = queue_.submit([&](sycl::handler& cgh) {
       const auto* input_capture = input_sycl_.data();
@@ -125,6 +132,7 @@ class NumericalCostSycl : public ICost<T> {
       auto* residual_data_capture = residual_data_.data();
       auto* residual_plus_data_capture = residual_plus_data_.data();
       auto* jacobian_data_capture = jacobian_data_.data();
+      const auto* x_plus_device_capture = x_plus_device.data();
       const auto param_dim_capture = param_dim_;
       const auto output_dim_capture = observation_dim_;
       const auto residuals_dim_capture = observation_dim_ * num_elements_;
@@ -144,9 +152,9 @@ class NumericalCostSycl : public ICost<T> {
                                               output_dim_capture);
         Eigen::Map<VectorT> jacobian_map(jacobian_data_capture, residuals_dim_capture, param_dim_capture);
 
-        models_sycl_plus[ItemCol].f(std::span<const T>(&input_capture[ItemRow], output_dim_capture),
-                                    std::span<const T>(&observations_capture[ItemRow], output_dim_capture),
-                                    std::span<T>(residual_plus_map.data(), output_dim_capture));
+        models_sycl_plus[ItemCol].residual(x_plus_device_capture + ItemCol * param_dim_capture,
+                                           &input_capture[ItemRow], &observations_capture[ItemRow],
+                                           residual_plus_map.data());
 
         jacobian_map.block(ItemRow, ItemCol, output_dim_capture, 1) = (residual_plus_map - residual_map) / g_step;
       });
@@ -227,11 +235,13 @@ class NumericalCostSycl : public ICost<T> {
 
     queue_.copy<T>(cost_reduction_.data(), &cost, 1).wait();
 
-    queue_.copy<T>(JTJ_device.data(), JTJ.data(), param_dim_ * param_dim_).wait();
-    queue_.copy<T>(JTb_device.data(), JTb.data(), param_dim_).wait();
+    queue_.copy<T>(JTJ_device.data(), JTJ, param_dim_ * param_dim_).wait();
+    queue_.copy<T>(JTb_device.data(), JTb, param_dim_).wait();
 
     sycl::free(models_sycl_plus.data(), queue_);
     sycl::free(model_sycl.data(), queue_);
+    sycl::free(x_device.data(), queue_);
+    sycl::free(x_plus_device.data(), queue_);
     sycl::free(JTJ_device.data(), queue_);
     sycl::free(JTb_device.data(), queue_);
   }
@@ -244,7 +254,7 @@ class NumericalCostSycl : public ICost<T> {
    * @param model_sycl
    * @return sycl::event
    */
-  sycl::event computeResiduals(sycl::event copy_model_event, std::span<Model> model_sycl) {
+  sycl::event computeResiduals(sycl::event copy_model_event, std::span<Model> model_sycl, const T* x_device) {
     return queue_.submit([&](sycl::handler& cgh) {
       cgh.depends_on(std::move(copy_model_event));
       auto sum = sycl::reduction<T>(cost_reduction_.data(), 0.0, sycl::plus<T>{},
@@ -254,15 +264,15 @@ class NumericalCostSycl : public ICost<T> {
       const auto* observations_capture = observations_sycl_.data();
       const auto observation_dim_capture = observation_dim_;
       auto* residual_data_capture = residual_data_.data();
+      const auto* x_capture = x_device;
 
       const auto workers = sycl::range<1>(num_elements_);
 
       cgh.parallel_for(workers, sum, [=](sycl::item<1> id, auto& reduction) {
         const auto ItemRow = id.get_id() * observation_dim_capture;
         Eigen::Map<VectorT> residual_map(&residual_data_capture[ItemRow], observation_dim_capture);
-        model_sycl[0].f(std::span<const T>(&input_capture[ItemRow], observation_dim_capture),
-                        std::span<const T>(&observations_capture[ItemRow], observation_dim_capture),
-                        std::span<T>(&residual_data_capture[ItemRow], observation_dim_capture));
+        model_sycl[0].residual(x_capture, &input_capture[ItemRow], &observations_capture[ItemRow],
+                               &residual_data_capture[ItemRow]);
         reduction += residual_map.squaredNorm();
       });
     });

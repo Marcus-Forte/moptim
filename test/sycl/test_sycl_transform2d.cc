@@ -10,6 +10,8 @@
 #include "test_helper.hh"
 #include "transform2d.hh"
 
+using namespace moptim;
+
 const double sycl_vs_cpu_tolerance = 1e-1;
 
 TEST_F(TestTransform2D, SyclCostAndJacobian) {
@@ -19,15 +21,12 @@ TEST_F(TestTransform2D, SyclCostAndJacobian) {
 
   const auto num_elements = pointcloud_.size();
 
-  const auto model = std::make_shared<Point2Distance>();
-
   NumericalCostSycl<double, Point2Distance> num_cost_sycl(
       logger, queue, std::span<const double>(transformed_pointcloud_[0].data(), transformed_pointcloud_.size() * 2),
       std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3, num_elements);
 
-  NumericalCostForwardEuler<double> num_cost(
-      std::span<const double>(transformed_pointcloud_[0].data(), transformed_pointcloud_.size() * 2),
-      std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3, model);
+  NumericalCostForwardEuler<Point2Distance, double> num_cost(
+      transformed_pointcloud_[0].data(), pointcloud_[0].data(), num_elements, 2, 2, 3);
 
   double x[]{0.0, 0.0, 0.0};
 
@@ -48,15 +47,13 @@ TEST_F(TestTransform2D, SyclCostAndJacobian) {
   Eigen::Matrix<double, 3, 1> jtb;
   double total = 0.0;
 
-  num_cost_sycl.computeLinearSystem(x, std::span<double>(jtj_sycl.data(), jtj_sycl.size()),
-                                    std::span<double>(jtb_sycl.data(), jtb_sycl.size()), total_sycl);
+  num_cost_sycl.computeLinearSystem(x, jtj_sycl.data(), jtb_sycl.data(), total_sycl);
 
   auto stop = t0.stop();
   std::cout << "Sycl cost jacobian: took " << stop << " us" << std::endl;
 
   t0.start();
-  num_cost.computeLinearSystem(x, std::span<double>(jtj.data(), jtj.size()), std::span<double>(jtb.data(), jtb.size()),
-                               total);
+  num_cost.computeLinearSystem(x, jtj.data(), jtb.data(), total);
   stop = t0.stop();
   std::cout << "Known cost jacobian: took " << stop << " us" << std::endl;
 

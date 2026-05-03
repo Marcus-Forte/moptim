@@ -1,8 +1,6 @@
 {
     "name": "moptim",
-    "build":{
-        "dockerfile": "Dockerfile"
-    },
+    "image": "mdnf1992/cpp-dev", // mdnf1992/sycl-dev for SYCL support
     "customizations": {
         "vscode": {
             "extensions": [
@@ -12,14 +10,15 @@
                 "jebbs.plantuml"
             ],
             "settings": {
-                "clangd.arguments": [
+                "clangd.arguments": [ 
                      "-header-insertion=never"
                 ]
             }
         }
     },
     "mounts": [
-        "source=moptim-build-cache,target=/workspaces/moptim/build,type=volume"
+        "source=moptim-build-cache,target=/workspaces/moptim/build,type=volume",
+        "source=moptim-build-sycl-cache,target=/workspaces/moptim/build_sycl,type=volume"
     ]
     // "runArgs": ["--gpus", "all", "--cap-add=SYS_ADMIN"] // uncomment for GPU usage
 }

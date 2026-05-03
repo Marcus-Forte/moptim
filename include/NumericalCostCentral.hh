@@ -2,7 +2,6 @@
 
 #include <Eigen/Dense>
 #include <cassert>
-#include <mdspan>
 
 #include "ICost.hh"
 #include "IModel.hh"
@@ -20,8 +19,8 @@ class NumericalCostCentral : public ICost<T> {
   NumericalCostCentral(const T* input, const T* observations, size_t num_elements, size_t input_dim,
                        size_t observation_dim, size_t param_dim, Model model = Model{})
       : ICost<T>(input_dim, observation_dim, param_dim, num_elements),
-        input_elements_(input, num_elements, input_dim),
-        observation_elements_(observations, num_elements, observation_dim),
+        input_elements_(input),
+        observation_elements_(observations),
         model_(std::move(model)) {
     jacobian_data_.resize(observation_dim_ * num_elements_, param_dim_);
     residual_data_.resize(observation_dim_ * num_elements_);
@@ -32,7 +31,7 @@ class NumericalCostCentral : public ICost<T> {
   T computeCost(const T* x) override {
     model_.setState(x);
     for (size_t i = 0; i < num_elements_; ++i) {
-      model_.residual(x, &input_elements_[i, 0], &observation_elements_[i, 0], &residual_data_[i * observation_dim_]);
+      model_.residual(x, input_elements_ + i * input_dim_, observation_elements_ + i * observation_dim_, &residual_data_[i * observation_dim_]);
     }
     return residual_data_.squaredNorm();
   }
@@ -41,7 +40,7 @@ class NumericalCostCentral : public ICost<T> {
     const auto callResiduals = [this](const T* params, T* residual_out) {
       model_.setState(params);
       for (size_t i = 0; i < num_elements_; ++i) {
-        model_.residual(params, &input_elements_[i, 0], &observation_elements_[i, 0],
+        model_.residual(params, input_elements_ + i * input_dim_, observation_elements_ + i * observation_dim_,
                         &residual_out[i * observation_dim_]);
       }
     };
@@ -93,8 +92,8 @@ class NumericalCostCentral : public ICost<T> {
   VectorT residual_data_plus_;
   VectorT residual_data_minus_;
 
-  std::mdspan<const T, std::dextents<size_t, 2>> input_elements_;
-  std::mdspan<const T, std::dextents<size_t, 2>> observation_elements_;
+  const T* input_elements_;
+  const T* observation_elements_;
   Model model_;
 };
 
