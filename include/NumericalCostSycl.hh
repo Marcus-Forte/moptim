@@ -19,9 +19,9 @@ class NumericalCostSycl : public ICost<T> {
                     size_t num_elements)
       : ICost<T>(input_dim, observation_dim, param_dim, num_elements),
         logger_(logger),
-        queue_(queue),
         input_{input},
-        observations_{observations} {
+        observations_{observations},
+        queue_(queue) {
     logger_->log(ILog::Level::DEBUG, "Sycl Device: {}", queue_.get_device().get_info<sycl::info::device::name>());
     logger_->log(ILog::Level::DEBUG, "max_compute_units: {}",
                  queue_.get_device().get_info<sycl::info::device::max_compute_units>());
@@ -152,9 +152,8 @@ class NumericalCostSycl : public ICost<T> {
                                               output_dim_capture);
         Eigen::Map<VectorT> jacobian_map(jacobian_data_capture, residuals_dim_capture, param_dim_capture);
 
-        models_sycl_plus[ItemCol].residual(x_plus_device_capture + ItemCol * param_dim_capture,
-                                           &input_capture[ItemRow], &observations_capture[ItemRow],
-                                           residual_plus_map.data());
+        models_sycl_plus[ItemCol].residual(x_plus_device_capture + ItemCol * param_dim_capture, &input_capture[ItemRow],
+                                           &observations_capture[ItemRow], residual_plus_map.data());
 
         jacobian_map.block(ItemRow, ItemCol, output_dim_capture, 1) = (residual_plus_map - residual_map) / g_step;
       });

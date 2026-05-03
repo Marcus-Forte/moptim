@@ -29,7 +29,8 @@ class AnalyticalCost : public ICost<T> {
   T computeCost(const T* x) override {
     model_.setState(x);
     for (size_t i = 0; i < num_elements_; ++i) {
-      model_.residual(x, input_elements_ + i * input_dim_, observation_elements_ + i * observation_dim_, &residual_data_[i * observation_dim_]);
+      model_.residual(x, input_elements_ + i * input_dim_, observation_elements_ + i * observation_dim_,
+                      &residual_data_[i * observation_dim_]);
     }
     return residual_data_.squaredNorm();
   }

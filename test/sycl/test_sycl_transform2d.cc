@@ -25,8 +25,8 @@ TEST_F(TestTransform2D, SyclCostAndJacobian) {
       logger, queue, std::span<const double>(transformed_pointcloud_[0].data(), transformed_pointcloud_.size() * 2),
       std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3, num_elements);
 
-  NumericalCostForwardEuler<Point2Distance, double> num_cost(
-      transformed_pointcloud_[0].data(), pointcloud_[0].data(), num_elements, 2, 2, 3);
+  NumericalCostForwardEuler<Point2Distance, double> num_cost(transformed_pointcloud_[0].data(), pointcloud_[0].data(),
+                                                             num_elements, 2, 2, 3);
 
   double x[]{0.0, 0.0, 0.0};
 
@@ -70,8 +70,6 @@ TEST_F(TestTransform2D, Sycl2DTransformLM) {
   auto logger = std::make_shared<ConsoleLogger>();
   const auto num_elements = pointcloud_.size();
 
-  Timer t0;
-  t0.start();
   sycl::queue queue{sycl::default_selector_v, sycl::property::queue::enable_profiling{}};
   auto solver = std::make_shared<LevenbergMarquardt<double>>(3, logger);
 
@@ -88,22 +86,7 @@ TEST_F(TestTransform2D, Sycl2DTransformLM) {
   EXPECT_NEAR(x0[0], -x0_ref[0], 1e-3);
   EXPECT_NEAR(x0[1], -x0_ref[1], 1e-3);
   EXPECT_NEAR(x0[2], -x0_ref[2], 1e-3);
-  auto delta = t0.stop();
 }
 
-// FIXME
-// TEST_F(Transform2D, DISABLED_Sycl2DTransformLMAnalytical) {
-//   auto logger = std::make_shared<ConsoleLogger>();
-//   solver_ = std::make_shared<LevenbergMarquardt>(logger);
-//   const auto model = std::make_shared<Point2Distance>();
-//   auto cost = std::make_shared<AnalyticalCost>(transformed_pointcloud_[0].data(), pointcloud_[0].data(),
-//                                                transformed_pointcloud_.size(), 2, model);
-
-//   solver_->addCost(cost);
-//   Eigen::VectorXd x0{{0, 0, 0}};
-//   solver_->optimize(x0);
-
-//   EXPECT_NEAR(x0[0], -x0_ref[0], 1e-10);
-//   EXPECT_NEAR(x0[1], -x0_ref[1], 1e-10);
-//   EXPECT_NEAR(x0[2], -x0_ref[2], 1e-10);
-// }
+// TODO
+TEST_F(TestTransform2D, DISABLED_Sycl2DTransformLMAnalytical) {}

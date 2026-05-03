@@ -19,27 +19,26 @@ TEST_P(TestTransform3D, SyclCost) {
   auto logger = std::make_shared<ConsoleLogger>();
   logger->log(ILog::Level::INFO, "3D-Transforming {} Points", GetParam());
   Timer t0;
-  sycl::queue queue{sycl::default_selector_v};
+  sycl::queue queue{sycl::default_selector_v, sycl::property::queue::enable_profiling{}};
 
-  const auto num_elements = pointcloud_.size();  // pointcloud_.size();
+  const auto num_elements = pointcloud_.size();
 
-  const auto model = std::make_shared<Point3Distance>();
+  NumericalCostForwardEuler<Point3Distance, double> normal_cost(transformed_pointcloud_[0].data(),
+                                                                pointcloud_[0].data(), num_elements, 3, 3, 6);
 
-  auto normal_cost = std::make_shared<NumericalCostForwardEuler<double>>(
-      transformed_pointcloud_[0].data(), pointcloud_[0].data(), num_elements, 3, 6, model);
+  NumericalCostSycl<double, Point3Distance> sycl_cost(
+      logger, queue, std::span<const double>(transformed_pointcloud_[0].data(), num_elements * 3),
+      std::span<const double>(pointcloud_[0].data(), num_elements * 3), 3, 3, 6, num_elements);
 
-  auto sycl_cost = std::make_shared<NumericalCostSycl<Point3Distance>>(logger, queue, transformed_pointcloud_[0].data(),
-                                                                       pointcloud_[0].data(), num_elements, 3, 6);
-
-  Eigen::VectorXd x0{{0.0, 0.0, 0, 0, 0, 0}};
+  double x0[]{0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
   t0.start();
-  const auto cost_sum = normal_cost->computeCost(x0);
+  const auto cost_sum = normal_cost.computeCost(x0);
   auto stop = t0.stop();
   logger->log(ILog::Level::INFO, "Normal cost: {} took {} us", cost_sum, stop);
 
   t0.start();
-  const auto sycl_cost_sum = sycl_cost->computeCost(x0);
+  const auto sycl_cost_sum = sycl_cost.computeCost(x0);
   stop = t0.stop();
   logger->log(ILog::Level::INFO, "Sycl cost: {} took {} us", sycl_cost_sum, stop);
 
@@ -50,27 +49,34 @@ TEST_P(TestTransform3D, SyclCost) {
 TEST_P(TestTransform3D, SyclJacobian) {
   auto logger = std::make_shared<ConsoleLogger>();
   Timer t0;
-  sycl::queue queue{sycl::default_selector_v};
+  sycl::queue queue{sycl::default_selector_v, sycl::property::queue::enable_profiling{}};
 
   const auto num_elements = pointcloud_.size();
 
-  const auto model = std::make_shared<Point3Distance>();
+  NumericalCostForwardEuler<Point3Distance, double> normal_cost(transformed_pointcloud_[0].data(),
+                                                                pointcloud_[0].data(), num_elements, 3, 3, 6);
 
-  auto normal_cost = std::make_shared<NumericalCost>(transformed_pointcloud_[0].data(), pointcloud_[0].data(),
-                                                     num_elements, 3, 6, model);
+  NumericalCostSycl<double, Point3Distance> sycl_cost(
+      logger, queue, std::span<const double>(transformed_pointcloud_[0].data(), num_elements * 3),
+      std::span<const double>(pointcloud_[0].data(), num_elements * 3), 3, 3, 6, num_elements);
 
-  auto sycl_cost = std::make_shared<NumericalCostSycl<Point3Distance>>(logger, queue, transformed_pointcloud_[0].data(),
-                                                                       pointcloud_[0].data(), num_elements, 3, 6);
+  double x0[]{0.1, 0.1, 0.1, 0.0, 0.0, 0.0};
 
-  Eigen::VectorXd x0{{0.1, 0.1, 0.1, 0, 0, 0}};
+  Eigen::Matrix<double, 6, 6> num_jtj;
+  Eigen::Matrix<double, 6, 1> num_jtb;
+  double num_total = 0.0;
 
   t0.start();
-  const auto [num_jtj, num_jtb, num_total] = normal_cost->computeLinearSystem(x0);
+  normal_cost.computeLinearSystem(x0, num_jtj.data(), num_jtb.data(), num_total);
   auto stop = t0.stop();
   logger->log(ILog::Level::INFO, "Normal cost jacobian: took {} us", stop);
 
+  Eigen::Matrix<double, 6, 6> num_jtj_sycl;
+  Eigen::Matrix<double, 6, 1> num_jtb_sycl;
+  double num_total_sycl = 0.0;
+
   t0.start();
-  const auto [num_jtj_sycl, num_jtb_sycl, num_total_sycl] = sycl_cost->computeLinearSystem(x0);
+  sycl_cost.computeLinearSystem(x0, num_jtj_sycl.data(), num_jtb_sycl.data(), num_total_sycl);
   stop = t0.stop();
   logger->log(ILog::Level::INFO, "Sycl cost jacobian: took {} us", stop);
 

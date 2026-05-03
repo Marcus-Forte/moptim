@@ -29,7 +29,7 @@ add_executable(test_moptim
   test_transform3d.cc
   test_cost.cc
 )
-add_subdirectory(nist) # TODO fix
+add_subdirectory(nist)
 target_link_libraries(test_moptim test_helper)
 gtest_discover_tests(test_moptim)
 
@@ -38,7 +38,7 @@ if(WITH_SYCL)
     sycl/test_sycl_cost.cc
     sycl/test_sycl_jacobian.cc
     sycl/test_sycl_transform2d.cc
-    # sycl/test_sycl_transform3d.cc
+    sycl/test_sycl_transform3d.cc
   )
   target_include_directories(test_moptim_sycl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(test_moptim_sycl gtest gtest_main)
