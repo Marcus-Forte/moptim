@@ -27,7 +27,9 @@ add_library(moptim
   src/LevenbergMarquardt.cc)
 
 if(WITH_SYCL)
+  # check this link to select via env variable: https://github.com/intel/llvm/blob/sycl/sycl/doc/EnvironmentVariables.md
   add_compile_definitions(EIGEN_ARM64_USE_SVE)
+  add_compile_definitions(EIGEN_DONT_VECTORIZE)
   find_package(oneMath REQUIRED)
   message(STATUS "Found oneMath: ${oneMath_DIR}")
   include(CheckCXXCompilerFlag)
@@ -35,11 +37,12 @@ if(WITH_SYCL)
   if(NOT COMPILER_SUPPORTS_FSYCL)
       message(FATAL_ERROR "SYCL compilation requires dpcpp compiler")
   endif()
-  set(SYCL_FLAGS -fsycl -fsycl-targets=native_cpu,nvptx64-nvidia-cuda,spir64)
+  set(SYCL_FLAGS -fsycl -fsycl-targets=native_cpu,nvptx64-nvidia-cuda,spir64) # specific GPU triplet is also possible, e.g: nvidia_gpu_sm_86
   target_compile_options(moptim PUBLIC ${SYCL_FLAGS})
   target_link_options(moptim PUBLIC ${SYCL_FLAGS})
-  link_libraries(ONEMATH::onemath ONEMATH::onemath_blas_netlib gfortran) # The onemath library must have been compiled in the base container.
-  # If `onemath_blas_cublas` is used, make sure to link `cuda` as well.
+  # The onemath library must have been compiled in the base container.
+  link_libraries(ONEMATH::onemath ONEMATH::onemath_blas_netlib gfortran) # Netlib
+  # link_libraries(ONEMATH::onemath ONEMATH::onemath_blas_cublas cuda) # Cuda + Cublas
 endif()
 target_include_directories(moptim PUBLIC include)
 target_link_libraries(moptim utils Eigen3::Eigen)

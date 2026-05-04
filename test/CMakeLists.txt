@@ -9,15 +9,14 @@ FetchContent_Declare(
 )
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
-find_package(GTest REQUIRED)
+include(GoogleTest)
 
 add_library(test_helper
   transform2d.cc
   transform3d.cc
   test_helper.cc
 )
-target_link_libraries(test_helper moptim)
-link_libraries(test_helper gtest)
+target_link_libraries(test_helper moptim gtest)
 
 add_executable(test_moptim
   test_main.cc
@@ -30,7 +29,7 @@ add_executable(test_moptim
   test_cost.cc
 )
 add_subdirectory(nist)
-target_link_libraries(test_moptim test_helper)
+target_link_libraries(test_moptim moptim test_helper)
 gtest_discover_tests(test_moptim)
 
 if(WITH_SYCL)
@@ -41,7 +40,7 @@ if(WITH_SYCL)
     sycl/test_sycl_transform3d.cc
   )
   target_include_directories(test_moptim_sycl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  target_link_libraries(test_moptim_sycl gtest gtest_main)
+  target_link_libraries(test_moptim_sycl test_helper gtest gtest_main)
   gtest_discover_tests(test_moptim_sycl)
   # Bug reproduction
   # add_executable(bug_reduction
