@@ -48,6 +48,6 @@ target_include_directories(moptim PUBLIC include)
 target_link_libraries(moptim utils Eigen3::Eigen)
 
 ## Testing
-if(BUILD_TESTING)
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND BUILD_TESTING)
 add_subdirectory(test)
 endif()
