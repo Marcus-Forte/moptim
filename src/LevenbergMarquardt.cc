@@ -32,7 +32,12 @@ Status LevenbergMarquardt<T>::step(T* x) const {
 
   T initCost = 0.0;
 
+  static Timer hessianTimer;
+  static Timer solverTimer;
+  static Timer costTimer;
+
   // Compute Hessian
+  hessianTimer.start();
   for (const auto& cost : this->costs_) {
     T cost_val = 0.0;
     cost->computeLinearSystem(x, JTJ.data(), JTb.data(), cost_val);
@@ -40,6 +45,8 @@ Status LevenbergMarquardt<T>::step(T* x) const {
     BVec += JTb;
     initCost += cost_val;
   }
+  const auto hessianUs = hessianTimer.stop();
+  logger_->log(ILog::Level::DEBUG, "Computing Hessian took: {} us", hessianUs);
 
   if (lm_lambda_ < 0.0) {
     lm_lambda_ = lm_init_lambda_factor_ * Hessian.diagonal().array().abs().maxCoeff();
@@ -53,14 +60,20 @@ Status LevenbergMarquardt<T>::step(T* x) const {
   for (size_t i = 0; i < lm_iterations_; ++i) {
     Hessian = Hessian0 + lm_lambda_ * HessianDiagnonal;
 
+    solverTimer.start();
     solver_->solve(Hessian.data(), BVec.data(), DeltaVec.data());
+    const auto solverUs = solverTimer.stop();
+    logger_->log(ILog::Level::DEBUG, "Solving linear system took: {} us", solverUs);
 
     XiVec = XVec + DeltaVec;
 
+    costTimer.start();
     totalCost = 0.0;
     for (const auto& cost : this->costs_) {
       totalCost += cost->computeCost(XiVec.data());
     }
+    const auto costUs = costTimer.stop();
+    logger_->log(ILog::Level::DEBUG, "Cost evaluation took: {} us", costUs);
     auto rho = (initCost - totalCost) / DeltaVec.dot(lm_lambda_ * DeltaVec - BVec);
 
     logger_->log(ILog::Level::DEBUG, "rho: {}, Cost: {} -> {}", rho, initCost, totalCost);
