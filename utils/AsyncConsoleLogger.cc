@@ -14,7 +14,7 @@ AsyncConsoleLogger::AsyncConsoleLogger() : log_queue_{LogQueueCapacity} {
       LogCommand command;
       while (!log_queue_.empty()) {
         if (log_queue_.pop(command)) {
-          std::cout << command() << std::endl;
+          std::cout << command() << '\n';
         }
       }
     }
