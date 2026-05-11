@@ -46,7 +46,11 @@ Status LevenbergMarquardt<T>::step(T* x) const {
     initCost += cost_val;
   }
   const auto hessianUs = hessianTimer.stop();
-  logger_->log(ILog::Level::DEBUG, "Computing Hessian took: {} us", hessianUs);
+  size_t totalElements = 0;
+  for (const auto& cost : this->costs_) {
+    totalElements += cost->numElements();
+  }
+  logger_->log(ILog::Level::DEBUG, "Computing Hessian took: {} us ({} elements)", hessianUs, totalElements);
 
   if (lm_lambda_ < 0.0) {
     lm_lambda_ = lm_init_lambda_factor_ * Hessian.diagonal().array().abs().maxCoeff();
@@ -73,7 +77,7 @@ Status LevenbergMarquardt<T>::step(T* x) const {
       totalCost += cost->computeCost(XiVec.data());
     }
     const auto costUs = costTimer.stop();
-    logger_->log(ILog::Level::DEBUG, "Cost evaluation took: {} us", costUs);
+    logger_->log(ILog::Level::DEBUG, "Cost evaluation took: {} us ({} elements)", costUs, totalElements);
     auto rho = (initCost - totalCost) / DeltaVec.dot(lm_lambda_ * DeltaVec - BVec);
 
     logger_->log(ILog::Level::DEBUG, "rho: {}, Cost: {} -> {}", rho, initCost, totalCost);

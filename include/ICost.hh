@@ -30,6 +30,8 @@ class ICost {
    */
   virtual void computeLinearSystem(const T* x, T* JTJ, T* JTb, T& cost) = 0;
 
+  size_t numElements() const { return num_elements_; }
+
  protected:
   const size_t input_dim_;
   const size_t observation_dim_;
