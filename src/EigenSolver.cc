@@ -1,4 +1,4 @@
-#include "EigenSolver.hh"
+#include "moptim/EigenSolver.h"
 
 #include <Eigen/Dense>
 

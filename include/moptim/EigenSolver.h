@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ISolver.hh"
+#include "moptim/ISolver.h"
 
 template <class T>
 class EigenSolver : public ISolver<T> {

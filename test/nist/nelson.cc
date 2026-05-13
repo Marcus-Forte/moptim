@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <Eigen/Dense>
-#include <LevenbergMarquardt.hh>
+#include <moptim/LevenbergMarquardt.h>
 
 #include "ConsoleLogger.hh"
-#include "NumericalCostForwardEuler.hh"
+#include "moptim/NumericalCostForwardEuler.h"
 
 using namespace moptim;
 

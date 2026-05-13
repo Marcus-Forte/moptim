@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
-#include "AnalyticalCost.hh"
+#include "moptim/AnalyticalCost.h"
 #include "ConsoleLogger.hh"
-#include "NumericalCostForwardEuler.hh"
-#include "NumericalCostSycl.hh"
+#include "moptim/NumericalCostForwardEuler.h"
+#include "moptim/NumericalCostSycl.h"
 #include "test_models.hh"
 
 using namespace test_models;

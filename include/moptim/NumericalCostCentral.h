@@ -3,8 +3,8 @@
 #include <Eigen/Dense>
 #include <cassert>
 
-#include "ICost.hh"
-#include "IModel.hh"
+#include "moptim/ICost.h"
+#include "moptim/IModel.h"
 
 namespace moptim {
 

@@ -5,7 +5,7 @@
 #include <span>
 #include <sycl/sycl.hpp>
 
-#include "ICost.hh"
+#include "moptim/ICost.h"
 #include "ILog.hh"
 #include "Timer.hh"
 

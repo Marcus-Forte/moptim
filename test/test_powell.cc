@@ -3,8 +3,8 @@
 #include <memory>
 
 #include "ConsoleLogger.hh"
-#include "GaussNewton.hh"
-#include "NumericalCostForwardEuler.hh"
+#include "moptim/GaussNewton.h"
+#include "moptim/NumericalCostForwardEuler.h"
 
 using namespace moptim;
 

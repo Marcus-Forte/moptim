@@ -3,9 +3,9 @@
 #include <sycl/sycl.hpp>
 
 #include "ConsoleLogger.hh"
-#include "LevenbergMarquardt.hh"
-#include "NumericalCostForwardEuler.hh"
-#include "NumericalCostSycl.hh"
+#include "moptim/LevenbergMarquardt.h"
+#include "moptim/NumericalCostForwardEuler.h"
+#include "moptim/NumericalCostSycl.h"
 #include "Timer.hh"
 #include "test_helper.hh"
 #include "transform2d.hh"

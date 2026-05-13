@@ -1,9 +1,9 @@
-#include "GaussNewton.hh"
+#include "moptim/GaussNewton.h"
 
 #include <cmath>
 
-#include "Convergence.hh"
-#include "EigenSolver.hh"
+#include "moptim/Convergence.h"
+#include "moptim/EigenSolver.h"
 #include "Timer.hh"
 
 namespace moptim {

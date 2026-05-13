@@ -2,9 +2,9 @@
 
 #include <Timer.hh>
 
-#include "AnalyticalCost.hh"
-#include "NumericalCostCentral.hh"
-#include "NumericalCostForwardEuler.hh"
+#include "moptim/AnalyticalCost.h"
+#include "moptim/NumericalCostCentral.h"
+#include "moptim/NumericalCostForwardEuler.h"
 #include "test_models.hh"
 
 using namespace test_models;

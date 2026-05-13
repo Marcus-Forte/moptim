@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
-#include "AnalyticalCost.hh"
+#include "moptim/AnalyticalCost.h"
 #include "ConsoleLogger.hh"
-#include "LevenbergMarquardt.hh"
-#include "NumericalCostCentral.hh"
+#include "moptim/LevenbergMarquardt.h"
+#include "moptim/NumericalCostCentral.h"
 #include "transform3d.hh"
 
 using namespace moptim;

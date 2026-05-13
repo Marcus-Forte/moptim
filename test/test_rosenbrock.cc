@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
 #include "ConsoleLogger.hh"
-#include "LevenbergMarquardt.hh"
-#include "NumericalCostForwardEuler.hh"
+#include "moptim/LevenbergMarquardt.h"
+#include "moptim/NumericalCostForwardEuler.h"
 
 using namespace moptim;
 

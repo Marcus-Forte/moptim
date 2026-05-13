@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
-#include "AnalyticalCost.hh"
+#include "moptim/AnalyticalCost.h"
 #include "ConsoleLogger.hh"
-#include "LevenbergMarquardt.hh"
-#include "NumericalCostForwardEuler.hh"
+#include "moptim/LevenbergMarquardt.h"
+#include "moptim/NumericalCostForwardEuler.h"
 #include "Timer.hh"
 #include "transform2d.hh"
 

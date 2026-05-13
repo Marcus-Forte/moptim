@@ -1,7 +1,7 @@
-#include "LevenbergMarquardt.hh"
+#include "moptim/LevenbergMarquardt.h"
 
-#include "Convergence.hh"
-#include "EigenSolver.hh"
+#include "moptim/Convergence.h"
+#include "moptim/EigenSolver.h"
 #include "Timer.hh"
 
 namespace moptim {

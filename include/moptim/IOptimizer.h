@@ -3,8 +3,8 @@
 #include <memory>
 #include <vector>
 
-#include "ICost.hh"
-#include "Status.hh"
+#include "moptim/ICost.h"
+#include "moptim/Status.h"
 
 namespace moptim::constants {}
 

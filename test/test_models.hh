@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IModel.hh"
+#include "moptim/IModel.h"
 #include "gtest/gtest.h"
 
 /**

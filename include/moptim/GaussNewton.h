@@ -1,8 +1,8 @@
 #pragma once
 
 #include "ILog.hh"
-#include "IOptimizer.hh"
-#include "ISolver.hh"
+#include "moptim/IOptimizer.h"
+#include "moptim/ISolver.h"
 
 namespace moptim {
 template <class T>
