@@ -1,11 +1,14 @@
 #pragma once
 
 #include "ILog.hh"
+#include "moptim/PlusOperations/IPlus.h"
+#include "moptim/PlusOperations/EuclideanPlusOperator.h"
 #include "moptim/IOptimizer.h"
 #include "moptim/ISolver.h"
 
 namespace moptim {
-template <class T>
+template <class T, class PlusOperator = EuclideanPlusOperator<T>>
+  requires IPlus<PlusOperator, T>
 class LevenbergMarquardt : public IOptimizer<T> {
  public:
   LevenbergMarquardt(size_t dimensions, const std::shared_ptr<ILog>& logger, const std::shared_ptr<ISolver<T>>& solver);

@@ -27,6 +27,7 @@ add_executable(test_moptim
   test_transform2d.cc
   test_transform3d.cc
   test_cost.cc
+  test_update_rule.cc
 )
 add_subdirectory(nist)
 target_link_libraries(test_moptim moptim test_helper)

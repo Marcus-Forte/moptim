@@ -4,4 +4,6 @@ add_library(utils
     ConsoleLogger.cc
     Timer.cc)
 target_include_directories(utils PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_compile_options(utils PRIVATE -fexperimental-library) #for jthread
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(utils PRIVATE -fexperimental-library) # for jthread
+endif()

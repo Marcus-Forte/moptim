@@ -6,11 +6,14 @@
 
 #include "moptim/ICost.h"
 #include "moptim/IModel.h"
+#include "moptim/PlusOperations/EuclideanPlusOperator.h"
+#include "moptim/PlusOperations/IPlus.h"
 
 namespace moptim {
 
-template <class Model, class T>
-  requires NumericalModel<Model, T>
+template <class Model, class T,
+          class PlusOperator = EuclideanPlusOperator<T>>
+  requires(IPlus<PlusOperator, T> && NumericalModel<Model, T>)
 class NumericalCostForwardEuler : public ICost<T> {
  public:
   NumericalCostForwardEuler(const NumericalCostForwardEuler&) = delete;
@@ -49,18 +52,18 @@ class NumericalCostForwardEuler : public ICost<T> {
     // Compute residuals
     callResiduals(x, residual_data_.data());
 
-    Eigen::Map<const VectorT> x_vec(x, param_dim_);
-    VectorT x_plus(x_vec);
+    VectorT x_plus(param_dim_);
+    VectorT delta = VectorT::Zero(param_dim_);
 
     const T g_step = std::sqrt(std::numeric_limits<T>::epsilon());
     const T inv_g_step = T{1} / g_step;
 
     for (size_t i = 0; i < param_dim_; ++i) {
-      x_plus[i] = x_vec[i] + g_step;
+      delta.setZero();
+      delta[i] = g_step;
+      PlusOperator::plus(x, delta.data(), x_plus.data(), param_dim_);
 
       callResiduals(x_plus.data(), residual_data_plus_.data());
-
-      x_plus[i] = x_vec[i];
 
       jacobian_data_.col(i) = (residual_data_plus_ - residual_data_) * inv_g_step;
     }
