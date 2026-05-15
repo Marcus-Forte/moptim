@@ -3,10 +3,10 @@
 #include <sycl/sycl.hpp>
 
 #include "ConsoleLogger.hh"
+#include "Timer.hh"
 #include "moptim/LevenbergMarquardt.h"
 #include "moptim/NumericalCostForwardEuler.h"
 #include "moptim/NumericalCostSycl.h"
-#include "Timer.hh"
 #include "test_helper.hh"
 #include "transform2d.hh"
 

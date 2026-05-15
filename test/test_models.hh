@@ -1,7 +1,7 @@
 #pragma once
 
-#include "moptim/IModel.h"
 #include "gtest/gtest.h"
+#include "moptim/IModel.h"
 
 /**
  * @brief Common model to be used in the tests.

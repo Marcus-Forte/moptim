@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "moptim/AnalyticalCost.h"
 #include "ConsoleLogger.hh"
+#include "moptim/AnalyticalCost.h"
 #include "moptim/LevenbergMarquardt.h"
 #include "moptim/NumericalCostCentral.h"
 #include "transform3d.hh"

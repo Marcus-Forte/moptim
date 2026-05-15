@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
+#include <moptim/LevenbergMarquardt.h>
 
 #include <Eigen/Dense>
-#include <moptim/LevenbergMarquardt.h>
 
 #include "ConsoleLogger.hh"
 #include "moptim/NumericalCostForwardEuler.h"

@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "moptim/AnalyticalCost.h"
 #include "ConsoleLogger.hh"
+#include "moptim/AnalyticalCost.h"
 #include "moptim/NumericalCostForwardEuler.h"
 #include "moptim/NumericalCostSycl.h"
 #include "test_models.hh"

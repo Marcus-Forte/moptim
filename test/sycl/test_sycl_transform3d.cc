@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
 
-#include "moptim/AnalyticalCost.h"
 #include "AsyncConsoleLogger.hh"
 #include "ConsoleLogger.hh"
+#include "Timer.hh"
+#include "moptim/AnalyticalCost.h"
 #include "moptim/NumericalCostForwardEuler.h"
 #include "moptim/NumericalCostSycl.h"
-#include "Timer.hh"
 #include "test_helper.hh"
 #include "transform3d.hh"
 

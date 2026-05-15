@@ -2,9 +2,6 @@
 
 #include <Eigen/Dense>
 
-#include <cstddef>
-#include <thread>
-
 namespace moptim {
 
 template <class T>
@@ -18,9 +15,6 @@ struct EuclideanPlusOperator {
 
     out_vec = x_vec + delta_vec;
 
-    // for( size_t i = 0; i < dimensions; ++i) {
-    //   out[i] = x[i] +  delta[i];
-    // }
   }
 };
 

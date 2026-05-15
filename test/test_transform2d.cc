@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 
-#include "moptim/AnalyticalCost.h"
 #include "ConsoleLogger.hh"
+#include "Timer.hh"
+#include "moptim/AnalyticalCost.h"
 #include "moptim/LevenbergMarquardt.h"
 #include "moptim/NumericalCostForwardEuler.h"
-#include "Timer.hh"
 #include "transform2d.hh"
 
 using namespace moptim;
