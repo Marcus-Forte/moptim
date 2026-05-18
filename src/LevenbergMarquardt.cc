@@ -7,6 +7,7 @@
 #include "moptim/Convergence.h"
 #include "moptim/EigenSolver.h"
 #include "moptim/PlusOperations/SE3PlusOperator.h"
+#include "moptim/PlusOperations/SE3xEuclideanPlusOperator.h"
 
 namespace moptim {
 
@@ -135,4 +136,5 @@ Status LevenbergMarquardt<T, PlusOperator>::optimize(T* x) const {
 template class LevenbergMarquardt<double, EuclideanPlusOperator<double>>;
 template class LevenbergMarquardt<float, EuclideanPlusOperator<float>>;
 template class LevenbergMarquardt<double, SE3PlusOperator<double>>;
+template class LevenbergMarquardt<double, SE3xEuclideanPlusOperator<double>>;
 }  // namespace moptim
