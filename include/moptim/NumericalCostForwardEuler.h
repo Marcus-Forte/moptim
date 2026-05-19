@@ -29,6 +29,8 @@ class NumericalCostForwardEuler : public ICost<T> {
     jacobian_data_.resize(observation_dim_ * num_elements_, param_dim_);
     residual_data_.resize(observation_dim_ * num_elements_);
     residual_data_plus_.resize(observation_dim_ * num_elements_);
+    x_plus_.resize(param_dim_);
+    delta_.resize(param_dim_);
   }
 
   T computeCost(const T* x) override {
@@ -52,18 +54,15 @@ class NumericalCostForwardEuler : public ICost<T> {
     // Compute residuals
     callResiduals(x, residual_data_.data());
 
-    VectorT x_plus(param_dim_);
-    VectorT delta = VectorT::Zero(param_dim_);
-
     const T g_step = std::sqrt(std::numeric_limits<T>::epsilon());
     const T inv_g_step = T{1} / g_step;
 
     for (size_t i = 0; i < param_dim_; ++i) {
-      delta.setZero();
-      delta[i] = g_step;
-      PlusOperator::plus(x, delta.data(), x_plus.data(), param_dim_);
+      delta_.setZero();
+      delta_[i] = g_step;
+      PlusOperator::plus(x, delta_.data(), x_plus_.data(), param_dim_);
 
-      callResiduals(x_plus.data(), residual_data_plus_.data());
+      callResiduals(x_plus_.data(), residual_data_plus_.data());
 
       jacobian_data_.col(i) = (residual_data_plus_ - residual_data_) * inv_g_step;
     }
@@ -92,6 +91,8 @@ class NumericalCostForwardEuler : public ICost<T> {
   MatrixT jacobian_data_;
   VectorT residual_data_;
   VectorT residual_data_plus_;
+  VectorT x_plus_;
+  VectorT delta_;
 
   const T* input_elements_;
   const T* observation_elements_;
