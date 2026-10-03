@@ -1,10 +1,10 @@
-#include "GaussNewton.hh"
+#include "moptim/GaussNewton.hh"
 
 #include <chrono>
 #include <cmath>
 
-#include "Convergence.hh"
-#include "EigenSolver.hh"
+#include "moptim/Convergence.hh"
+#include "moptim/EigenSolver.hh"
 
 namespace moptim {
 template <class T>

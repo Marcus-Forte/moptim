@@ -3,9 +3,9 @@
 #include <chrono>
 #include <iostream>
 
-#include "AnalyticalCost.hh"
-#include "NumericalCostForwardEuler.hh"
-#include "NumericalCostSycl.hh"
+#include "moptim/AnalyticalCost.hh"
+#include "moptim/NumericalCostForwardEuler.hh"
+#include "moptim/NumericalCostSycl.hh"
 #include "test_helper.hh"
 #include "transform3d.hh"
 

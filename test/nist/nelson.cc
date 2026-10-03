@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
 #include <Eigen/Dense>
-#include <LevenbergMarquardt.hh>
+#include <moptim/LevenbergMarquardt.hh>
 
-#include "NumericalCostForwardEuler.hh"
+#include "moptim/NumericalCostForwardEuler.hh"
 
 using namespace moptim;
 

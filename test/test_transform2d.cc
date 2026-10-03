@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
-#include "AnalyticalCost.hh"
-#include "LevenbergMarquardt.hh"
-#include "NumericalCostForwardEuler.hh"
+#include "moptim/AnalyticalCost.hh"
+#include "moptim/LevenbergMarquardt.hh"
+#include "moptim/NumericalCostForwardEuler.hh"
 #include "transform2d.hh"
 
 using namespace moptim;

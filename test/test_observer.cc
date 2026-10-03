@@ -7,9 +7,9 @@
 #include <string>
 #include <vector>
 
-#include "AnalyticalCost.hh"
-#include "LevenbergMarquardt.hh"
-#include "Observer.hh"
+#include "moptim/AnalyticalCost.hh"
+#include "moptim/LevenbergMarquardt.hh"
+#include "moptim/Observer.hh"
 #include "test_models.hh"
 
 using namespace test_models;

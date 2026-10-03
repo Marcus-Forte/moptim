@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
-#include "AnalyticalCost.hh"
-#include "IModel.hh"
-#include "LevenbergMarquardt.hh"
-#include "NumericalCostForwardEuler.hh"
+#include "moptim/AnalyticalCost.hh"
+#include "moptim/IModel.hh"
+#include "moptim/LevenbergMarquardt.hh"
+#include "moptim/NumericalCostForwardEuler.hh"
 
 using namespace moptim;
 

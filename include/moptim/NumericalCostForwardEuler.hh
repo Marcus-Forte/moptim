@@ -4,8 +4,8 @@
 #include <cassert>
 #include <cmath>
 
-#include "ICost.hh"
-#include "IModel.hh"
+#include "moptim/ICost.hh"
+#include "moptim/IModel.hh"
 
 namespace moptim {
 

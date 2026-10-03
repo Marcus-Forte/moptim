@@ -5,9 +5,9 @@
 
 #include <sycl/sycl.hpp>
 
-#include "LevenbergMarquardt.hh"
-#include "NumericalCostForwardEuler.hh"
-#include "NumericalCostSycl.hh"
+#include "moptim/LevenbergMarquardt.hh"
+#include "moptim/NumericalCostForwardEuler.hh"
+#include "moptim/NumericalCostSycl.hh"
 #include "test_helper.hh"
 #include "transform2d.hh"
 

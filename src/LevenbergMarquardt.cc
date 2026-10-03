@@ -1,10 +1,10 @@
-#include "LevenbergMarquardt.hh"
+#include "moptim/LevenbergMarquardt.hh"
 
 #include <chrono>
 #include <cmath>
 
-#include "Convergence.hh"
-#include "EigenSolver.hh"
+#include "moptim/Convergence.hh"
+#include "moptim/EigenSolver.hh"
 
 namespace moptim {
 

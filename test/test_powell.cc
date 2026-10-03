@@ -2,8 +2,8 @@
 
 #include <memory>
 
-#include "GaussNewton.hh"
-#include "NumericalCostForwardEuler.hh"
+#include "moptim/GaussNewton.hh"
+#include "moptim/NumericalCostForwardEuler.hh"
 
 using namespace moptim;
 

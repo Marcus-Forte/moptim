@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "Status.hh"
+#include "moptim/Status.hh"
 
 namespace moptim {
 

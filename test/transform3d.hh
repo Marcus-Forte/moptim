@@ -2,7 +2,7 @@
 
 #include <Eigen/Dense>
 
-#include "IOptimizer.hh"
+#include "moptim/IOptimizer.hh"
 
 using namespace moptim;
 

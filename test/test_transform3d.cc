@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
-#include "AnalyticalCost.hh"
-#include "LevenbergMarquardt.hh"
-#include "NumericalCostCentral.hh"
+#include "moptim/AnalyticalCost.hh"
+#include "moptim/LevenbergMarquardt.hh"
+#include "moptim/NumericalCostCentral.hh"
 #include "transform3d.hh"
 
 using namespace moptim;

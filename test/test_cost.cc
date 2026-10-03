@@ -1,8 +1,8 @@
 #include <gtest/gtest.h>
 
-#include "AnalyticalCost.hh"
-#include "NumericalCostCentral.hh"
-#include "NumericalCostForwardEuler.hh"
+#include "moptim/AnalyticalCost.hh"
+#include "moptim/NumericalCostCentral.hh"
+#include "moptim/NumericalCostForwardEuler.hh"
 #include "test_models.hh"
 
 using namespace test_models;

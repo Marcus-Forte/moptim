@@ -5,7 +5,7 @@
 #include <span>
 #include <sycl/sycl.hpp>
 
-#include "ICost.hh"
+#include "moptim/ICost.hh"
 
 namespace moptim {
 template <class T, class Model, oneapi::math::backend Backend = oneapi::math::backend::netlib>

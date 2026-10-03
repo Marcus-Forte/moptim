@@ -48,7 +48,7 @@ Add this header to the logging library (it depends on both moptim's
 #include <utility>
 
 #include "ILog.hh"        // logging framework
-#include "Observer.hh"    // moptim
+#include "moptim/Observer.hh"    // moptim
 
 namespace moptim {
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ISolver.hh"
+#include "moptim/ISolver.hh"
 
 namespace moptim {
 template <class T>

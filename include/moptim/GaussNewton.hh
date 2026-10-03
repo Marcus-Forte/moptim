@@ -1,7 +1,7 @@
 #pragma once
 
-#include "IOptimizer.hh"
-#include "ISolver.hh"
+#include "moptim/IOptimizer.hh"
+#include "moptim/ISolver.hh"
 
 namespace moptim {
 template <class T>

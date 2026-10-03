@@ -95,8 +95,8 @@ with no logging machinery involved, and an optional `IOptimizerObserver<T>` can
 be attached for per-iteration events:
 
 ```cpp
-#include "LevenbergMarquardt.hh"
-#include "Observer.hh"
+#include "moptim/LevenbergMarquardt.hh"
+#include "moptim/Observer.hh"
 
 LevenbergMarquardt<double> solver(param_dim);
 solver.addCost(cost);
@@ -128,7 +128,7 @@ out; see `docs/logging.md` for how to bridge events to an external sink.
 A consumer with its own logger writes a ~15-line adapter:
 
 ```cpp
-#include "Observer.hh"
+#include "moptim/Observer.hh"
 #include "ILog.hh"   // consumer's logging framework
 
 class LoggingObserver : public moptim::IOptimizerObserver<double> {

@@ -3,10 +3,10 @@
 #include <memory>
 #include <vector>
 
-#include "ICost.hh"
-#include "Observer.hh"
-#include "Result.hh"
-#include "Status.hh"
+#include "moptim/ICost.hh"
+#include "moptim/Observer.hh"
+#include "moptim/Result.hh"
+#include "moptim/Status.hh"
 
 namespace moptim::constants {}
 

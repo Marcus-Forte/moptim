@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-#include "Status.hh"
+#include "moptim/Status.hh"
 
 namespace moptim {
 
