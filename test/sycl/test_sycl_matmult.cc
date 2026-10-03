@@ -1,18 +1,15 @@
 #include <Eigen/Dense>
+#include <chrono>
 #include <future>
+#include <iostream>
 #include <oneapi/math.hpp>
 #include <sycl/sycl.hpp>
-
-#include "ConsoleLogger.hh"
-#include "Timer.hh"
 
 int main(int argc, char** argv) {
   if (argc != 2) {
     std::cerr << "Usage: " << argv[0] << " <matrix dimension>" << std::endl;
     return 1;
   }
-
-  ConsoleLogger logger_;
 
   int DIM = std::atoi(argv[1]);
   Eigen::MatrixXd A(DIM, DIM);
@@ -22,40 +19,40 @@ int main(int argc, char** argv) {
   Eigen::MatrixXd C(DIM, DIM);
 
   sycl::queue queue{sycl::default_selector_v};
-  logger_.log(ILog::Level::DEBUG, "Sycl Device: {}", queue.get_device().get_info<sycl::info::device::name>());
+  std::cout << "Sycl Device: " << queue.get_device().get_info<sycl::info::device::name>() << std::endl;
 
   oneapi::math::backend_selector<oneapi::math::backend::generic> backend_selector(queue);
 
-  Timer t;
-  t.start();
-  logger_.log(ILog::Level::DEBUG, "CPU -> GPU Copy...");
+  auto start = std::chrono::steady_clock::now();
+  std::cout << "CPU -> GPU Copy..." << std::endl;
   std::span<double> d_A(sycl::malloc_device<double>(DIM * DIM, queue), DIM * DIM);
   std::span<double> d_B(sycl::malloc_device<double>(DIM * DIM, queue), DIM * DIM);
   std::span<double> d_C(sycl::malloc_device<double>(DIM * DIM, queue), DIM * DIM);
 
   queue.copy<double>(A.data(), d_A.data(), DIM * DIM).wait();
   queue.copy<double>(B.data(), d_B.data(), DIM * DIM).wait();
-  auto delta_us = t.stop();
-  logger_.log(ILog::Level::DEBUG, "Done. Took: {} us", delta_us);
+  auto delta_us =
+      std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+  std::cout << "Done. Took: " << delta_us << " us" << std::endl;
 
   // Defer GPU to another thread
   auto res = std::async(std::launch::async, [&]() {
-    logger_.log(ILog::Level::DEBUG, "GPU Computing...");
-    t.start();
+    std::cout << "GPU Computing..." << std::endl;
+    start = std::chrono::steady_clock::now();
     auto res = oneapi::math::blas::generic::column_major::gemm(
         queue, oneapi::math::transpose::nontrans, oneapi::math::transpose::nontrans, DIM, DIM, DIM, 1.0, d_A.data(),
         DIM, d_B.data(), DIM, 0.0, d_C.data(), DIM, {});
 
     res.wait();
-    delta_us = t.stop();
-    logger_.log(ILog::Level::DEBUG, "GPU Done. Took: {} us", delta_us);
+    delta_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+    std::cout << "GPU Done. Took: " << delta_us << " us" << std::endl;
   });
 
-  logger_.log(ILog::Level::DEBUG, "CPU Computing...");
-  t.start();
+  std::cout << "CPU Computing..." << std::endl;
+  start = std::chrono::steady_clock::now();
   C = A * B;
-  delta_us = t.stop();
-  logger_.log(ILog::Level::DEBUG, "CPU Done. Took: {} us", delta_us);
+  delta_us = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+  std::cout << "CPU Done. Took: " << delta_us << " us" << std::endl;
 
   res.get();
 

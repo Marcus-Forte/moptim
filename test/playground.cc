@@ -1,29 +1,21 @@
-#include <ConsoleLogger.hh>
 #include <Eigen/Dense>
 #include <iostream>
-#include <vector>
-
-#include "Timer.hh"
+#include <ranges>
+// #include <sycl/sycl.hpp>
 
 int main(int argc, char** argv) {
-  ConsoleLogger logger;
+  // sycl::queue q;
+  // std::cout << "Running on " << q.get_device().get_info<sycl::info::device::name>() << "\n";
 
-  const auto iterations = 100'000'000;
+  // const int arr[] = {1, 2, 3, 4, 5};
 
-  std::vector<double> data(iterations);
+  // for (auto el : arr | std::views::stride(2) | std::views::transform([](int i) { return i * 2; })) {
+  //   std::cout << el << " ";
+  // }
 
-  Timer t0;
-  t0.start();
+  // for(auto i : arr) {
+  //   std::cout << i << " ";
+  // }
 
-  for (int i = 0; i < iterations; i += 3) {
-    Eigen::Map<Eigen::VectorXd> data_map(data.data() + i, 30);
-    data_map[0] = data_map.size();
-    // data[i] = static_cast<double>(i);
-  }
-
-  //   Eigen::Map<Eigen::VectorXd> data_map(data, iterations);
-  std::cout << data[6] << std::endl;
-
-  const auto delta = t0.stop(false);
-  logger.log(ILog::Level::INFO, "Elapsed time: {} us", delta);
+  // q.wait();
 }

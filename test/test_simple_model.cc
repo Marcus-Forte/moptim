@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include "AnalyticalCost.hh"
-#include "ConsoleLogger.hh"
 #include "GaussNewton.hh"
 #include "LevenbergMarquardt.hh"
 #include "NumericalCostForwardEuler.hh"
@@ -23,13 +22,13 @@ TYPED_TEST(SimpleModelTest, GaussNewton) {
   auto cost = std::make_shared<NumericalCostForwardEuler<SimpleModel<T>, T>>(
       this->test_data_.x_data_, this->test_data_.y_data_, this->test_data_.num_measurements, 1, 1, 2, SimpleModel<T>{});
 
-  GaussNewton<T> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::DEBUG));
+  GaussNewton<T> solver(2);
 
   solver.addCost(cost);
 
-  auto status = solver.optimize(x);
+  const auto result = solver.optimize(x);
 
-  std::cout << "Optimization status: " << static_cast<int>(status) << std::endl;
+  std::cout << "Optimization status: " << static_cast<int>(result.status) << std::endl;
 
   EXPECT_NEAR(x[0], 0.362, 0.01);
   EXPECT_NEAR(x[1], 0.556, 0.01);
@@ -42,7 +41,7 @@ TYPED_TEST(SimpleModelTest, GaussNewtonAnalytical) {
   const auto model = std::make_shared<SimpleModel<T>>();
   auto cost = std::make_shared<AnalyticalCost<SimpleModel<T>, T>>(
       this->test_data_.x_data_, this->test_data_.y_data_, this->test_data_.num_measurements, 1, 1, 2, SimpleModel<T>{});
-  GaussNewton<T> solver(2, std::make_shared<ConsoleLogger>());
+  GaussNewton<T> solver(2);
 
   solver.addCost(cost);
 
@@ -60,7 +59,7 @@ TYPED_TEST(SimpleModelTest, LevenbergMarquardt) {
   auto cost = std::make_shared<AnalyticalCost<SimpleModel<T>, T>>(
       this->test_data_.x_data_, this->test_data_.y_data_, this->test_data_.num_measurements, 1, 1, 2, SimpleModel<T>{});
 
-  LevenbergMarquardt<T> solver(2, std::make_shared<ConsoleLogger>());
+  LevenbergMarquardt<T> solver(2);
 
   solver.addCost(cost);
 
@@ -78,7 +77,7 @@ TYPED_TEST(SimpleModelTest, LevenbergMarquardtAnalytical) {
   auto cost = std::make_shared<AnalyticalCost<SimpleModel<T>, T>>(
       this->test_data_.x_data_, this->test_data_.y_data_, this->test_data_.num_measurements, 1, 1, 2, SimpleModel<T>{});
 
-  LevenbergMarquardt<T> solver(2, std::make_shared<ConsoleLogger>());
+  LevenbergMarquardt<T> solver(2);
 
   solver.addCost(cost);
 

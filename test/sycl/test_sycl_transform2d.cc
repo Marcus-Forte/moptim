@@ -1,12 +1,13 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <iostream>
+
 #include <sycl/sycl.hpp>
 
-#include "ConsoleLogger.hh"
 #include "LevenbergMarquardt.hh"
 #include "NumericalCostForwardEuler.hh"
 #include "NumericalCostSycl.hh"
-#include "Timer.hh"
 #include "test_helper.hh"
 #include "transform2d.hh"
 
@@ -17,12 +18,10 @@ const double sycl_vs_cpu_tolerance = 1e-1;
 TEST_F(TestTransform2D, SyclCostAndJacobian) {
   sycl::queue queue{sycl::default_selector_v, sycl::property::queue::enable_profiling{}};
 
-  auto logger = std::make_shared<ConsoleLogger>();
-
   const auto num_elements = pointcloud_.size();
 
   NumericalCostSycl<double, Point2Distance> num_cost_sycl(
-      logger, queue, std::span<const double>(transformed_pointcloud_[0].data(), transformed_pointcloud_.size() * 2),
+      queue, std::span<const double>(transformed_pointcloud_[0].data(), transformed_pointcloud_.size() * 2),
       std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3, num_elements);
 
   NumericalCostForwardEuler<Point2Distance, double> num_cost(transformed_pointcloud_[0].data(), pointcloud_[0].data(),
@@ -36,9 +35,6 @@ TEST_F(TestTransform2D, SyclCostAndJacobian) {
   EXPECT_NEAR(sycl_cost_result, cost_result, 1e-5);
 
   // Jacobian
-  Timer t0;
-  t0.start();
-
   Eigen::Matrix<double, 3, 3> jtj_sycl;
   Eigen::Matrix<double, 3, 1> jtb_sycl;
   double total_sycl = 0.0;
@@ -47,15 +43,15 @@ TEST_F(TestTransform2D, SyclCostAndJacobian) {
   Eigen::Matrix<double, 3, 1> jtb;
   double total = 0.0;
 
+  auto start = std::chrono::steady_clock::now();
   num_cost_sycl.computeLinearSystem(x, jtj_sycl.data(), jtb_sycl.data(), total_sycl);
+  auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+  std::cout << "Sycl cost jacobian: took " << elapsed << " us" << std::endl;
 
-  auto stop = t0.stop();
-  std::cout << "Sycl cost jacobian: took " << stop << " us" << std::endl;
-
-  t0.start();
+  start = std::chrono::steady_clock::now();
   num_cost.computeLinearSystem(x, jtj.data(), jtb.data(), total);
-  stop = t0.stop();
-  std::cout << "Known cost jacobian: took " << stop << " us" << std::endl;
+  elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+  std::cout << "Known cost jacobian: took " << elapsed << " us" << std::endl;
 
   std::cout << "num_jtj_sycl:\n" << jtj_sycl << " " << std::endl;
   std::cout << "num_jtj:\n" << jtj << " " << std::endl;
@@ -67,14 +63,13 @@ TEST_F(TestTransform2D, SyclCostAndJacobian) {
 }
 
 TEST_F(TestTransform2D, Sycl2DTransformLM) {
-  auto logger = std::make_shared<ConsoleLogger>();
   const auto num_elements = pointcloud_.size();
 
   sycl::queue queue{sycl::default_selector_v, sycl::property::queue::enable_profiling{}};
-  auto solver = std::make_shared<LevenbergMarquardt<double>>(3, logger);
+  auto solver = std::make_shared<LevenbergMarquardt<double>>(3);
 
   auto cost = std::make_shared<NumericalCostSycl<double, Point2Distance>>(
-      logger, queue, std::span<const double>(transformed_pointcloud_[0].data(), transformed_pointcloud_.size() * 2),
+      queue, std::span<const double>(transformed_pointcloud_[0].data(), transformed_pointcloud_.size() * 2),
       std::span<const double>(pointcloud_[0].data(), pointcloud_.size() * 2), 2, 2, 3, num_elements);
 
   double x0[]{0, 0, 0};

@@ -2,6 +2,8 @@
 
 #include <Eigen/Dense>
 
+namespace moptim {
+
 template <typename T>
 void EigenSolver<T>::solve(const T* A, const T* b, T* x) const {
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
@@ -21,3 +23,5 @@ void EigenSolver<T>::solve(const T* A, const T* b, T* x) const {
 
 template class EigenSolver<double>;
 template class EigenSolver<float>;
+
+}  // namespace moptim

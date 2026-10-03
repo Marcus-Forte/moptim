@@ -19,9 +19,7 @@ endif()
 
 find_package(Eigen3 REQUIRED)
 
-add_subdirectory(utils)
-
-add_library(moptim 
+add_library(moptim
   src/EigenSolver.cc
   src/GaussNewton.cc
   src/LevenbergMarquardt.cc)
@@ -44,8 +42,11 @@ if(WITH_SYCL)
   link_libraries(ONEMATH::onemath ONEMATH::onemath_blas_netlib gfortran) # Netlib
   # link_libraries(ONEMATH::onemath ONEMATH::onemath_blas_cublas cuda) # Cuda + Cublas
 endif()
-target_include_directories(moptim PUBLIC include)
-target_link_libraries(moptim utils Eigen3::Eigen)
+
+# Core lib.
+target_include_directories(moptim PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(moptim PUBLIC Eigen3::Eigen)
+add_library(moptim::moptim ALIAS moptim)
 
 ## Testing
 if(BUILD_TESTING)

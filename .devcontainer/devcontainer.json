@@ -17,8 +17,9 @@
         }
     },
     "mounts": [
-        "source=moptim-build-cache,target=/workspaces/moptim/build,type=volume",
-        "source=moptim-build-sycl-cache,target=/workspaces/moptim/build_sycl,type=volume"
+        "source=moptim-build-${devcontainerId},target=${containerWorkspaceFolder}/build,type=volume",
+        "source=moptim-build-${devcontainerId},target=${containerWorkspaceFolder}/build_sycl,type=volume",
+		"source=opencode-sessions,target=/root/.local/share/opencode,type=volume"
     ]
     // "runArgs": ["--gpus", "all", "--cap-add=SYS_ADMIN"] // uncomment for GPU usage
 }

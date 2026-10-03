@@ -1,7 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <Timer.hh>
-
 #include "AnalyticalCost.hh"
 #include "NumericalCostCentral.hh"
 #include "NumericalCostForwardEuler.hh"

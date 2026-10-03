@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include "AnalyticalCost.hh"
-#include "ConsoleLogger.hh"
 #include "IModel.hh"
 #include "LevenbergMarquardt.hh"
 #include "NumericalCostForwardEuler.hh"
@@ -47,7 +46,7 @@ TEST(CurveFitting, SolvingWithNumericalCost) {
   auto cost = std::make_shared<NumericalCostForwardEuler<CuveFittingModel, double>>(input.data(), observations.data(),
                                                                                     input.size(), 1, 1, 2);
 
-  LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
+  LevenbergMarquardt<double> solver(2);
   solver.addCost(cost);
   Eigen::VectorXd x{{0.0, 0.0}};
 
@@ -66,7 +65,7 @@ TEST(CurveFitting, CurveFittingLMNumerical) {
     auto cost = std::make_shared<NumericalCostForwardEuler<CuveFittingModel, double>>(input.data(), observations.data(),
                                                                                       input.size(), 1, 1, 2);
 
-    LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
+    LevenbergMarquardt<double> solver(2);
     solver.addCost(cost);
 
     solver.optimize(x.data());
@@ -89,7 +88,7 @@ TEST(CurveFitting, CurveFittingLMAnalytical) {
     auto cost = std::make_shared<AnalyticalCost<CuveFittingModel, double>>(input.data(), observations.data(),
                                                                            input.size(), 1, 1, 2);
 
-    LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>(ILog::Level::ERROR));
+    LevenbergMarquardt<double> solver(2);
     solver.addCost(cost);
 
     solver.optimize(x.data());

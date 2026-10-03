@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include "AnalyticalCost.hh"
-#include "ConsoleLogger.hh"
 #include "NumericalCostForwardEuler.hh"
 #include "NumericalCostSycl.hh"
 #include "test_helper.hh"
@@ -13,13 +12,12 @@ using namespace moptim;
 /// \todo pipelines with differnet machines
 TEST(TestJacobian, NumericalJacobianEquivalenceSycl) {
   sycl::queue queue{sycl::default_selector_v, sycl::property::queue::enable_profiling{}};
-  auto logger = std::make_shared<ConsoleLogger>();
 
   const auto x_data_ = std::span<const double>(TestData<double>::x_data_, TestData<double>::num_measurements);
   const auto y_data_ = std::span<const double>(TestData<double>::y_data_, TestData<double>::num_measurements);
   const auto num_measurements = TestData<double>::num_measurements;
 
-  NumericalCostSycl<double, SimpleModel<double>> num_cost_sycl(logger, queue, x_data_, y_data_, 1, 1, 2,
+  NumericalCostSycl<double, SimpleModel<double>> num_cost_sycl(queue, x_data_, y_data_, 1, 1, 2,
                                                                num_measurements);
 
   NumericalCostForwardEuler<SimpleModel<double>, double> num_cost(x_data_.data(), y_data_.data(), num_measurements, 1,
@@ -54,7 +52,6 @@ TEST(TestJacobian, NumericalJacobianEquivalenceSycl) {
 
 // TEST(TestJacobian, NumericalJacobianMethods) {
 //   sycl::queue queue{sycl::default_selector_v};
-//   auto logger = std::make_shared<ConsoleLogger>();
 //   const auto num_elements = x_data_.size();
 //   NumericalCostSycl<SimpleModel> num_euler(logger, queue, x_data_.data(), y_data_.data(), num_elements, 1, 2);
 //   NumericalCostSycl<SimpleModel> num_central(logger, queue, x_data_.data(), y_data_.data(), num_elements, 1, 2,

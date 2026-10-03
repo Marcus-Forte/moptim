@@ -86,3 +86,66 @@ jacobian_transposed_data_  (P × N*O)      JTJ  (P × P)       JTb  (P)
 └──────────────────────────┘              └───────────┘       └────┘
   size: P × (N*O)                           size: P × P         size: P
 ```
+
+## Observability
+
+The optimizer produces structured telemetry and never formats or writes logs
+itself. `optimize()` returns a `Result<T>` (status, iteration count, final cost)
+with no logging machinery involved, and an optional `IOptimizerObserver<T>` can
+be attached for per-iteration events:
+
+```cpp
+#include "LevenbergMarquardt.hh"
+#include "Observer.hh"
+
+LevenbergMarquardt<double> solver(param_dim);
+solver.addCost(cost);
+
+class Recorder : public moptim::IOptimizerObserver<double> {
+  void onIteration(const moptim::IterationEvent<double>& e) override { trace.push_back(e); }
+  void onLinearSystem(const moptim::LinearSystemEvent<double>& e) override { systems.push_back(e); }
+ public:
+  std::vector<moptim::IterationEvent<double>> trace;
+  std::vector<moptim::LinearSystemEvent<double>> systems;
+} recorder;
+
+solver.setObserver(&recorder);
+const moptim::Result<double> result = solver.optimize(x);
+```
+
+`IterationEvent` carries phase, status, cost/previous cost, `rho`, lambda,
+step norm and elapsed time. Because it is plain data, benchmarks can record it
+in memory (no formatting, allocation or I/O on the hot path) and analyze it
+afterwards. With no observer attached, no event payload is gathered.
+
+### Logging is external
+
+moptim ships **no** logging or timing framework. It does not depend on, link,
+or include `ILog`, `ConsoleLogger`, `Timer`, Boost, `<iostream>` or `<format>`.
+The logging library that used to live in this repository (`utils/`) has moved
+out; see `docs/logging.md` for how to bridge events to an external sink.
+
+A consumer with its own logger writes a ~15-line adapter:
+
+```cpp
+#include "Observer.hh"
+#include "ILog.hh"   // consumer's logging framework
+
+class LoggingObserver : public moptim::IOptimizerObserver<double> {
+ public:
+  explicit LoggingObserver(std::shared_ptr<ILog> log) : log_(std::move(log)) {}
+
+  void onIteration(const moptim::IterationEvent<double>& e) override {
+    log_->log(ILog::Level::DEBUG, "iter {} status {} cost {} rho {} lambda {} ({} us)",
+              e.iteration, static_cast<int>(e.status), e.cost, e.rho, e.lambda, e.elapsed.count() / 1000);
+  }
+ private:
+  std::shared_ptr<ILog> log_;
+};
+```
+
+Build option:
+
+- `MOPTIM_VECTORIZATION_REPORT` — enable clang-only `-Rpass` loop-vectorization
+  remarks (default `OFF`).
+

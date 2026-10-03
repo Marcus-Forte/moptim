@@ -3,7 +3,6 @@
 #include <Eigen/Dense>
 #include <LevenbergMarquardt.hh>
 
-#include "ConsoleLogger.hh"
 #include "NumericalCostForwardEuler.hh"
 
 using namespace moptim;
@@ -58,9 +57,7 @@ TEST(kirby2, kirby2) {
   double x0[] = {2.0000000000E+00, -1.0000000000E-01, 3.0000000000E-03, -1.0000000000E-03, 1.0000000000E-05};
   auto cost =
       std::make_shared<NumericalCostForwardEuler<Model, double>>(x_data.data(), y_data.data(), x_data.size(), 1, 1, 5);
-  const auto logger = std::make_shared<ConsoleLogger>();
-  logger->setLevel(ILog::Level::DEBUG);
-  LevenbergMarquardt<double> solver(5, logger);
+  LevenbergMarquardt<double> solver(5);
   solver.setMaxIterations(50);
   solver.addCost(cost);
 

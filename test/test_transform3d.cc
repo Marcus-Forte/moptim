@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include "AnalyticalCost.hh"
-#include "ConsoleLogger.hh"
 #include "LevenbergMarquardt.hh"
 #include "NumericalCostCentral.hh"
 #include "transform3d.hh"
@@ -42,8 +41,7 @@ TEST_P(TestTransform3D, AnalyticalJacobianMatchesNumerical) {
 INSTANTIATE_TEST_SUITE_P(Transform3DJacobian, TestTransform3D, ::testing::Values(50, 200));
 
 TEST_P(TestTransform3D, 3DTransformLMAnalytical) {
-  auto logger = std::make_shared<ConsoleLogger>();
-  auto solver = std::make_shared<LevenbergMarquardt<double>>(6, logger);
+  auto solver = std::make_shared<LevenbergMarquardt<double>>(6);
 
   const size_t n = transformed_pointcloud_.size();
   constexpr size_t obs_dim = 3;

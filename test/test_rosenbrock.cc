@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include "ConsoleLogger.hh"
 #include "LevenbergMarquardt.hh"
 #include "NumericalCostForwardEuler.hh"
 
@@ -26,7 +25,7 @@ TEST(TestRosenbrock, TestRosenbrock) {
 
   auto cost = std::make_shared<NumericalCostForwardEuler<Rosenbrock, double>>(input.data(), measurement.data(), 1, 2, 2,
                                                                               2, Rosenbrock{});
-  LevenbergMarquardt<double> solver(2, std::make_shared<ConsoleLogger>());
+  LevenbergMarquardt<double> solver(2);
   solver.addCost(cost);
 
   solver.optimize(x.data());

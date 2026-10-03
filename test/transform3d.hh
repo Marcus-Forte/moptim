@@ -11,9 +11,11 @@ using namespace moptim;
  *
  */
 struct Point3Distance {
-  Eigen::Affine3d transform_;
-  Eigen::Matrix3d Rx_, Ry_, R_;
-  Eigen::Vector3d t_;
+  Eigen::Affine3d transform_{Eigen::Affine3d::Identity()};
+  Eigen::Matrix3d Rx_{Eigen::Matrix3d::Identity()};
+  Eigen::Matrix3d Ry_{Eigen::Matrix3d::Identity()};
+  Eigen::Matrix3d R_{Eigen::Matrix3d::Identity()};
+  Eigen::Vector3d t_{Eigen::Vector3d::Zero()};
 
   void setState(const double* x) {
     t_ = Eigen::Vector3d{x[0], x[1], x[2]};

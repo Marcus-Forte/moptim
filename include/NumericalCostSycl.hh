@@ -6,32 +6,18 @@
 #include <sycl/sycl.hpp>
 
 #include "ICost.hh"
-#include "ILog.hh"
-#include "Timer.hh"
 
 namespace moptim {
 template <class T, class Model, oneapi::math::backend Backend = oneapi::math::backend::netlib>
 class NumericalCostSycl : public ICost<T> {
  public:
   NumericalCostSycl(const NumericalCostSycl&) = delete;
-  NumericalCostSycl(const std::shared_ptr<ILog>& logger, const sycl::queue& queue, std::span<const T> input,
-                    std::span<const T> observations, size_t input_dim, size_t observation_dim, size_t param_dim,
-                    size_t num_elements)
+  NumericalCostSycl(const sycl::queue& queue, std::span<const T> input, std::span<const T> observations,
+                    size_t input_dim, size_t observation_dim, size_t param_dim, size_t num_elements)
       : ICost<T>(input_dim, observation_dim, param_dim, num_elements),
-        logger_(logger),
         input_{input},
         observations_{observations},
         queue_(queue) {
-    logger_->log(ILog::Level::DEBUG, "Sycl Device: {}", queue_.get_device().get_info<sycl::info::device::name>());
-    logger_->log(ILog::Level::DEBUG, "max_compute_units: {}",
-                 queue_.get_device().get_info<sycl::info::device::max_compute_units>());
-    logger_->log(ILog::Level::DEBUG, "max_work_group_size: {}",
-                 queue_.get_device().get_info<sycl::info::device::max_work_group_size>());
-    logger_->log(ILog::Level::DEBUG, "max_work_item_dimensions: {}",
-                 queue_.get_device().get_info<sycl::info::device::max_work_item_dimensions>());
-
-    logger_->log(ILog::Level::DEBUG, "Problem space: I: {}, O: {}, P: {}", input_dim_, observation_dim_, param_dim_);
-
     if (!queue_.get_device().is_cpu()) {
       input_sycl_ = std::span<T>(sycl::malloc_device<T>(observation_dim_ * num_elements, queue_),
                                  observation_dim_ * num_elements);
@@ -77,8 +63,6 @@ class NumericalCostSycl : public ICost<T> {
     auto copy_model_event = queue_.copy<Model>(&model, model_sycl.data(), 1);
     queue_.copy<T>(x, x_device.data(), param_dim_).wait();
 
-    logger_->log(ILog::Level::DEBUG, "Sycl compute cost items: {}", num_elements_);
-
     computeResiduals(copy_model_event, model_sycl, x_device.data()).wait();
 
     T result;
@@ -95,8 +79,6 @@ class NumericalCostSycl : public ICost<T> {
     Model model;
     model.setState(x);
 
-    Timer t0;
-    t0.start();
     auto model_sycl = std::span<Model>(sycl::malloc_device<Model>(1, queue_), 1);
     auto copy_model_event = queue_.copy<Model>(&model, model_sycl.data(), 1);
     auto x_device = std::span<T>(sycl::malloc_device<T>(param_dim_, queue_), param_dim_);
@@ -118,11 +100,6 @@ class NumericalCostSycl : public ICost<T> {
     }
 
     queue_.wait();
-
-    auto stop = t0.stop();
-    logger_->log(ILog::Level::DEBUG, "Sycl kernel prepare: took: {} us", stop);
-
-    t0.start();
 
     const auto compute_residuals_event = computeResiduals(copy_model_event, model_sycl, x_device.data());
 
@@ -158,11 +135,6 @@ class NumericalCostSycl : public ICost<T> {
         jacobian_map.block(ItemRow, ItemCol, output_dim_capture, 1) = (residual_plus_map - residual_map) / g_step;
       });
     });
-
-    auto start_time = jac_event.template get_profiling_info<sycl::info::event_profiling::command_start>();
-    auto end_time = jac_event.template get_profiling_info<sycl::info::event_profiling::command_end>();
-
-    logger_->log(ILog::Level::DEBUG, "Sycl kernel jacobian: took: {} us", (end_time - start_time) / 1000);
 
     auto JTJ_device = std::span<T>(sycl::malloc_device<T>(param_dim_ * param_dim_, queue_), param_dim_ * param_dim_);
     auto JTb_device = std::span<T>(sycl::malloc_device<T>(param_dim_, queue_), param_dim_);
@@ -221,17 +193,6 @@ class NumericalCostSycl : public ICost<T> {
 
     sycl::event::wait({res_jtb, res_jtj, mirror_jtj});
 
-    start_time = res_jtj.template get_profiling_info<sycl::info::event_profiling::command_start>();
-    end_time = res_jtj.template get_profiling_info<sycl::info::event_profiling::command_end>();
-    logger_->log(ILog::Level::DEBUG, "Sycl kernel syrk: took: {} us", (end_time - start_time) / 1000);
-
-    start_time = res_jtb.template get_profiling_info<sycl::info::event_profiling::command_start>();
-    end_time = res_jtb.template get_profiling_info<sycl::info::event_profiling::command_end>();
-    logger_->log(ILog::Level::DEBUG, "Sycl kernel gemv: took: {} us", (end_time - start_time) / 1000);
-
-    stop = t0.stop();
-    logger_->log(ILog::Level::DEBUG, "Sycl kernel jacobian: took: {} us", stop);
-
     queue_.copy<T>(cost_reduction_.data(), &cost, 1).wait();
 
     queue_.copy<T>(JTJ_device.data(), JTJ, param_dim_ * param_dim_).wait();
@@ -285,8 +246,6 @@ class NumericalCostSycl : public ICost<T> {
 
   using VectorT = Eigen::Vector<T, Eigen::Dynamic>;
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
-
-  std::shared_ptr<ILog> logger_;
 
   std::span<const T> input_;
   std::span<const T> observations_;

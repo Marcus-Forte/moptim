@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include "AnalyticalCost.hh"
-#include "ConsoleLogger.hh"
 #include "NumericalCostForwardEuler.hh"
 #include "NumericalCostSycl.hh"
 #include "test_models.hh"
@@ -18,10 +17,9 @@ TYPED_TEST(SimpleModelTest, NumericalCostEquivalenceSycl) {
   using T = TypeParam;
 
   sycl::queue queue{sycl::default_selector_v};
-  auto logger = std::make_shared<ConsoleLogger>();
 
   NumericalCostSycl<T, SimpleModel<T>> num_cost_sycl(
-      logger, queue, std::span<const T>(this->test_data_.x_data_, this->test_data_.num_measurements),
+      queue, std::span<const T>(this->test_data_.x_data_, this->test_data_.num_measurements),
       std::span<const T>(this->test_data_.y_data_, this->test_data_.num_measurements), 1, 1, 2,
       this->test_data_.num_measurements);
 

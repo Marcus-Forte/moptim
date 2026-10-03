@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <iostream>
+
 #include "AnalyticalCost.hh"
-#include "AsyncConsoleLogger.hh"
-#include "ConsoleLogger.hh"
 #include "NumericalCostForwardEuler.hh"
 #include "NumericalCostSycl.hh"
-#include "Timer.hh"
 #include "test_helper.hh"
 #include "transform3d.hh"
 
@@ -16,9 +16,7 @@ const double sycl_vs_cpu_tolerance = 1e-2;
 INSTANTIATE_TEST_SUITE_P(TestTransform3D1MillionPoints, TestTransform3D, ::testing::Values(1'000'000));
 
 TEST_P(TestTransform3D, SyclCost) {
-  auto logger = std::make_shared<ConsoleLogger>();
-  logger->log(ILog::Level::INFO, "3D-Transforming {} Points", GetParam());
-  Timer t0;
+  std::cout << "3D-Transforming " << GetParam() << " Points" << std::endl;
   sycl::queue queue{sycl::default_selector_v, sycl::property::queue::enable_profiling{}};
 
   const auto num_elements = pointcloud_.size();
@@ -27,28 +25,26 @@ TEST_P(TestTransform3D, SyclCost) {
                                                                 pointcloud_[0].data(), num_elements, 3, 3, 6);
 
   NumericalCostSycl<double, Point3Distance> sycl_cost(
-      logger, queue, std::span<const double>(transformed_pointcloud_[0].data(), num_elements * 3),
+      queue, std::span<const double>(transformed_pointcloud_[0].data(), num_elements * 3),
       std::span<const double>(pointcloud_[0].data(), num_elements * 3), 3, 3, 6, num_elements);
 
   double x0[]{0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
-  t0.start();
+  auto start = std::chrono::steady_clock::now();
   const auto cost_sum = normal_cost.computeCost(x0);
-  auto stop = t0.stop();
-  logger->log(ILog::Level::INFO, "Normal cost: {} took {} us", cost_sum, stop);
+  auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+  std::cout << "Normal cost: " << cost_sum << " took " << elapsed << " us" << std::endl;
 
-  t0.start();
+  start = std::chrono::steady_clock::now();
   const auto sycl_cost_sum = sycl_cost.computeCost(x0);
-  stop = t0.stop();
-  logger->log(ILog::Level::INFO, "Sycl cost: {} took {} us", sycl_cost_sum, stop);
+  elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+  std::cout << "Sycl cost: " << sycl_cost_sum << " took " << elapsed << " us" << std::endl;
 
   EXPECT_NEAR(cost_sum, sycl_cost_sum, 1e-5);
   EXPECT_NEAR(cost_sum, 30000.000, 1e-5);
 }
 
 TEST_P(TestTransform3D, SyclJacobian) {
-  auto logger = std::make_shared<ConsoleLogger>();
-  Timer t0;
   sycl::queue queue{sycl::default_selector_v, sycl::property::queue::enable_profiling{}};
 
   const auto num_elements = pointcloud_.size();
@@ -57,7 +53,7 @@ TEST_P(TestTransform3D, SyclJacobian) {
                                                                 pointcloud_[0].data(), num_elements, 3, 3, 6);
 
   NumericalCostSycl<double, Point3Distance> sycl_cost(
-      logger, queue, std::span<const double>(transformed_pointcloud_[0].data(), num_elements * 3),
+      queue, std::span<const double>(transformed_pointcloud_[0].data(), num_elements * 3),
       std::span<const double>(pointcloud_[0].data(), num_elements * 3), 3, 3, 6, num_elements);
 
   double x0[]{0.1, 0.1, 0.1, 0.0, 0.0, 0.0};
@@ -66,19 +62,19 @@ TEST_P(TestTransform3D, SyclJacobian) {
   Eigen::Matrix<double, 6, 1> num_jtb;
   double num_total = 0.0;
 
-  t0.start();
+  auto start = std::chrono::steady_clock::now();
   normal_cost.computeLinearSystem(x0, num_jtj.data(), num_jtb.data(), num_total);
-  auto stop = t0.stop();
-  logger->log(ILog::Level::INFO, "Normal cost jacobian: took {} us", stop);
+  auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+  std::cout << "Normal cost jacobian: took " << elapsed << " us" << std::endl;
 
   Eigen::Matrix<double, 6, 6> num_jtj_sycl;
   Eigen::Matrix<double, 6, 1> num_jtb_sycl;
   double num_total_sycl = 0.0;
 
-  t0.start();
+  start = std::chrono::steady_clock::now();
   sycl_cost.computeLinearSystem(x0, num_jtj_sycl.data(), num_jtb_sycl.data(), num_total_sycl);
-  stop = t0.stop();
-  logger->log(ILog::Level::INFO, "Sycl cost jacobian: took {} us", stop);
+  elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+  std::cout << "Sycl cost jacobian: took " << elapsed << " us" << std::endl;
 
   std::cout << "normal vs sycl\n";
   std::cout << (num_jtj) << std::endl;

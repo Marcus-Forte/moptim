@@ -4,6 +4,8 @@
 #include <vector>
 
 #include "ICost.hh"
+#include "Observer.hh"
+#include "Result.hh"
 #include "Status.hh"
 
 namespace moptim::constants {}
@@ -17,7 +19,16 @@ class IOptimizer {
   virtual ~IOptimizer() = default;
 
   virtual Status step(T* x) const = 0;
-  virtual Status optimize(T* x) const = 0;
+  virtual Result<T> optimize(T* x) const = 0;
+
+  /**
+   * @brief Attach a non-owning telemetry observer. Passing nullptr detaches.
+   *
+   * The observer receives structured events; it is responsible for any
+   * formatting, logging or recording. Without an observer no event payload is
+   * gathered, so the optimizer stays free of logging dependencies.
+   */
+  void setObserver(IOptimizerObserver<T>* observer) { observer_ = observer; }
 
   void setMaxIterations(size_t max_iterations) { max_iterations_ = max_iterations; }
 
@@ -26,6 +37,7 @@ class IOptimizer {
 
  protected:
   std::vector<std::shared_ptr<ICost<T>>> costs_;
+  IOptimizerObserver<T>* observer_ = nullptr;
   size_t max_iterations_ = 15;
   size_t dimensions_;
 };

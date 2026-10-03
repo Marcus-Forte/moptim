@@ -27,6 +27,7 @@ add_executable(test_moptim
   test_transform2d.cc
   test_transform3d.cc
   test_cost.cc
+  test_observer.cc
 )
 add_subdirectory(nist)
 target_link_libraries(test_moptim moptim test_helper)
@@ -58,6 +59,3 @@ add_executable(moptim_playground
   playground.cc
 )
 target_link_libraries(moptim_playground moptim)
-
-
-

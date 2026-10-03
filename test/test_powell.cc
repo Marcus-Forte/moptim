@@ -2,7 +2,6 @@
 
 #include <memory>
 
-#include "ConsoleLogger.hh"
 #include "GaussNewton.hh"
 #include "NumericalCostForwardEuler.hh"
 
@@ -54,7 +53,7 @@ TEST(TestPowell, TestPowell) {
   const std::array<double, 4> measurement{0.0, 0.0, 0.0, 0.0};
 
   auto cost = std::make_shared<NumericalCostForwardEuler<Powell, double>>(input.data(), measurement.data(), 1, 4, 4, 4);
-  GaussNewton<double> solver(4, std::make_shared<ConsoleLogger>());
+  GaussNewton<double> solver(4);
   solver.setMaxIterations(20);
   solver.addCost(cost);
 
@@ -108,9 +107,7 @@ TEST(TestPowell, TestPowerllSplit) {
   auto cost4 =
       std::make_shared<NumericalCostForwardEuler<PowellF3, double>>(input.data(), measurement.data(), 1, 4, 1, 4);
 
-  auto logger = std::make_shared<ConsoleLogger>();
-  logger->setLevel(ILog::Level::INFO);
-  GaussNewton<double> solver(4, logger);
+  GaussNewton<double> solver(4);
   solver.setMaxIterations(20);
   solver.addCost(cost1);
   solver.addCost(cost2);

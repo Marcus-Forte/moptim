@@ -40,6 +40,7 @@ class NumericalCostCentral : public ICost<T> {
   void computeLinearSystem(const T* x, T* JTJ, T* JTb, T& cost) override {
     const auto callResiduals = [this](const T* params, T* residual_out) {
       model_.setState(params);
+
       for (size_t i = 0; i < num_elements_; ++i) {
         model_.residual(params, input_elements_ + i * input_dim_, observation_elements_ + i * observation_dim_,
                         &residual_out[i * observation_dim_]);
@@ -93,8 +94,8 @@ class NumericalCostCentral : public ICost<T> {
   VectorT residual_data_plus_;
   VectorT residual_data_minus_;
 
-  const T* input_elements_;
-  const T* observation_elements_;
+  const T* __restrict__ input_elements_;
+  const T* __restrict__ observation_elements_;
   Model model_;
 };
 
