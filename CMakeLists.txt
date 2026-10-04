@@ -49,6 +49,10 @@ target_link_libraries(moptim PUBLIC Eigen3::Eigen)
 add_library(moptim::moptim ALIAS moptim)
 
 ## Testing
-if(BUILD_TESTING)
+# Build tests only for a standalone moptim build. As a subproject the parent
+# project drives CTest, and moptim is added EXCLUDE_FROM_ALL, so its test
+# binaries are never built and would surface as dangling `<target>_NOT_BUILT`
+# CTest failures.
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND BUILD_TESTING)
 add_subdirectory(test)
 endif()
