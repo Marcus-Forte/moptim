@@ -16,11 +16,6 @@ GaussNewton<T>::GaussNewton(size_t dimensions)
     : IOptimizer<T>(dimensions), solver_(std::make_shared<EigenSolver<T>>(dimensions)) {}
 
 template <class T>
-Status GaussNewton<T>::step(T* x) const {
-  return stepImpl(x, 0);
-}
-
-template <class T>
 Status GaussNewton<T>::stepImpl(T* x, size_t iteration) const {
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
@@ -75,45 +70,6 @@ Status GaussNewton<T>::stepImpl(T* x, size_t iteration) const {
   }
 
   return status;
-}
-
-// Automate steps:
-// Verify: rel_tolerance, abs_tolerance, max iterations, cost
-template <class T>
-Result<T> GaussNewton<T>::optimize(T* x) const {
-  Result<T> result;
-  const auto start = std::chrono::steady_clock::now();
-
-  for (size_t i = 0; i < this->max_iterations_; ++i) {
-    const auto status = stepImpl(x, i);
-    result.iterations = i + 1;
-    result.status = status;
-
-    if (status != Status::STEP_OK) {
-      break;
-    }
-  }
-
-  if (result.status == Status::STEP_OK) {
-    result.status = Status::MAX_ITERATIONS_REACHED;
-  }
-
-  result.final_cost = T{};
-  for (const auto& cost : this->costs_) {
-    result.final_cost += cost->computeCost(x);
-  }
-
-  if (this->observer_) {
-    IterationEvent<T> event;
-    event.iteration = result.iterations;
-    event.phase = Phase::FINISHED;
-    event.status = result.status;
-    event.cost = result.final_cost;
-    event.elapsed = std::chrono::steady_clock::now() - start;
-    this->observer_->onIteration(event);
-  }
-
-  return result;
 }
 
 template class GaussNewton<double>;

@@ -102,6 +102,54 @@ class ICost {
     return std::sqrt(rho[1]);
   }
 
+  /**
+   * @brief Whiten (information/weights) and robust-loss-scale a single element's residual
+   * block in-place, returning its cost contribution. Used by computeCost() implementations
+   * that do not need the jacobian.
+   */
+  template <class ResidualBlock>
+  T whitenAndScaleResidual(size_t element_index, ResidualBlock&& residual_block) const {
+    if (hasInformation()) {
+      residual_block = informationFactor(element_index).transpose() * residual_block;
+    } else if (hasWeights()) {
+      residual_block *= std::sqrt(weight(element_index));
+    }
+    T contribution;
+    applyLoss(residual_block.squaredNorm(), contribution);
+    return contribution;
+  }
+
+  /**
+   * @brief Whiten (information/weights) and robust-loss-scale a single element's residual
+   * and jacobian blocks in-place, returning its cost contribution. `jacobian_rows_are_residuals`
+   * selects the jacobian layout: true when rows span the observation dimension (jacobian_block is
+   * observation_dim x param_dim, as in the numerical costs), false when columns do (jacobian_block
+   * is param_dim x observation_dim, i.e. J^T storage, as in AnalyticalCost).
+   */
+  template <class ResidualBlock, class JacobianBlock>
+  T whitenAndScaleElement(size_t element_index, ResidualBlock&& residual_block, JacobianBlock&& jacobian_block,
+                          bool jacobian_rows_are_residuals) const {
+    if (hasInformation()) {
+      const MatrixT& L = informationFactor(element_index);
+      residual_block = L.transpose() * residual_block;
+      if (jacobian_rows_are_residuals) {
+        jacobian_block = (L.transpose() * jacobian_block).eval();
+      } else {
+        jacobian_block = (jacobian_block * L).eval();
+      }
+    } else if (hasWeights()) {
+      const T w = std::sqrt(weight(element_index));
+      residual_block *= w;
+      jacobian_block *= w;
+    }
+
+    T contribution;
+    const T scale = applyLoss(residual_block.squaredNorm(), contribution);
+    residual_block *= scale;
+    jacobian_block *= scale;
+    return contribution;
+  }
+
   const size_t input_dim_;
   const size_t observation_dim_;
   const size_t param_dim_;

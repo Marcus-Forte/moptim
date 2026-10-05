@@ -17,11 +17,6 @@ LevenbergMarquardt<T>::LevenbergMarquardt(size_t dimensions)
     : IOptimizer<T>(dimensions), solver_(std::make_shared<EigenSolver<T>>(dimensions)) {}
 
 template <class T>
-Status LevenbergMarquardt<T>::step(T* x) const {
-  return stepImpl(x, 0);
-}
-
-template <class T>
 Status LevenbergMarquardt<T>::stepImpl(T* x, size_t iteration) const {
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
@@ -126,46 +121,17 @@ Status LevenbergMarquardt<T>::stepImpl(T* x, size_t iteration) const {
 }
 
 template <class T>
-Result<T> LevenbergMarquardt<T>::optimize(T* x) const {
-  lm_init_lambda_factor_ = 1e-7;
-  lm_lambda_ = -1.0;
+void LevenbergMarquardt<T>::onOptimizeStart() const {
+  lm_init_lambda_factor_ = static_cast<T>(1e-7);
+  lm_lambda_ = static_cast<T>(-1);
+}
 
-  Result<T> result;
-  const auto start = std::chrono::steady_clock::now();
-
-  for (size_t i = 0; i < this->max_iterations_; ++i) {
-    const auto status = stepImpl(x, i);
-    result.iterations = i + 1;
-    result.status = status;
-
-    if (status != Status::STEP_OK) {
-      break;
-    }
-  }
-
-  if (result.status == Status::STEP_OK) {
-    result.status = Status::MAX_ITERATIONS_REACHED;
-  }
-
-  result.final_cost = T{};
-  for (const auto& cost : this->costs_) {
-    result.final_cost += cost->computeCost(x);
-  }
-
-  // stepImpl emits FINISHED when it self-terminates (CONVERGED/SMALL_DELTA).
-  // Only emit here when the iteration budget was exhausted, so the observer
-  // sees exactly one FINISHED event per optimize() call.
-  if (this->observer_ && result.status == Status::MAX_ITERATIONS_REACHED) {
-    IterationEvent<T> event;
-    event.iteration = result.iterations;
-    event.phase = Phase::FINISHED;
-    event.status = result.status;
-    event.cost = result.final_cost;
-    event.elapsed = std::chrono::steady_clock::now() - start;
-    this->observer_->onIteration(event);
-  }
-
-  return result;
+template <class T>
+bool LevenbergMarquardt<T>::shouldEmitFinishedEvent(Status status) const {
+  // stepImpl() emits FINISHED when it self-terminates (CONVERGED/SMALL_DELTA). Only emit here
+  // when the iteration budget was exhausted, so the observer sees exactly one FINISHED event
+  // per optimize() call.
+  return status == Status::MAX_ITERATIONS_REACHED;
 }
 
 template class LevenbergMarquardt<double>;

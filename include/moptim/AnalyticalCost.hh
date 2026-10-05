@@ -43,15 +43,7 @@ class AnalyticalCost : public ICost<T> {
       model_.residual(x, input_elements_ + i * input_dim_, observation_elements_ + i * observation_dim_,
                       residual_block.data());
 
-      if (hasInformation()) {
-        residual_block = informationFactor(i).transpose() * residual_block;
-      } else if (hasWeights()) {
-        residual_block *= std::sqrt(weight(i));
-      }
-
-      T contribution;
-      applyLoss(residual_block.squaredNorm(), contribution);
-      cost += contribution;
+      cost += whitenAndScaleResidual(i, residual_block);
     }
     return cost;
   }
@@ -94,21 +86,7 @@ class AnalyticalCost : public ICost<T> {
 
       // jacobian_block stores J_i^T (param_dim x observation_dim), so whitening/scaling J_i on the left
       // translates to scaling J_i^T on the right.
-      if (hasInformation()) {
-        const MatrixT& L = informationFactor(i);
-        residual_block = L.transpose() * residual_block;
-        jacobian_block = (jacobian_block * L).eval();
-      } else if (hasWeights()) {
-        const T w = std::sqrt(weight(i));
-        residual_block *= w;
-        jacobian_block *= w;
-      }
-
-      T contribution;
-      const T scale = applyLoss(residual_block.squaredNorm(), contribution);
-      residual_block *= scale;
-      jacobian_block *= scale;
-      cost += contribution;
+      cost += whitenAndScaleElement(i, residual_block, jacobian_block, /*jacobian_rows_are_residuals=*/false);
     }
 
     // jacobian_transposed_data_ stores J^T (param_dim x n_residuals).
@@ -124,12 +102,9 @@ class AnalyticalCost : public ICost<T> {
   using ICost<T>::observation_dim_;
   using ICost<T>::param_dim_;
   using ICost<T>::num_elements_;
-  using ICost<T>::hasInformation;
-  using ICost<T>::hasWeights;
   using ICost<T>::isRobustified;
-  using ICost<T>::informationFactor;
-  using ICost<T>::weight;
-  using ICost<T>::applyLoss;
+  using ICost<T>::whitenAndScaleResidual;
+  using ICost<T>::whitenAndScaleElement;
 
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;

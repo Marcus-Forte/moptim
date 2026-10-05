@@ -10,12 +10,10 @@ class GaussNewton : public IOptimizer<T> {
   GaussNewton(size_t dimensions, const std::shared_ptr<ISolver<T>>& solver);
   explicit GaussNewton(size_t dimensions);
 
-  Status step(T* x) const override;
-  Result<T> optimize(T* x) const override;
+ protected:
+  Status stepImpl(T* x, size_t iteration) const override;
 
  private:
-  Status stepImpl(T* x, size_t iteration) const;
-
   std::shared_ptr<ISolver<T>> solver_;
 };
 
