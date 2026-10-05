@@ -28,6 +28,8 @@ add_executable(test_moptim
   test_transform3d.cc
   test_cost.cc
   test_observer.cc
+  test_loss_function.cc
+  test_robust_cost.cc
 )
 add_subdirectory(nist)
 target_link_libraries(test_moptim moptim test_helper)

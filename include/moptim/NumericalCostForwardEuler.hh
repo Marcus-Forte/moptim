@@ -34,7 +34,24 @@ class NumericalCostForwardEuler : public ICost<T> {
       model_.residual(x, input_elements_ + i * input_dim_, observation_elements_ + i * observation_dim_,
                       &residual_data_[i * observation_dim_]);
     }
-    return residual_data_.squaredNorm();
+
+    if (!isRobustified()) {
+      return residual_data_.squaredNorm();
+    }
+
+    T cost = T{0};
+    for (size_t i = 0; i < num_elements_; ++i) {
+      auto residual_block = residual_data_.segment(i * observation_dim_, observation_dim_);
+      if (hasInformation()) {
+        residual_block = informationFactor(i).transpose() * residual_block;
+      } else if (hasWeights()) {
+        residual_block *= std::sqrt(weight(i));
+      }
+      T contribution;
+      applyLoss(residual_block.squaredNorm(), contribution);
+      cost += contribution;
+    }
+    return cost;
   }
 
   void computeLinearSystem(const T* x, T* JTJ, T* JTb, T& cost) override {
@@ -68,13 +85,43 @@ class NumericalCostForwardEuler : public ICost<T> {
     Eigen::Map<MatrixT> JTJ_map(JTJ, param_dim_, param_dim_);
     Eigen::Map<VectorT> JTb_map(JTb, param_dim_);
 
+    if (!isRobustified()) {
+      JTJ_map.setZero();
+      JTJ_map.template selfadjointView<Eigen::Lower>().rankUpdate(jacobian_data_.adjoint());
+      JTJ_map = JTJ_map.template selfadjointView<Eigen::Lower>();
+      JTb_map.noalias() = jacobian_data_.transpose() * residual_data_;
+      cost = residual_data_.squaredNorm();
+      return;
+    }
+
+    cost = T{0};
+    for (size_t i = 0; i < num_elements_; ++i) {
+      auto residual_block = residual_data_.segment(i * observation_dim_, observation_dim_);
+      auto jacobian_block = jacobian_data_.block(i * observation_dim_, 0, observation_dim_, param_dim_);
+
+      if (hasInformation()) {
+        const MatrixT& L = informationFactor(i);
+        residual_block = L.transpose() * residual_block;
+        jacobian_block = (L.transpose() * jacobian_block).eval();
+      } else if (hasWeights()) {
+        const T w = std::sqrt(weight(i));
+        residual_block *= w;
+        jacobian_block *= w;
+      }
+
+      T contribution;
+      const T scale = applyLoss(residual_block.squaredNorm(), contribution);
+      residual_block *= scale;
+      jacobian_block *= scale;
+      cost += contribution;
+    }
+
     // J^T*J is symmetric: compute only the lower triangle via rankUpdate (~2x fewer FLOPs),
     // then reflect to fill the full matrix.
     JTJ_map.setZero();
     JTJ_map.template selfadjointView<Eigen::Lower>().rankUpdate(jacobian_data_.adjoint());
     JTJ_map = JTJ_map.template selfadjointView<Eigen::Lower>();
     JTb_map.noalias() = jacobian_data_.transpose() * residual_data_;
-    cost = residual_data_.squaredNorm();
   }
 
  private:
@@ -82,6 +129,12 @@ class NumericalCostForwardEuler : public ICost<T> {
   using ICost<T>::observation_dim_;
   using ICost<T>::param_dim_;
   using ICost<T>::num_elements_;
+  using ICost<T>::hasInformation;
+  using ICost<T>::hasWeights;
+  using ICost<T>::isRobustified;
+  using ICost<T>::informationFactor;
+  using ICost<T>::weight;
+  using ICost<T>::applyLoss;
 
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
