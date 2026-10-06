@@ -27,6 +27,7 @@ add_executable(test_moptim
   test_transform2d.cc
   test_transform3d.cc
   test_cost.cc
+  test_active_param_dim.cc
   test_observer.cc
   test_loss_function.cc
   test_robust_cost.cc

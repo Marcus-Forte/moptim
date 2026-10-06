@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Eigen/Dense>
+#include <cassert>
 #include <oneapi/math.hpp>
 #include <span>
 #include <sycl/sycl.hpp>
@@ -13,11 +14,15 @@ class NumericalCostSycl : public ICost<T> {
  public:
   NumericalCostSycl(const NumericalCostSycl&) = delete;
   NumericalCostSycl(const sycl::queue& queue, std::span<const T> input, std::span<const T> observations,
-                    size_t input_dim, size_t observation_dim, size_t param_dim, size_t num_elements)
-      : ICost<T>(input_dim, observation_dim, param_dim, num_elements),
+                    size_t input_dim, size_t observation_dim, size_t param_dim, size_t num_elements,
+                    size_t active_param_dim = 0)
+      : ICost<T>(input_dim, observation_dim, param_dim, num_elements, active_param_dim),
         input_{input},
         observations_{observations},
         queue_(queue) {
+    // The SYCL backend differentiates and assembles all param_dim_ columns, so it
+    // does not support a reduced active block yet. Callers must request the full width.
+    assert(active_param_dim_ == param_dim_);
     if (!queue_.get_device().is_cpu()) {
       input_sycl_ = std::span<T>(sycl::malloc_device<T>(observation_dim_ * num_elements, queue_),
                                  observation_dim_ * num_elements);
@@ -243,6 +248,7 @@ class NumericalCostSycl : public ICost<T> {
   using ICost<T>::observation_dim_;
   using ICost<T>::param_dim_;
   using ICost<T>::num_elements_;
+  using ICost<T>::active_param_dim_;
 
   using VectorT = Eigen::Vector<T, Eigen::Dynamic>;
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;

@@ -12,6 +12,7 @@ A `Cost` object encodes the error between model predictions and observations ove
 - **`input_dim`**: Dimensionality of each input element (e.g. `2` for 2D point clouds).
 - **`observation_dim`**: Dimensionality of each observation element (e.g. `2` for 2D measurements).
 - **`param_dim`**: Dimensionality of the parameter vector — the quantity being optimized. The optimizer iteratively updates this vector to minimize the residuals between model predictions and observations.
+- **`active_param_dim`** (optional, defaults to `0`): Number of leading parameters the cost actually depends on; `0` means the full `param_dim`. The model still receives the full parameter vector, but only the first `active_param_dim` entries are perturbed (numerical costs) or differentiated (analytical costs), and only the corresponding leading block of `JTJ`/`JTb` is populated. Use it when a cost touches a subset of a larger parameter vector (e.g. a scan-matching term using only the pose part of a 24-dim state) to avoid redundant work and avoid writing zero columns. `active_param_dim` must not exceed `param_dim`.
 - **`num_elements`**: Number of input/observation pairs in the dataset.
 
 ### Cost Function

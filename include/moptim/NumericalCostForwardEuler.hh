@@ -21,18 +21,20 @@ class NumericalCostForwardEuler : public NumericalCostBase<NumericalCostForwardE
   ~NumericalCostForwardEuler() override = default;
 
   NumericalCostForwardEuler(const T* input, const T* observations, size_t num_elements, size_t input_dim,
-                            size_t observation_dim, size_t param_dim, Model model = Model{})
-      : Base(input, observations, num_elements, input_dim, observation_dim, param_dim, std::move(model)) {}
+                            size_t observation_dim, size_t param_dim, Model model = Model{},
+                            size_t active_param_dim = 0)
+      : Base(input, observations, num_elements, input_dim, observation_dim, param_dim, std::move(model),
+             active_param_dim) {}
 
  private:
   using VectorT = typename Base::VectorT;
 
-  // Fills jacobian_data_ one column per parameter using a forward (one-sided) finite difference.
+  // Fills jacobian_data_ one column per active parameter using a forward (one-sided) finite difference.
   void fillJacobian(const VectorT& x_vec, VectorT& x_plus) {
     const T g_step = std::sqrt(std::numeric_limits<T>::epsilon());
     const T inv_g_step = T{1} / g_step;
 
-    for (size_t i = 0; i < this->param_dim_; ++i) {
+    for (size_t i = 0; i < this->active_param_dim_; ++i) {
       x_plus[i] = x_vec[i] + g_step;
 
       this->callResiduals(x_plus.data(), this->residual_data_plus_.data());

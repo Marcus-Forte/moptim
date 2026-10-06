@@ -28,12 +28,12 @@ class NumericalCostBase : public ICost<T> {
   ~NumericalCostBase() override = default;
 
   NumericalCostBase(const T* input, const T* observations, size_t num_elements, size_t input_dim,
-                    size_t observation_dim, size_t param_dim, Model model)
-      : ICost<T>(input_dim, observation_dim, param_dim, num_elements),
+                    size_t observation_dim, size_t param_dim, Model model, size_t active_param_dim = 0)
+      : ICost<T>(input_dim, observation_dim, param_dim, num_elements, active_param_dim),
         input_elements_(input),
         observation_elements_(observations),
         model_(std::move(model)) {
-    jacobian_data_.resize(observation_dim_ * num_elements_, param_dim_);
+    jacobian_data_.resize(observation_dim_ * num_elements_, active_param_dim_);
     residual_data_.resize(observation_dim_ * num_elements_);
     residual_data_plus_.resize(observation_dim_ * num_elements_);
   }
@@ -68,12 +68,16 @@ class NumericalCostBase : public ICost<T> {
 
     Eigen::Map<MatrixT> JTJ_map(JTJ, param_dim_, param_dim_);
     Eigen::Map<VectorT> JTb_map(JTb, param_dim_);
+    // Only the leading active_param_dim_ block is populated; the trailing
+    // rows/columns (parameters this cost does not depend on) stay zero.
+    auto JTJ_active = JTJ_map.topLeftCorner(active_param_dim_, active_param_dim_);
 
     if (!isRobustified()) {
       JTJ_map.setZero();
-      JTJ_map.template selfadjointView<Eigen::Lower>().rankUpdate(jacobian_data_.adjoint());
-      JTJ_map = JTJ_map.template selfadjointView<Eigen::Lower>();
-      JTb_map.noalias() = jacobian_data_.transpose() * residual_data_;
+      JTJ_active.template selfadjointView<Eigen::Lower>().rankUpdate(jacobian_data_.adjoint());
+      JTJ_active = JTJ_active.template selfadjointView<Eigen::Lower>();
+      JTb_map.setZero();
+      JTb_map.head(active_param_dim_).noalias() = jacobian_data_.transpose() * residual_data_;
       cost = residual_data_.squaredNorm();
       return;
     }
@@ -81,16 +85,17 @@ class NumericalCostBase : public ICost<T> {
     cost = T{0};
     for (size_t i = 0; i < num_elements_; ++i) {
       auto residual_block = residual_data_.segment(i * observation_dim_, observation_dim_);
-      auto jacobian_block = jacobian_data_.block(i * observation_dim_, 0, observation_dim_, param_dim_);
+      auto jacobian_block = jacobian_data_.block(i * observation_dim_, 0, observation_dim_, active_param_dim_);
       cost += whitenAndScaleElement(i, residual_block, jacobian_block, /*jacobian_rows_are_residuals=*/true);
     }
 
     // J^T*J is symmetric: compute only the lower triangle via rankUpdate (~2x fewer FLOPs),
     // then reflect to fill the full matrix.
     JTJ_map.setZero();
-    JTJ_map.template selfadjointView<Eigen::Lower>().rankUpdate(jacobian_data_.adjoint());
-    JTJ_map = JTJ_map.template selfadjointView<Eigen::Lower>();
-    JTb_map.noalias() = jacobian_data_.transpose() * residual_data_;
+    JTJ_active.template selfadjointView<Eigen::Lower>().rankUpdate(jacobian_data_.adjoint());
+    JTJ_active = JTJ_active.template selfadjointView<Eigen::Lower>();
+    JTb_map.setZero();
+    JTb_map.head(active_param_dim_).noalias() = jacobian_data_.transpose() * residual_data_;
   }
 
  protected:
@@ -106,6 +111,7 @@ class NumericalCostBase : public ICost<T> {
   using ICost<T>::observation_dim_;
   using ICost<T>::param_dim_;
   using ICost<T>::num_elements_;
+  using ICost<T>::active_param_dim_;
   using ICost<T>::isRobustified;
   using ICost<T>::whitenAndScaleResidual;
   using ICost<T>::whitenAndScaleElement;
