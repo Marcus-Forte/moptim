@@ -2,6 +2,12 @@ cmake_minimum_required(VERSION 3.20)
 project(moptim)
 include(CTest)
 
+# A standalone configure without a build type would compile without optimization, and unoptimized
+# Eigen code is far slower. A parent project keeps control of its own build type.
+if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 set(CMAKE_CXX_STANDARD 23)
 option(USE_CLANG_TIDY "Enable clang-tidy" OFF)
 option(WITH_SYCL "Use SYCL compilation for parallel computation" OFF)
@@ -22,7 +28,8 @@ find_package(Eigen3 REQUIRED)
 add_library(moptim
   src/EigenSolver.cc
   src/GaussNewton.cc
-  src/LevenbergMarquardt.cc)
+  src/LevenbergMarquardt.cc
+  src/NormalEquations.cc)
 
 if(WITH_SYCL)
   # check this link to select via env variable: https://github.com/intel/llvm/blob/sycl/sycl/doc/EnvironmentVariables.md
@@ -45,6 +52,8 @@ endif()
 
 # Core lib.
 target_include_directories(moptim PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+# The public headers use concepts, so consumers need at least C++20.
+target_compile_features(moptim PUBLIC cxx_std_20)
 target_link_libraries(moptim PUBLIC Eigen3::Eigen)
 add_library(moptim::moptim ALIAS moptim)
 

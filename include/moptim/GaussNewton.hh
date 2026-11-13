@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include "moptim/IOptimizer.hh"
 #include "moptim/ISolver.hh"
 
@@ -11,10 +13,15 @@ class GaussNewton : public IOptimizer<T> {
   explicit GaussNewton(size_t dimensions);
 
  protected:
-  Status stepImpl(T* x, size_t iteration) const override;
+  using typename IOptimizer<T>::StepResult;
+
+  StepResult stepImpl(T* x, size_t iteration) override;
 
  private:
+  using typename IOptimizer<T>::VectorT;
+
   std::shared_ptr<ISolver<T>> solver_;
+  VectorT delta_;  ///< Step of the current iteration.
 };
 
 }  // namespace moptim

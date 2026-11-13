@@ -2,9 +2,13 @@
 
 #include <Eigen/Dense>
 #include <cassert>
+#include <cmath>
+#include <limits>
+#include <memory>
 #include <oneapi/math.hpp>
 #include <span>
 #include <sycl/sycl.hpp>
+#include <vector>
 
 #include "moptim/ICost.hh"
 

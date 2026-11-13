@@ -50,7 +50,7 @@ TEST(TestCost, JacobianEquivalence) {
   }
 
   for (int i = 0; i < an_jtb.size(); ++i) {
-    EXPECT_NEAR(an_jtb(i), an_jtb(i), 1e-5);
+    EXPECT_NEAR(an_jtb(i), num_jtb(i), 1e-5);
   }
 
   EXPECT_NEAR(an_total, num_total, 1e-5);

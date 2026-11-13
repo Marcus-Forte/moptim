@@ -1,129 +1,64 @@
 #pragma once
 
 #include <Eigen/Dense>
-#include <cassert>
+#include <cstddef>
+#include <utility>
 
-#include "moptim/ICost.hh"
+#include "moptim/ChunkedCost.hh"
 #include "moptim/IModel.hh"
 
 namespace moptim {
 
+/**
+ * @brief Cost whose jacobian comes from the model's own `jacobian()`.
+ */
 template <class Model, class T>
   requires AnalyticalModel<Model, T>
-class AnalyticalCost : public ICost<T> {
+class AnalyticalCost : public ChunkedCost<Model, T> {
+  using Base = ChunkedCost<Model, T>;
+
  public:
-  AnalyticalCost(const AnalyticalCost&) = delete;
+  using typename Base::MatrixT;
+  using typename Base::VectorT;
 
   AnalyticalCost(const T* input, const T* observations, size_t num_elements, size_t input_dim, size_t observation_dim,
                  size_t param_dim, Model model = Model{}, size_t active_param_dim = 0)
-      : ICost<T>(input_dim, observation_dim, param_dim, num_elements, active_param_dim),
-        input_elements_(input),
-        observation_elements_(observations),
-        model_(std::move(model)) {
-    // We fill the jacobian transposed already; only the active leading block is
-    // stored so the model writes a contiguous active_param_dim_ x observation_dim_ block.
-    jacobian_transposed_data_.resize(active_param_dim_, observation_dim_ * num_elements_);
-    residual_data_.resize(observation_dim_ * num_elements_);
-    jac_elem_buf_.resize(observation_dim_ * active_param_dim_);
-  }
-
-  T computeCost(const T* x) override {
-    model_.setState(x);
-
-    if (!isRobustified()) {
-      for (size_t i = 0; i < num_elements_; ++i) {
-        model_.residual(x, input_elements_ + i * input_dim_, observation_elements_ + i * observation_dim_,
-                        &residual_data_[i * observation_dim_]);
-      }
-      return residual_data_.squaredNorm();
-    }
-
-    T cost = T{0};
-    for (size_t i = 0; i < num_elements_; ++i) {
-      auto residual_block = residual_data_.segment(i * observation_dim_, observation_dim_);
-      model_.residual(x, input_elements_ + i * input_dim_, observation_elements_ + i * observation_dim_,
-                      residual_block.data());
-
-      cost += whitenAndScaleResidual(i, residual_block);
-    }
-    return cost;
-  }
-
-  void computeLinearSystem(const T* x, T* JTJ, T* JTb, T& cost) override {
-    model_.setState(x);
-
-    Eigen::Map<MatrixT> JTJ_map(JTJ, param_dim_, param_dim_);
-    Eigen::Map<VectorT> JTb_map(JTb, param_dim_);
-    // Only the leading active_param_dim_ block is populated; the trailing
-    // rows/columns (parameters this cost does not depend on) stay zero.
-    auto JTJ_active = JTJ_map.topLeftCorner(active_param_dim_, active_param_dim_);
-
-    if (!isRobustified()) {
-      for (size_t i = 0; i < num_elements_; ++i) {
-        const T* in_i = input_elements_ + i * input_dim_;
-        const T* obs_i = observation_elements_ + i * observation_dim_;
-
-        model_.residual(x, in_i, obs_i, &residual_data_[i * observation_dim_]);
-        // Column-major: element i occupies observation_dim_ consecutive columns starting at i*observation_dim_
-        model_.jacobian(x, in_i, obs_i, jacobian_transposed_data_.col(i * observation_dim_).data());
-      }
-
-      JTJ_map.setZero();
-      JTJ_active.template selfadjointView<Eigen::Lower>().rankUpdate(jacobian_transposed_data_);
-      JTJ_active = JTJ_active.template selfadjointView<Eigen::Lower>();
-      JTb_map.setZero();
-      JTb_map.head(active_param_dim_).noalias() = jacobian_transposed_data_ * residual_data_;
-      cost = residual_data_.squaredNorm();
-      return;
-    }
-
-    cost = T{0};
-    for (size_t i = 0; i < num_elements_; ++i) {
-      const T* in_i = input_elements_ + i * input_dim_;
-      const T* obs_i = observation_elements_ + i * observation_dim_;
-
-      auto residual_block = residual_data_.segment(i * observation_dim_, observation_dim_);
-      model_.residual(x, in_i, obs_i, residual_block.data());
-
-      // Column-major: element i occupies observation_dim_ consecutive columns starting at i*observation_dim_
-      auto jacobian_block =
-          jacobian_transposed_data_.block(0, i * observation_dim_, active_param_dim_, observation_dim_);
-      model_.jacobian(x, in_i, obs_i, jacobian_block.data());
-
-      // jacobian_block stores J_i^T (active_param_dim x observation_dim), so whitening/scaling J_i on the left
-      // translates to scaling J_i^T on the right.
-      cost += whitenAndScaleElement(i, residual_block, jacobian_block, /*jacobian_rows_are_residuals=*/false);
-    }
-
-    // jacobian_transposed_data_ stores J^T (active_param_dim_ x n_residuals).
-    // rankUpdate(u) computes u*u^T, so rankUpdate(J^T) = J^T*J = JTJ.
-    JTJ_map.setZero();
-    JTJ_active.template selfadjointView<Eigen::Lower>().rankUpdate(jacobian_transposed_data_);
-    JTJ_active = JTJ_active.template selfadjointView<Eigen::Lower>();
-    JTb_map.setZero();
-    JTb_map.head(active_param_dim_).noalias() = jacobian_transposed_data_ * residual_data_;
-  }
+      : Base(input, observations, num_elements, input_dim, observation_dim, param_dim, std::move(model),
+             active_param_dim),
+        element_jacobian_(active_param_dim_ * observation_dim_) {}
 
  private:
-  using ICost<T>::input_dim_;
-  using ICost<T>::observation_dim_;
-  using ICost<T>::param_dim_;
-  using ICost<T>::num_elements_;
-  using ICost<T>::active_param_dim_;
-  using ICost<T>::isRobustified;
-  using ICost<T>::whitenAndScaleResidual;
-  using ICost<T>::whitenAndScaleElement;
+  using Base::active_param_dim_;
+  using Base::observation_dim_;
 
-  using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
-  using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
+  void evaluateJacobian(const T* x, size_t first, size_t count, const Eigen::Ref<const VectorT>& /*residuals*/,
+                        Eigen::Ref<MatrixT> jacobian) override {
+    fillJacobian(x, first, count, element_jacobian_.data(), jacobian.data(), jacobian.outerStride());
+  }
 
-  MatrixT jacobian_transposed_data_;
-  VectorT residual_data_;
-  VectorT jac_elem_buf_;
+  /// `transposed` and `jacobian` are buffers of this cost that nothing else points into; see
+  /// ChunkedCost::evaluateResiduals() for why they are declared so and why this is not inlined.
+  [[gnu::noinline]] void fillJacobian(const T* x, size_t first, size_t count, T* __restrict__ transposed,
+                                      T* __restrict__ jacobian, size_t jacobian_stride) {
+    const size_t params = active_param_dim_;
+    const size_t dim = observation_dim_;
 
-  const T* input_elements_;
-  const T* observation_elements_;
-  Model model_;
+    for (size_t e = 0; e < count; ++e) {
+      this->model_.jacobian(x, this->input(first + e), this->observation(first + e), transposed);
+
+      // The model writes the element's transposed jacobian; the chunk stores one column per parameter.
+      for (size_t p = 0; p < params; ++p) {
+        T* column = jacobian + p * jacobian_stride + e * dim;
+        for (size_t i = 0; i < dim; ++i) {
+          column[i] = transposed[p + params * i];
+        }
+      }
+    }
+  }
+
+  /// Transposed jacobian of one element as the model writes it: active_param_dim x observation_dim,
+  /// column-major.
+  VectorT element_jacobian_;
 };
 
 }  // namespace moptim

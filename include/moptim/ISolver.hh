@@ -11,13 +11,16 @@ class ISolver {
   virtual ~ISolver() = default;
 
   /**
-   * @brief Solve the linear system `Ax = b` for x.
+   * @brief Solve the linear system `A * x = -b` for x: the step that minimizes the quadratic model
+   * with Hessian `A` and gradient `b`.
    *
-   * @param[in] A Matrix A
-   * @param[in] b Vector b
-   * @param[out] x
+   * @param[in] A Symmetric matrix, `dimensions x dimensions` in column-major order. Only its lower
+   *   triangle is read.
+   * @param[in] b Vector b, `dimensions` entries.
+   * @param[out] x Solution, `dimensions` entries. Left in an unspecified state on failure.
+   * @return false if the system could not be solved, e.g. because `A` is not positive definite.
    */
-  virtual void solve(const T* A, const T* b, T* x) const = 0;
+  [[nodiscard]] virtual bool solve(const T* A, const T* b, T* x) = 0;
 
  protected:
   size_t dimensions_;

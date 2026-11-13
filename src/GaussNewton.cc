@@ -1,75 +1,56 @@
 #include "moptim/GaussNewton.hh"
 
-#include <chrono>
-#include <cmath>
-
 #include "moptim/Convergence.hh"
 #include "moptim/EigenSolver.hh"
 
 namespace moptim {
 template <class T>
 GaussNewton<T>::GaussNewton(size_t dimensions, const std::shared_ptr<ISolver<T>>& solver)
-    : IOptimizer<T>(dimensions), solver_(solver) {}
+    : IOptimizer<T>(dimensions), solver_(solver), delta_(dimensions) {}
 
 template <class T>
 GaussNewton<T>::GaussNewton(size_t dimensions)
-    : IOptimizer<T>(dimensions), solver_(std::make_shared<EigenSolver<T>>(dimensions)) {}
+    : GaussNewton(dimensions, std::make_shared<EigenSolver<T>>(dimensions)) {}
 
 template <class T>
-Status GaussNewton<T>::stepImpl(T* x, size_t iteration) const {
-  using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
-  using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
+typename GaussNewton<T>::StepResult GaussNewton<T>::stepImpl(T* x, size_t iteration) {
+  using Clock = typename IOptimizer<T>::Clock;
 
-  MatrixT JTJ(this->dimensions_, this->dimensions_);
-  VectorT JTb(this->dimensions_);
+  const auto start = this->now();
+  const T cost = this->assembleLinearSystem(x, iteration);
 
-  MatrixT Hessian = MatrixT::Zero(this->dimensions_, this->dimensions_);
-  VectorT BVec = VectorT::Zero(this->dimensions_);
-  VectorT DeltaVec(this->dimensions_);
-  Eigen::Map<VectorT> XVec(x, this->dimensions_);
-  T totalCost = 0.0;
-
-  const auto start = std::chrono::steady_clock::now();
-
-  // Compute Hessian
-  for (const auto& cost : this->costs_) {
-    T cost_val = 0.0;
-    cost->computeLinearSystem(x, JTJ.data(), JTb.data(), cost_val);
-    Hessian += JTJ;
-    BVec += JTb;
-    totalCost += cost_val;
-  }
-
-  if (this->observer_) {
-    LinearSystemEvent<T> event;
+  const auto emit = [&](Phase phase, Status status) {
+    if (!this->observer_) {
+      return;
+    }
+    IterationEvent<T> event;
     event.iteration = iteration;
-    event.cost = totalCost;
-    event.elapsed = std::chrono::steady_clock::now() - start;
-    this->observer_->onLinearSystem(event);
+    event.phase = phase;
+    event.status = status;
+    event.cost = cost;
+    event.delta_norm = delta_.norm();
+    event.elapsed = Clock::now() - start;
+    this->observer_->onIteration(event);
+  };
+
+  if (!solver_->solve(this->hessian_.data(), this->gradient_.data(), delta_.data())) {
+    // No usable step: x is left where it was, so `cost` is still the cost at x.
+    delta_.setZero();
+    emit(Phase::REJECTED, Status::NUMERIC_ERROR);
+    return {Status::NUMERIC_ERROR, cost};
   }
 
-  solver_->solve(Hessian.data(), BVec.data(), DeltaVec.data());
-  XVec += DeltaVec;
+  Eigen::Map<VectorT>(x, this->dimensions_) += delta_;
 
   Status status = Status::STEP_OK;
-  if (isCostSmall(totalCost)) {
+  if (isCostSmall(cost)) {
     status = Status::CONVERGED;
-  } else if (isDeltaSmall(DeltaVec.data(), DeltaVec.size())) {
+  } else if (isDeltaSmall(delta_.data(), delta_.size())) {
     status = Status::SMALL_DELTA;
   }
 
-  if (this->observer_) {
-    IterationEvent<T> event;
-    event.iteration = iteration;
-    event.phase = Phase::ACCEPTED;
-    event.status = status;
-    event.cost = totalCost;
-    event.delta_norm = DeltaVec.norm();
-    event.elapsed = std::chrono::steady_clock::now() - start;
-    this->observer_->onIteration(event);
-  }
-
-  return status;
+  emit(Phase::ACCEPTED, status);
+  return {status, std::nullopt};
 }
 
 template class GaussNewton<double>;

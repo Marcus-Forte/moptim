@@ -36,8 +36,8 @@ C(x) =   Σ  || f(x, input[i]) - obs[i] ||²  =  r(x)ᵀ · r(x)  =  ||r||²
 At each optimizer step a linear system is solved for the parameter update `dx`:
 
 ```
-  (Jᵀ·J) · dx  =  Jᵀ · r       (Gauss-Newton)
-  (Jᵀ·J + λI) · dx  =  Jᵀ · r  (Levenberg-Marquardt)
+  (Jᵀ·J) · dx  =  -Jᵀ · r                     (Gauss-Newton)
+  (Jᵀ·J + λ·diag(Jᵀ·J)) · dx  =  -Jᵀ · r      (Levenberg-Marquardt)
 
   J[i,j]  =  ∂r[i] / ∂x[j]     Jacobian  (N*O × P)
   Jᵀ·J                           Hessian approximation  (P × P)
@@ -78,15 +78,79 @@ residual vector r  (N*O)                  Jacobian J  (N*O × P)
 ```
 
 ```
-jacobian_transposed_data_  (P × N*O)      JTJ  (P × P)       JTb  (P)
-┌──────────────────────────┐              ┌───────────┐       ┌────┐
-│ dr[*]/dp0  ...  dr[*]/dp0│              │           │       │    │
-│ dr[*]/dp1  ...  dr[*]/dp1│  = J^T       │  J^T * J  │       │J^T*r│
-│  ...                     │              │           │       │    │
-│ dr[*]/dpP  ...  dr[*]/dpP│              │           │       │    │
-└──────────────────────────┘              └───────────┘       └────┘
-  size: P × (N*O)                           size: P × P         size: P
+JTJ  (P × P)       JTb  (P)
+┌───────────┐       ┌────┐
+│           │       │    │
+│  J^T * J  │       │J^T*r│
+│           │       │    │
+└───────────┘       └────┘
 ```
+
+### How a linear system is assembled
+
+The Jacobian above is never stored. A cost walks its elements in chunks small enough to stay in
+the L1 cache (16 KiB of residual and Jacobian rows, about 97 elements for `O = 3`, `P = 6` in
+double precision). For each chunk it evaluates the residuals and the Jacobian rows into two small
+buffers and folds them into `JTJ`, `JTb` and the cost straight away:
+
+```
+for each chunk of elements:
+    r_chunk  =  residuals of the chunk                (chunk*O)
+    J_chunk  =  Jacobian rows of the chunk            (chunk*O × P_active)
+    whiten / robustify r_chunk and J_chunk            (only if weights, information or a loss are set)
+    JTJ += J_chunkᵀ · J_chunk     JTb += J_chunkᵀ · r_chunk     cost += ||r_chunk||²
+```
+
+Memory use and construction time therefore do not grow with the number of elements, which matters
+when a cost is rebuilt for every new set of correspondences. The numerical costs run a chunk
+through every finite-difference evaluation point while its inputs are still in cache, instead of
+making one pass over the whole data set per parameter. The accumulation itself
+(`accumulateNormalEquations`, `src/NormalEquations.cc`) is a fused SIMD kernel for small parameter
+counts (up to 12 active parameters on AArch64) and a dot-product loop beyond that.
+
+### Models
+
+A model is a plain class, nothing is inherited. The cost classes call:
+
+```cpp
+struct MyModel {
+  void setState(const T* x);                                        // once per evaluation, before any element
+  void residual(const T* x, const T* input, const T* obs, T* res);  // one element
+  void jacobian(const T* x, const T* input, const T* obs, T* jac);  // AnalyticalCost only
+};
+```
+
+- `setState` is the place to precompute whatever depends only on `x` (a rotation matrix, a
+  transform), so that `residual` and `jacobian` do no per-element setup.
+- `jacobian` writes the transposed Jacobian of the element, `active_param_dim × observation_dim` in
+  column-major order: `jac[j + active_param_dim * i] = ∂residual[i] / ∂x[j]`.
+- When its elements span more than one chunk, a numerical cost keeps one copy of the model per
+  finite-difference evaluation point and calls `setState` on each copy with its own perturbed `x`.
+  The model must therefore be copy-constructible, and copies must not share state that `setState`
+  or `residual` write to. A cost that fits in a single chunk uses its one model for every point.
+
+| Cost | Jacobian from | Model calls per element, per linear system |
+|---|---|---|
+| `AnalyticalCost<Model, T>` | `Model::jacobian` | 1 residual + 1 jacobian |
+| `NumericalCostForwardEuler<Model, T>` | forward differences | `1 + P_active` residuals |
+| `NumericalCostCentral<Model, T>` | central differences | `1 + 2·P_active` residuals |
+
+### Noise model and robust kernels
+
+Every cost above can weight its elements and apply a robust kernel (M-estimator):
+
+```cpp
+cost->setWeights(weights);          // one scalar weight per element, w = 1/sigma^2
+cost->setInformation(information);  // or one observation_dim × observation_dim information matrix per element
+cost->setLossFunction(std::make_shared<moptim::HuberLoss<double>>(1.0));
+```
+
+With `Ω` the weight or information matrix of an element and `s = rᵀ·Ω·r`, the element contributes
+`ρ(s)` to the cost, and its residual and Jacobian rows are whitened and scaled by `sqrt(ρ'(s))`
+before they are accumulated (iteratively reweighted least squares). `LossFunction.hh` provides
+`HuberLoss`, `CauchyLoss`, `GemanMcClureLoss` and `TrivialLoss`; the kernel is shared, so its scale
+can be adapted between iterations with `setScale()`. Weights and information matrices replace each
+other, and an empty vector removes either.
 
 ## Observability
 
@@ -117,7 +181,18 @@ const moptim::Result<double> result = solver.optimize(x);
 `IterationEvent` carries phase, status, cost/previous cost, `rho`, lambda,
 step norm and elapsed time. Because it is plain data, benchmarks can record it
 in memory (no formatting, allocation or I/O on the hot path) and analyze it
-afterwards. With no observer attached, no event payload is gathered.
+afterwards. With no observer attached, no event payload is gathered and the
+clock is not read.
+
+`onLinearSystem` fires once per assembled linear system, which is not always
+once per iteration: when Levenberg-Marquardt rejects every trial of an
+iteration, `x` has not moved, so the next iteration reuses the system and only
+tries larger damping factors.
+
+`Result::status` is `NUMERIC_ERROR` when Gauss-Newton cannot solve its linear
+system (`J^T J` not positive definite, or non-finite values); `x` is then left
+at the last valid point. Levenberg-Marquardt treats such a system as a rejected
+trial and increases the damping.
 
 ### Logging is external
 
@@ -145,8 +220,18 @@ class LoggingObserver : public moptim::IOptimizerObserver<double> {
 };
 ```
 
-Build option:
+## Benchmarks
 
-- `MOPTIM_VECTORIZATION_REPORT` — enable clang-only `-Rpass` loop-vectorization
-  remarks (default `OFF`).
+`bench_moptim` (`test/bench_moptim.cc`) is built with the tests and run by hand. It times
+`computeLinearSystem()` and `computeCost()` for every cost class on a 3D point-cloud alignment
+problem from 1,000 to 1,000,000 elements, the robust paths, cost construction, and complete
+Levenberg-Marquardt runs:
 
+```sh
+build/test/bench_moptim            # everything
+build/test/bench_moptim forward    # only the rows whose name contains "forward"
+```
+
+Each row is the best time over several repetitions. Rows that assemble a linear system also print
+the cost and the sums of `JTJ` and `JTb`, so two builds can be compared for numerical equivalence
+as well as for speed. Always benchmark a Release build; a standalone configure defaults to it.

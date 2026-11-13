@@ -31,6 +31,9 @@ add_executable(test_moptim
   test_observer.cc
   test_loss_function.cc
   test_robust_cost.cc
+  test_normal_equations.cc
+  test_chunked_cost.cc
+  test_optimizer.cc
 )
 add_subdirectory(nist)
 target_link_libraries(test_moptim moptim test_helper)
@@ -56,6 +59,12 @@ if(WITH_SYCL)
   # target_link_libraries(test_sycl_matmult onemath_blas_generic)
 endif()
 
+
+# Benchmarks of the cost classes and optimizers. Built with the tests, run by hand.
+add_executable(bench_moptim
+  bench_moptim.cc
+)
+target_link_libraries(bench_moptim moptim)
 
 # Playground code for quick testing
 add_executable(moptim_playground
