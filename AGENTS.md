@@ -16,3 +16,9 @@ C++23 non-linear least-squares library (Gauss-Newton, Levenberg-Marquardt) on Ei
 - `test/`: gtest suites. New test files must be added to `test/CMakeLists.txt`. `test/nist/` holds the NIST StRD regression datasets, and `test/sycl/` is built only with `WITH_SYCL`.
 - Library has no logging or timing. Telemetry goes through `IOptimizerObserver` (`Observer.hh`). Do not add `<iostream>`, `<format>` or logger dependencies (see `docs/logging.md`).
 - `plan.md` and `improvements.md` are notes and reviews, not specs. They may be stale (`improvements.md` mentions removed `utils/`; `plan.md` items C1, C3, A1, C7 and C8 are implemented).
+- `Manifold.hh` (`IManifold`, `EuclideanManifold`, `ProductManifold`) lets optimizers and costs work on parameters that are not a plain vector (`ambientDim()` = entries of `x`, `tangentDim()` = size of the linear system). Do not break these conventions:
+  - The Euclidean path (constructors from `size_t` dimensions) must stay bit-identical to the pre-manifold behaviour: same arithmetic, no extra work in the hot loops. Check with `bench_moptim`'s notes column against a build of the previous tree, and run the existing tests unmodified.
+  - It is a runtime interface, not a template parameter of the optimizers or costs: they are explicitly instantiated in `src/*.cc`.
+  - No geometry in the library (no SO(3)/SE(3)): the storage and increment conventions belong to the consumer. Test and benchmark manifolds live in `test/manifold_models.hh`.
+  - A model's `jacobian` is the derivative with respect to the step at zero, `active_param_dim` counts tangent dimensions, and an optimizer and its costs are built either all from plain dimensions or all from the same manifold object (`addCost` checks it).
+  - `NumericalCostSycl.hh` is Euclidean only and cannot be compiled without the SYCL toolchain.

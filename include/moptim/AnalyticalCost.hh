@@ -2,6 +2,7 @@
 
 #include <Eigen/Dense>
 #include <cstddef>
+#include <memory>
 #include <utility>
 
 #include "moptim/ChunkedCost.hh"
@@ -11,6 +12,11 @@ namespace moptim {
 
 /**
  * @brief Cost whose jacobian comes from the model's own `jacobian()`.
+ *
+ * The model writes the derivative of its residuals with respect to the step `delta` at `delta = 0`
+ * (see IModel.hh). With Euclidean parameters, built from `param_dim`, that is the ordinary
+ * jacobian with respect to `x`. With a manifold it is the jacobian with respect to the tangent
+ * vector of `x [+] delta`, so a pose is differentiated in the convention of the manifold's `plus`.
  */
 template <class Model, class T>
   requires AnalyticalModel<Model, T>
@@ -21,13 +27,25 @@ class AnalyticalCost : public ChunkedCost<Model, T> {
   using typename Base::MatrixT;
   using typename Base::VectorT;
 
+  /// Euclidean parameters: `x` has `param_dim` entries.
   AnalyticalCost(const T* input, const T* observations, size_t num_elements, size_t input_dim, size_t observation_dim,
                  size_t param_dim, Model model = Model{}, size_t active_param_dim = 0)
-      : Base(input, observations, num_elements, input_dim, observation_dim, param_dim, std::move(model),
+      : AnalyticalCost(input, observations, num_elements, input_dim, observation_dim, Base::euclideanSpace(param_dim),
+                       std::move(model), active_param_dim) {}
+
+  /// Parameters on a manifold. `active_param_dim` counts leading tangent dimensions.
+  AnalyticalCost(const T* input, const T* observations, size_t num_elements, size_t input_dim, size_t observation_dim,
+                 std::shared_ptr<const IManifold<T>> manifold, Model model = Model{}, size_t active_param_dim = 0)
+      : AnalyticalCost(input, observations, num_elements, input_dim, observation_dim,
+                       Base::spaceOf(std::move(manifold)), std::move(model), active_param_dim) {}
+
+ private:
+  AnalyticalCost(const T* input, const T* observations, size_t num_elements, size_t input_dim, size_t observation_dim,
+                 typename Base::ParamSpace space, Model model, size_t active_param_dim)
+      : Base(input, observations, num_elements, input_dim, observation_dim, std::move(space), std::move(model),
              active_param_dim),
         element_jacobian_(active_param_dim_ * observation_dim_) {}
 
- private:
   using Base::active_param_dim_;
   using Base::observation_dim_;
 

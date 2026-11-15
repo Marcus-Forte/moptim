@@ -6,9 +6,11 @@
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include "moptim/ICost.hh"
+#include "moptim/Manifold.hh"
 #include "moptim/Observer.hh"
 #include "moptim/Result.hh"
 #include "moptim/Status.hh"
@@ -18,22 +20,28 @@ namespace moptim {
 /**
  * @brief Base of the iterative optimizers: owns the costs, the iteration loop and the workspace the
  * linear system of an iteration is assembled into. A derived class implements one iteration.
+ *
+ * The parameters are either a plain vector, built from its dimension, or live on an IManifold. `x`
+ * has `ambientDim()` entries; the linear system and the step have `tangentDim()` (the same number
+ * for a plain vector). The step is applied with the manifold's `plus`, by addition for a plain
+ * vector. An optimizer and its costs are either all built from plain dimensions or all built from
+ * the same manifold object.
  */
 template <class T>
 class IOptimizer {
  public:
-  explicit IOptimizer(size_t dimensions)
-      : dimensions_(dimensions),
-        hessian_(dimensions, dimensions),
-        gradient_(dimensions),
-        cost_hessian_(dimensions, dimensions),
-        cost_gradient_(dimensions) {}
+  /// Euclidean parameters of `dimensions` entries.
+  explicit IOptimizer(size_t dimensions) : IOptimizer(nullptr, dimensions, dimensions) {}
+
+  /// Parameters on `manifold`, which must not be null.
+  explicit IOptimizer(std::shared_ptr<const IManifold<T>> manifold)
+      : IOptimizer(manifold, ambientDimOf(manifold), tangentDimOf(manifold)) {}
   virtual ~IOptimizer() = default;
 
-  /// Runs a single iteration from `x` (`dimensions` entries), updating it in place.
+  /// Runs a single iteration from `x` (`ambientDim()` entries), updating it in place.
   Status step(T* x) { return stepImpl(x, 0).status; }
 
-  /// Iterates from `x` (`dimensions` entries), updating it in place, until an iteration ends the
+  /// Iterates from `x` (`ambientDim()` entries), updating it in place, until an iteration ends the
   /// run or the iteration budget is spent.
   Result<T> optimize(T* x);
 
@@ -48,12 +56,21 @@ class IOptimizer {
 
   void setMaxIterations(size_t max_iterations) { max_iterations_ = max_iterations; }
 
-  /// Adds a term to the objective. Its parameter dimension must match the optimizer's.
+  /// Adds a term to the objective. It must have been built for the same space as the optimizer:
+  /// the same manifold object (both null for plain dimensions) and `paramDim() == ambientDim()`.
   void addCost(const std::shared_ptr<ICost<T>>& cost) {
-    assert(cost && cost->paramDim() == dimensions_);
+    assert(cost && cost->manifold() == manifold_.get() && cost->paramDim() == ambient_dim_ &&
+           cost->tangentDim() == tangent_dim_);
     costs_.push_back(cost);
   }
   void clearCosts() { costs_.clear(); }
+
+  /// Entries of `x`.
+  size_t ambientDim() const { return ambient_dim_; }
+  /// Entries of a step: the size of the linear system.
+  size_t tangentDim() const { return tangent_dim_; }
+  /// The manifold of the parameters, null for plain dimensions.
+  const IManifold<T>* manifold() const { return manifold_.get(); }
 
  protected:
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
@@ -97,12 +114,43 @@ class IOptimizer {
   std::vector<std::shared_ptr<ICost<T>>> costs_;
   IOptimizerObserver<T>* observer_ = nullptr;
   size_t max_iterations_ = 15;
-  size_t dimensions_;
+  size_t ambient_dim_;
+  size_t tangent_dim_;
+  std::shared_ptr<const IManifold<T>> manifold_;  ///< Null for plain dimensions.
 
-  MatrixT hessian_;   ///< J^T J summed over the costs, filled by assembleLinearSystem().
-  VectorT gradient_;  ///< J^T b summed over the costs, filled by assembleLinearSystem().
+  MatrixT hessian_;   ///< J^T J summed over the costs, tangent_dim_ square, filled by assembleLinearSystem().
+  VectorT gradient_;  ///< J^T b summed over the costs, tangent_dim_ entries, filled by assembleLinearSystem().
+
+  static size_t ambientDimOf(const std::shared_ptr<const IManifold<T>>& manifold) {
+    assert(manifold);
+    return manifold->ambientDim();
+  }
+  static size_t tangentDimOf(const std::shared_ptr<const IManifold<T>>& manifold) {
+    assert(manifold);
+    return manifold->tangentDim();
+  }
+
+  /// `x_plus = x [+] delta`: the manifold's plus, or a sum for plain dimensions. `x_plus` is
+  /// `ambient_dim_` entries and does not alias `x` or `delta`.
+  void applyStep(const T* x, const T* delta, T* x_plus) const {
+    if (manifold_) {
+      manifold_->plus(x, delta, x_plus);
+    } else {
+      Eigen::Map<VectorT>(x_plus, ambient_dim_) =
+          Eigen::Map<const VectorT>(x, ambient_dim_) + Eigen::Map<const VectorT>(delta, ambient_dim_);
+    }
+  }
 
  private:
+  IOptimizer(std::shared_ptr<const IManifold<T>> manifold, size_t ambient_dim, size_t tangent_dim)
+      : ambient_dim_(ambient_dim),
+        tangent_dim_(tangent_dim),
+        manifold_(std::move(manifold)),
+        hessian_(tangent_dim, tangent_dim),
+        gradient_(tangent_dim),
+        cost_hessian_(tangent_dim, tangent_dim),
+        cost_gradient_(tangent_dim) {}
+
   MatrixT cost_hessian_;  ///< Linear system of a single cost, before it is added to the sum.
   VectorT cost_gradient_;
 };

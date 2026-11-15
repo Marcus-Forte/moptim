@@ -10,8 +10,13 @@ namespace moptim {
 template <class T>
 class LevenbergMarquardt : public IOptimizer<T> {
  public:
+  /// Euclidean parameters of `dimensions` entries. The solver solves systems of that size.
   LevenbergMarquardt(size_t dimensions, const std::shared_ptr<ISolver<T>>& solver);
   explicit LevenbergMarquardt(size_t dimensions);
+
+  /// Parameters on `manifold`. The solver solves systems of `manifold->tangentDim()` entries.
+  LevenbergMarquardt(std::shared_ptr<const IManifold<T>> manifold, const std::shared_ptr<ISolver<T>>& solver);
+  explicit LevenbergMarquardt(std::shared_ptr<const IManifold<T>> manifold);
 
  protected:
   using typename IOptimizer<T>::StepResult;
@@ -38,8 +43,8 @@ class LevenbergMarquardt : public IOptimizer<T> {
   /// run rejected all of its trials and left x untouched, so the next one need not reassemble them.
   bool linear_system_is_current_ = false;
   T linear_system_cost_ = T{0};  ///< Total cost at the x the linear system was assembled at.
-  VectorT diagonal_;             ///< Diagonal of J^T J, before damping.
-  VectorT delta_;                ///< Step of the current trial.
-  VectorT trial_x_;              ///< x + delta_.
+  VectorT diagonal_;             ///< Diagonal of J^T J, before damping (tangent_dim_ entries).
+  VectorT delta_;                ///< Step of the current trial (tangent_dim_ entries).
+  VectorT trial_x_;              ///< x [+] delta_ (ambient_dim_ entries).
 };
 }  // namespace moptim

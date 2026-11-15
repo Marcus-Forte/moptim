@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "manifold_models.hh"
 #include "moptim/AnalyticalCost.hh"
 #include "moptim/LevenbergMarquardt.hh"
 #include "moptim/LossFunction.hh"
@@ -399,6 +400,101 @@ void benchDenseFactor(const Report& report) {
                     static_cast<int>(result.status), result.final_cost, x[0]));
 }
 
+// ─── Manifold path: SE(3) point-to-plane ───────────────────────────────────────────────────────
+// x is the pose itself (12 numbers, ambient), the linear system is 6 x 6 (tangent). The analytical
+// model gives the jacobian with respect to a left increment at zero; the numerical row steps the
+// tangent dimensions through the manifold's plus.
+
+struct PlaneCloud {
+  std::vector<double> inputs;  // [p, n] per element
+  std::vector<double> offsets;
+};
+
+PlaneCloud makePlaneCloud(size_t num_elements) {
+  std::mt19937 rng(13);
+  std::uniform_real_distribution<double> coordinate(-100.0, 100.0);
+  std::normal_distribution<double> gauss(0.0, 1.0);
+  std::normal_distribution<double> noise(0.0, 0.05);
+
+  Eigen::Matrix<double, 6, 1> truth_tangent;
+  truth_tangent << 0.1, -0.2, 0.3, 0.05, -0.03, 0.08;
+  const Eigen::Matrix<double, 12, 1> truth = manifold_models::poseFromTangent(truth_tangent);
+  const Eigen::Matrix3d R = Eigen::Map<const Eigen::Matrix3d>(truth.data());
+  const Eigen::Vector3d t = Eigen::Map<const Eigen::Vector3d>(truth.data() + 9);
+
+  PlaneCloud cloud;
+  cloud.inputs.resize(6 * num_elements);
+  cloud.offsets.resize(num_elements);
+  for (size_t i = 0; i < num_elements; ++i) {
+    const Eigen::Vector3d p(coordinate(rng), coordinate(rng), coordinate(rng));
+    const Eigen::Vector3d n = Eigen::Vector3d(gauss(rng), gauss(rng), gauss(rng)).normalized();
+    Eigen::Map<Eigen::Vector3d>{&cloud.inputs[6 * i]} = p;
+    Eigen::Map<Eigen::Vector3d>{&cloud.inputs[6 * i + 3]} = n;
+    cloud.offsets[i] = n.dot(R * p + t) + noise(rng);
+  }
+  return cloud;
+}
+
+constexpr size_t kPoseAmbientDim = 12;
+constexpr size_t kPoseTangentDim = 6;
+
+template <class Cost>
+void benchManifoldLinearSystem(const Report& report, const std::string& name, const PlaneCloud& cloud,
+                               size_t num_elements, const std::shared_ptr<const IManifold<double>>& manifold) {
+  if (!report.wants(name)) return;
+
+  Cost cost(cloud.inputs.data(), cloud.offsets.data(), num_elements, 6, 1, manifold);
+  Eigen::Matrix<double, 6, 1> start_tangent;
+  start_tangent << 0.01, -0.02, 0.03, 0.01, -0.01, 0.02;
+  const Eigen::Matrix<double, 12, 1> x = manifold_models::poseFromTangent(start_tangent);
+  Eigen::MatrixXd jtj(kPoseTangentDim, kPoseTangentDim);
+  Eigen::VectorXd jtb(kPoseTangentDim);
+  double value = 0.0;
+
+  const double ns = nsPerCall([&] {
+    cost.computeLinearSystem(x.data(), jtj.data(), jtb.data(), value);
+    g_sink = g_sink + value + jtj(0, 0);
+  });
+  report.row(name, num_elements, ns, format("cost=%.12g sum(JTJ)=%.12g sum(JTb)=%.12g", value, jtj.sum(), jtb.sum()));
+}
+
+template <class Cost>
+void benchManifoldOptimize(const Report& report, const std::string& name, const PlaneCloud& cloud, size_t num_elements,
+                           const std::shared_ptr<const IManifold<double>>& manifold) {
+  if (!report.wants(name)) return;
+
+  auto cost = std::make_shared<Cost>(cloud.inputs.data(), cloud.offsets.data(), num_elements, 6, 1, manifold);
+  LevenbergMarquardt<double> solver(manifold);
+  solver.addCost(cost);
+
+  Eigen::Matrix<double, 12, 1> x;
+  Result<double> result;
+  const double ns = nsPerCall([&] {
+    x = manifold_models::poseFromTangent(Eigen::Matrix<double, 6, 1>::Zero());
+    result = solver.optimize(x.data());
+    g_sink = g_sink + x[9];
+  });
+  report.row(name, num_elements, ns,
+             format("iterations=%zu status=%d final_cost=%.12g t0=%.9g", result.iterations,
+                    static_cast<int>(result.status), result.final_cost, x[9]));
+}
+
+void benchManifold(const Report& report) {
+  const std::shared_ptr<const IManifold<double>> manifold = std::make_shared<manifold_models::SE3Manifold>();
+  for (const size_t num_elements : {size_t{1000}, size_t{100000}}) {
+    const PlaneCloud cloud = makePlaneCloud(num_elements);
+    benchManifoldLinearSystem<AnalyticalCost<manifold_models::PointToPlane, double>>(
+        report, "linear_system/manifold_se3/analytical", cloud, num_elements, manifold);
+    benchManifoldLinearSystem<NumericalCostCentral<manifold_models::PointToPlane, double>>(
+        report, "linear_system/manifold_se3/central", cloud, num_elements, manifold);
+  }
+  const PlaneCloud cloud = makePlaneCloud(10000);
+  benchManifoldOptimize<AnalyticalCost<manifold_models::PointToPlane, double>>(
+      report, "lm_optimize/manifold_se3/analytical", cloud, 10000, manifold);
+  benchManifoldOptimize<NumericalCostCentral<manifold_models::PointToPlane, double>>(
+      report, "lm_optimize/manifold_se3/central", cloud, 10000, manifold);
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -415,6 +511,7 @@ int main(int argc, char** argv) {
   benchRegistrationLoop(report, 20000);
   benchCurveFit(report);
   benchDenseFactor(report);
+  benchManifold(report);
 
   return 0;
 }

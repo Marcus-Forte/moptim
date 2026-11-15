@@ -9,6 +9,14 @@ GaussNewton<T>::GaussNewton(size_t dimensions, const std::shared_ptr<ISolver<T>>
     : IOptimizer<T>(dimensions), solver_(solver), delta_(dimensions) {}
 
 template <class T>
+GaussNewton<T>::GaussNewton(std::shared_ptr<const IManifold<T>> manifold, const std::shared_ptr<ISolver<T>>& solver)
+    : IOptimizer<T>(std::move(manifold)), solver_(solver), delta_(this->tangent_dim_), x_plus_(this->ambient_dim_) {}
+
+template <class T>
+GaussNewton<T>::GaussNewton(std::shared_ptr<const IManifold<T>> manifold)
+    : GaussNewton(manifold, std::make_shared<EigenSolver<T>>(manifold->tangentDim())) {}
+
+template <class T>
 GaussNewton<T>::GaussNewton(size_t dimensions)
     : GaussNewton(dimensions, std::make_shared<EigenSolver<T>>(dimensions)) {}
 
@@ -40,7 +48,12 @@ typename GaussNewton<T>::StepResult GaussNewton<T>::stepImpl(T* x, size_t iterat
     return {Status::NUMERIC_ERROR, cost};
   }
 
-  Eigen::Map<VectorT>(x, this->dimensions_) += delta_;
+  if (this->manifold_) {
+    this->applyStep(x, delta_.data(), x_plus_.data());
+    Eigen::Map<VectorT>(x, this->ambient_dim_) = x_plus_;
+  } else {
+    Eigen::Map<VectorT>(x, this->ambient_dim_) += delta_;
+  }
 
   Status status = Status::STEP_OK;
   if (isCostSmall(cost)) {

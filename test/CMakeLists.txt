@@ -34,6 +34,7 @@ add_executable(test_moptim
   test_normal_equations.cc
   test_chunked_cost.cc
   test_optimizer.cc
+  test_manifold.cc
 )
 add_subdirectory(nist)
 target_link_libraries(test_moptim moptim test_helper)

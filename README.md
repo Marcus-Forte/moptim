@@ -11,8 +11,8 @@ A `Cost` object encodes the error between model predictions and observations ove
 - **`observations`**: Array of measured or observed values corresponding to each input element. Each element has dimensionality `observation_dim`.
 - **`input_dim`**: Dimensionality of each input element (e.g. `2` for 2D point clouds).
 - **`observation_dim`**: Dimensionality of each observation element (e.g. `2` for 2D measurements).
-- **`param_dim`**: Dimensionality of the parameter vector — the quantity being optimized. The optimizer iteratively updates this vector to minimize the residuals between model predictions and observations.
-- **`active_param_dim`** (optional, defaults to `0`): Number of leading parameters the cost actually depends on; `0` means the full `param_dim`. The model still receives the full parameter vector, but only the first `active_param_dim` entries are perturbed (numerical costs) or differentiated (analytical costs), and only the corresponding leading block of `JTJ`/`JTb` is populated. Use it when a cost touches a subset of a larger parameter vector (e.g. a scan-matching term using only the pose part of a 24-dim state) to avoid redundant work and avoid writing zero columns. `active_param_dim` must not exceed `param_dim`.
+- **`param_dim`**: Number of entries of the parameter vector `x` — the quantity being optimized, which the model reads. For plain (Euclidean) parameters it is also the size of the linear system. When the parameters live on a [manifold](#manifolds) the cost is built from the manifold instead of `param_dim`: `x` has `manifold->ambientDim()` entries and the linear system `manifold->tangentDim()`.
+- **`active_param_dim`** (optional, defaults to `0`): Number of leading *tangent* dimensions (the parameters themselves, if Euclidean) the cost actually depends on; `0` means all of them. The model still receives the full `x`, but only the first `active_param_dim` dimensions are perturbed (numerical costs) or differentiated (analytical costs), and only the corresponding leading block of `JTJ`/`JTb` is populated. Use it when a cost touches a subset of a larger parameter vector (e.g. a scan-matching term using only the pose part of a 24-dim state) to avoid redundant work and avoid writing zero columns. `active_param_dim` must not exceed the tangent dimension.
 - **`num_elements`**: Number of input/observation pairs in the dataset.
 
 ### Cost Function
@@ -25,7 +25,7 @@ C(x) =   Σ  || f(x, input[i]) - obs[i] ||²  =  r(x)ᵀ · r(x)  =  ||r||²
          i=0
 
   where:
-    x          — parameter vector  (param_dim)
+    x          — parameter vector  (param_dim, the ambient dimension)
     input[i]   — i-th input        (input_dim)
     obs[i]     — i-th observation  (observation_dim)
     f(x, ·)    — model function:   input_dim  →  observation_dim
@@ -33,16 +33,21 @@ C(x) =   Σ  || f(x, input[i]) - obs[i] ||²  =  r(x)ᵀ · r(x)  =  ||r||²
     r          — full residual  =  [r[0]; r[1]; ...; r[N-1]]  (N*observation_dim)
 ```
 
-At each optimizer step a linear system is solved for the parameter update `dx`:
+At each optimizer step a linear system is solved for the parameter update `dx`, and the parameters
+move to `x ⊞ dx` (`x + dx` for Euclidean parameters, the manifold's `plus` otherwise):
 
 ```
   (Jᵀ·J) · dx  =  -Jᵀ · r                     (Gauss-Newton)
   (Jᵀ·J + λ·diag(Jᵀ·J)) · dx  =  -Jᵀ · r      (Levenberg-Marquardt)
 
-  J[i,j]  =  ∂r[i] / ∂x[j]     Jacobian  (N*O × P)
+  J[i,j]  =  ∂r[i] / ∂dx[j]    Jacobian w.r.t. the step at dx = 0  (N*O × P)
+                               (= ∂r[i] / ∂x[j] for Euclidean parameters)
   Jᵀ·J                           Hessian approximation  (P × P)
   Jᵀ·r                           Gradient               (P)
 ```
+
+Here `P` is the number of dimensions of the step, `tangentDim()`. It is `param_dim` unless the
+parameters live on a manifold.
 
 ### Dimensions
 
@@ -60,7 +65,8 @@ params x  (param_dim)
 ┌───────────────────────┐
 │ p0  p1  p2  ...  pP   │
 └───────────────────────┘
-  P = param_dim
+  P = param_dim for Euclidean parameters. On a manifold x has ambientDim() entries
+  and everything below (J, JTJ, JTb, the step) is sized by tangentDim() instead.
 ```
 
 ```
@@ -123,7 +129,9 @@ struct MyModel {
 - `setState` is the place to precompute whatever depends only on `x` (a rotation matrix, a
   transform), so that `residual` and `jacobian` do no per-element setup.
 - `jacobian` writes the transposed Jacobian of the element, `active_param_dim × observation_dim` in
-  column-major order: `jac[j + active_param_dim * i] = ∂residual[i] / ∂x[j]`.
+  column-major order: `jac[j + active_param_dim * i] = ∂residual[i] / ∂delta[j]`, the derivative with
+  respect to the step `delta` at `delta = 0`. For Euclidean parameters that is the ordinary
+  `∂residual[i] / ∂x[j]`; on a manifold see [Manifolds](#manifolds).
 - When its elements span more than one chunk, a numerical cost keeps one copy of the model per
   finite-difference evaluation point and calls `setState` on each copy with its own perturbed `x`.
   The model must therefore be copy-constructible, and copies must not share state that `setState`
@@ -134,6 +142,66 @@ struct MyModel {
 | `AnalyticalCost<Model, T>` | `Model::jacobian` | 1 residual + 1 jacobian |
 | `NumericalCostForwardEuler<Model, T>` | forward differences | `1 + P_active` residuals |
 | `NumericalCostCentral<Model, T>` | central differences | `1 + 2·P_active` residuals |
+
+### Manifolds
+
+Parameters that are not a plain vector (a pose, a rotation) can be optimized directly. The space they live in is
+described by `IManifold<T>` (`Manifold.hh`, header only, valid C++20):
+
+```cpp
+template <class T>
+class IManifold {
+ public:
+  virtual size_t ambientDim() const = 0;  // entries of x: what costs and models read
+  virtual size_t tangentDim() const = 0;  // entries of a step: size of J^T J, J^T b and delta
+  // x_plus = x [+] delta. x_plus does not alias x or delta. plus(x, 0) must return x.
+  virtual void plus(const T* x, const T* delta, T* x_plus) const = 0;
+};
+```
+
+moptim ships `EuclideanManifold<T>(dim)` (`plus` is `x + delta`) and `ProductManifold<T>` (a list of
+`std::shared_ptr<const IManifold<T>>`; the blocks follow one another in `x` and, in the same order,
+in `delta`). It ships no rotation or pose: the storage and the increment convention belong to the
+consumer. The interface is a runtime one on purpose, like `ISolver` and `LossFunction`: the
+optimizers are explicitly instantiated in `src/`, so a template parameter would force every manifold of a
+consumer to be instantiated in the library.
+
+- **Optimizers**: `LevenbergMarquardt<T>(manifold[, solver])` and `GaussNewton<T>(manifold[, solver])`
+  take the manifold in place of `dimensions`. The linear system, the step and the solver are sized
+  by `tangentDim()`, `x` by `ambientDim()`; both are available as `ambientDim()` / `tangentDim()` of
+  the optimizer. The step is applied with `plus`; a rejected Levenberg-Marquardt trial leaves `x`
+  untouched. Convergence tests and observer events use the tangent step.
+- **Costs**: `AnalyticalCost` and `NumericalCost*` have a constructor taking the manifold where
+  `param_dim` goes, and `ICost` gains `tangentDim()` and `manifold()` (null for Euclidean).
+  `JTJ` is `tangentDim × tangentDim` and `JTb` has `tangentDim` entries.
+- **Same manifold**: an optimizer and its costs are either all built from plain dimensions
+  (Euclidean) or all built from the *same manifold object* (`addCost` asserts pointer equality and
+  matching dimensions).
+- **Jacobian convention**: a model's `jacobian` writes the derivative of the residual with respect
+  to the step `delta` at `delta = 0`, in the convention of the manifold's `plus`, with one column
+  per tangent dimension. For a pose with `plus(T, delta) = Exp(delta) * T` that is the derivative
+  with respect to a left increment; a Jacobian taken for a right increment is silently wrong.
+- **Numerical costs** evaluate the residuals at `plus(x, ±h e_p)` for every active tangent
+  dimension `p` (computed once per linear system), with the same step `h` as for plain vectors, so
+  they give the same quantity as the analytical Jacobian. The models still read the full `x`.
+- **`active_param_dim`** counts leading tangent dimensions. With a `ProductManifold` a cost on the
+  first block passes that block's `tangentDim()`.
+- `NumericalCostSycl` is Euclidean only.
+
+```cpp
+// A pose stored as 12 numbers [R | t], tangent [rho, omega], plus(T, d) = Exp(d) * T (consumer code).
+class SE3Manifold : public moptim::IManifold<double> { /* 12, 6, plus */ };
+
+const auto pose = std::make_shared<SE3Manifold>();
+auto cost = std::make_shared<moptim::AnalyticalCost<PointToPlane, double>>(
+    inputs, offsets, num_elements, /*input_dim=*/6, /*observation_dim=*/1, pose);  // PointToPlane::jacobian: 6 values
+moptim::LevenbergMarquardt<double> solver(pose);
+solver.addCost(cost);
+solver.optimize(x);  // x: the 12 numbers of the pose, updated in place and still on the manifold
+```
+
+`test/manifold_models.hh` has complete examples (a circle, SE(3), point-to-plane and point-to-point
+models) and `test/test_manifold.cc` the checks a consumer manifold should pass.
 
 ### Noise model and robust kernels
 
@@ -179,7 +247,7 @@ const moptim::Result<double> result = solver.optimize(x);
 ```
 
 `IterationEvent` carries phase, status, cost/previous cost, `rho`, lambda,
-step norm and elapsed time. Because it is plain data, benchmarks can record it
+step norm (of the tangent step) and elapsed time. Because it is plain data, benchmarks can record it
 in memory (no formatting, allocation or I/O on the hot path) and analyze it
 afterwards. With no observer attached, no event payload is gathered and the
 clock is not read.
@@ -225,7 +293,7 @@ class LoggingObserver : public moptim::IOptimizerObserver<double> {
 `bench_moptim` (`test/bench_moptim.cc`) is built with the tests and run by hand. It times
 `computeLinearSystem()` and `computeCost()` for every cost class on a 3D point-cloud alignment
 problem from 1,000 to 1,000,000 elements, the robust paths, cost construction, and complete
-Levenberg-Marquardt runs:
+Levenberg-Marquardt runs, plus the SE(3) point-to-plane problem through a manifold (`manifold_se3` rows):
 
 ```sh
 build/test/bench_moptim            # everything

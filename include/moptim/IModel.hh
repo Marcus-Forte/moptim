@@ -27,7 +27,11 @@ namespace moptim {
 //   A ResidualModel that also provides the per-element jacobian:
 //     void jacobian(const T* x, const T* input, const T* obs, T* jac);
 //   `jac` is the transposed jacobian of the element, active_param_dim x observation_dim
-//   in column-major order: jac[j + active_param_dim * i] = d residual[i] / d x[j].
+//   in column-major order: jac[j + active_param_dim * i] = d residual[i] / d delta[j],
+//   where delta is the step of the parameters, taken at delta = 0. For Euclidean parameters
+//   x [+] delta = x + delta, so this is the ordinary derivative d residual[i] / d x[j]. On a
+//   manifold it is the derivative with respect to the tangent vector in x [+] delta, in the
+//   convention of the manifold's plus(), and j counts tangent dimensions, not entries of x.
 
 template <class M, class T>
 concept ResidualModel =

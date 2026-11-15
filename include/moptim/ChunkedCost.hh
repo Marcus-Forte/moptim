@@ -55,12 +55,12 @@ class ChunkedCost : public ICost<T> {
     model_.setState(x);
     prepareJacobian(x);
 
-    Eigen::Map<MatrixT> hessian(JTJ, param_dim_, param_dim_);
-    Eigen::Map<VectorT> gradient(JTb, param_dim_);
+    Eigen::Map<MatrixT> hessian(JTJ, tangent_dim_, tangent_dim_);
+    Eigen::Map<VectorT> gradient(JTb, tangent_dim_);
     hessian.setZero();
     gradient.setZero();
     // Only the leading active_param_dim_ block is populated; the trailing
-    // rows/columns (parameters this cost does not depend on) stay zero.
+    // rows/columns (tangent dimensions this cost does not depend on) stay zero.
     auto active_hessian = hessian.topLeftCorner(active_param_dim_, active_param_dim_);
     auto active_gradient = gradient.head(active_param_dim_);
 
@@ -123,8 +123,8 @@ class ChunkedCost : public ICost<T> {
 
  protected:
   ChunkedCost(const T* input, const T* observations, size_t num_elements, size_t input_dim, size_t observation_dim,
-              size_t param_dim, Model model, size_t active_param_dim)
-      : ICost<T>(input_dim, observation_dim, param_dim, num_elements, active_param_dim),
+              typename ICost<T>::ParamSpace space, Model model, size_t active_param_dim)
+      : ICost<T>(input_dim, observation_dim, std::move(space), num_elements, active_param_dim),
         model_(std::move(model)),
         input_(input),
         observations_(observations),
@@ -142,7 +142,8 @@ class ChunkedCost : public ICost<T> {
    *
    * @param residuals Residuals of those elements at `x`, `count * observation_dim` entries.
    * @param jacobian `count * observation_dim` rows by `active_param_dim` columns. Row
-   *   `e * observation_dim + i` receives the derivatives of residual `i` of element `first + e`.
+   *   `e * observation_dim + i` receives the derivatives of residual `i` of element `first + e`
+   *   with respect to the step (the parameters themselves when they are Euclidean).
    */
   virtual void evaluateJacobian(const T* x, size_t first, size_t count, const Eigen::Ref<const VectorT>& residuals,
                                 Eigen::Ref<MatrixT> jacobian) = 0;
@@ -180,6 +181,7 @@ class ChunkedCost : public ICost<T> {
   using ICost<T>::input_dim_;
   using ICost<T>::observation_dim_;
   using ICost<T>::param_dim_;
+  using ICost<T>::tangent_dim_;
   using ICost<T>::num_elements_;
   using ICost<T>::active_param_dim_;
 

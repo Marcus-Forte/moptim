@@ -13,6 +13,19 @@ LevenbergMarquardt<T>::LevenbergMarquardt(size_t dimensions, const std::shared_p
     : IOptimizer<T>(dimensions), solver_(solver), diagonal_(dimensions), delta_(dimensions), trial_x_(dimensions) {}
 
 template <class T>
+LevenbergMarquardt<T>::LevenbergMarquardt(std::shared_ptr<const IManifold<T>> manifold,
+                                          const std::shared_ptr<ISolver<T>>& solver)
+    : IOptimizer<T>(std::move(manifold)),
+      solver_(solver),
+      diagonal_(this->tangent_dim_),
+      delta_(this->tangent_dim_),
+      trial_x_(this->ambient_dim_) {}
+
+template <class T>
+LevenbergMarquardt<T>::LevenbergMarquardt(std::shared_ptr<const IManifold<T>> manifold)
+    : LevenbergMarquardt(manifold, std::make_shared<EigenSolver<T>>(manifold->tangentDim())) {}
+
+template <class T>
 LevenbergMarquardt<T>::LevenbergMarquardt(size_t dimensions)
     : LevenbergMarquardt(dimensions, std::make_shared<EigenSolver<T>>(dimensions)) {}
 
@@ -20,7 +33,7 @@ template <class T>
 typename LevenbergMarquardt<T>::StepResult LevenbergMarquardt<T>::stepImpl(T* x, size_t iteration) {
   using Clock = typename IOptimizer<T>::Clock;
 
-  Eigen::Map<VectorT> x_map(x, this->dimensions_);
+  Eigen::Map<VectorT> x_map(x, this->ambient_dim_);
 
   // Iteration 0 starts a run (optimize() or a manual step()): the costs, their data or x may have
   // changed since the last call, so the system is always assembled afresh.
@@ -73,7 +86,7 @@ typename LevenbergMarquardt<T>::StepResult LevenbergMarquardt<T>::stepImpl(T* x,
       continue;
     }
 
-    trial_x_ = x_map + delta_;
+    this->applyStep(x, delta_.data(), trial_x_.data());
     const T trial_cost = this->evaluateCost(trial_x_.data());
     const T rho = (initial_cost - trial_cost) / delta_.dot(lambda * delta_ - this->gradient_);
 
