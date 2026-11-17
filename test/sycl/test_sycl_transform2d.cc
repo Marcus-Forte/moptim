@@ -5,6 +5,7 @@
 
 #include <sycl/sycl.hpp>
 
+#include "moptim/AnalyticalCost.hh"
 #include "moptim/LevenbergMarquardt.hh"
 #include "moptim/NumericalCostForwardEuler.hh"
 #include "moptim/NumericalCostSycl.hh"
@@ -83,5 +84,31 @@ TEST_F(TestTransform2D, Sycl2DTransformLM) {
   EXPECT_NEAR(x0[2], -x0_ref[2], 1e-3);
 }
 
-// TODO
-TEST_F(TestTransform2D, DISABLED_Sycl2DTransformLMAnalytical) {}
+/// The SYCL (numerical jacobian) solution must match the one found with the CPU analytical jacobian.
+TEST_F(TestTransform2D, Sycl2DTransformLMAnalytical) {
+  const auto num_elements = pointcloud_.size();
+
+  Eigen::VectorXd x_analytical{{0, 0, 0}};
+  {
+    auto solver = std::make_shared<LevenbergMarquardt<double>>(3);
+    solver->addCost(std::make_shared<AnalyticalCost<Point2Distance, double>>(
+        transformed_pointcloud_[0].data(), pointcloud_[0].data(), num_elements, 2, 2, 3));
+    solver->optimize(x_analytical.data());
+  }
+
+  Eigen::VectorXd x_sycl{{0, 0, 0}};
+  {
+    sycl::queue queue{sycl::default_selector_v};
+    auto solver = std::make_shared<LevenbergMarquardt<double>>(3);
+    solver->addCost(std::make_shared<NumericalCostSycl<double, Point2Distance>>(
+        queue, std::span<const double>(transformed_pointcloud_[0].data(), num_elements * 2),
+        std::span<const double>(pointcloud_[0].data(), num_elements * 2), 2, 2, 3, num_elements));
+    solver->optimize(x_sycl.data());
+  }
+
+  for (int i = 0; i < 3; ++i) {
+    EXPECT_NEAR(x_analytical[i], -x0_ref[i], 1e-3) << "analytical, parameter " << i;
+    EXPECT_NEAR(x_sycl[i], -x0_ref[i], 1e-3) << "sycl, parameter " << i;
+    EXPECT_NEAR(x_sycl[i], x_analytical[i], 1e-4) << "sycl vs analytical, parameter " << i;
+  }
+}

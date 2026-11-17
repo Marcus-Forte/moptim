@@ -22,10 +22,20 @@
                 "CMAKE_C_COMPILER": "/opt/sycl/bin/clang",
                 "CMAKE_CXX_COMPILER": "/opt/sycl/bin/clang++",
                 "CMAKE_BUILD_TYPE": "Release",
-                "WITH_SYCL": "ON"
+                "WITH_SYCL": "ON",
+                "SYCL_TARGETS": "native_cpu,nvptx64-nvidia-cuda,spir64"
             },
             "binaryDir": "${sourceDir}/build_sycl"
+        },
+        {
+            "name": "sycl-cpu",
+            "inherits": "sycl",
+            "displayName": "Build with SYCL (native_cpu only)",
+            "description": "SYCL for the host CPU only; for toolchains without CUDA or spir64 libspirv (e.g. mdnf1992/sycl-dev)",
+            "cacheVariables": {
+                "SYCL_TARGETS": "native_cpu"
+            },
+            "binaryDir": "${sourceDir}/build_sycl_cpu"
         }
-        
     ]
 }

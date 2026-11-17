@@ -42,7 +42,13 @@ if(WITH_SYCL)
   if(NOT COMPILER_SUPPORTS_FSYCL)
       message(FATAL_ERROR "SYCL compilation requires dpcpp compiler")
   endif()
-  set(SYCL_FLAGS -fsycl -fsycl-targets=native_cpu,nvptx64-nvidia-cuda,spir64) # specific GPU triplet is also possible, e.g: nvidia_gpu_sm_86
+  # Comma separated -fsycl-targets list, provided by the configure preset (see CMakePresets.json),
+  # e.g: native_cpu,nvptx64-nvidia-cuda,spir64 (specific GPU triplet is also possible, e.g: nvidia_gpu_sm_86).
+  set(SYCL_TARGETS "" CACHE STRING "Comma separated list passed to -fsycl-targets")
+  if(NOT SYCL_TARGETS)
+      message(FATAL_ERROR "WITH_SYCL=ON requires SYCL_TARGETS, e.g. use 'cmake --preset sycl' or -DSYCL_TARGETS=native_cpu")
+  endif()
+  set(SYCL_FLAGS -fsycl -fsycl-targets=${SYCL_TARGETS})
   target_compile_options(moptim PUBLIC ${SYCL_FLAGS})
   target_link_options(moptim PUBLIC ${SYCL_FLAGS})
   # The onemath library must have been compiled in the base container.

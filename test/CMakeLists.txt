@@ -44,6 +44,7 @@ if(WITH_SYCL)
   add_executable(test_moptim_sycl
     sycl/test_sycl_cost.cc
     sycl/test_sycl_jacobian.cc
+    sycl/test_sycl_regressions.cc
     sycl/test_sycl_transform2d.cc
     sycl/test_sycl_transform3d.cc
   )
