@@ -55,6 +55,9 @@ if(WITH_SYCL)
   add_executable(bench_sycl_cost sycl/bench_sycl_cost.cc)
   target_include_directories(bench_sycl_cost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(bench_sycl_cost moptim gtest)
+  # Opt-in micro-benchmark of kernel launch latency and multi-core scaling of the default device.
+  add_executable(bench_launch bench_launch.cc)
+  target_link_libraries(bench_launch moptim)
   # Bug reproduction
   # add_executable(bug_reduction
   # sycl/bug_reduction.cc
