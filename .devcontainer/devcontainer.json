@@ -1,6 +1,6 @@
 {
     "name": "moptim",
-    "image": "mdnf1992/cpp-dev", // mdnf1992/sycl-dev for SYCL support
+    "image": "mdnf1992/sycl-dev", // mdnf1992/sycl-dev for SYCL support
     "customizations": {
         "vscode": {
             "extensions": [

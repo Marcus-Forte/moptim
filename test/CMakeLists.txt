@@ -51,6 +51,10 @@ if(WITH_SYCL)
   target_include_directories(test_moptim_sycl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(test_moptim_sycl test_helper gtest gtest_main)
   gtest_discover_tests(test_moptim_sycl)
+  # Opt-in benchmark, not run by ctest: SYCL vs CPU cost over a range of dataset sizes.
+  add_executable(bench_sycl_cost sycl/bench_sycl_cost.cc)
+  target_include_directories(bench_sycl_cost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(bench_sycl_cost moptim gtest)
   # Bug reproduction
   # add_executable(bug_reduction
   # sycl/bug_reduction.cc
