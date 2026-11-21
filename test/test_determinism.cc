@@ -15,6 +15,8 @@
 #include "moptim/AnalyticalCost.hh"
 #include "moptim/ExecutionContext.hh"
 #include "moptim/LossFunction.hh"
+#include "moptim/NumericalCostCentral.hh"
+#include "moptim/NumericalCostForwardEuler.hh"
 #include "moptim/detail/Partitioning.hh"
 
 using namespace moptim;
@@ -215,7 +217,7 @@ std::vector<size_t> elementCounts(size_t observation_dim, size_t active_params, 
           50000};
 }
 
-template <class T>
+template <class T, template <class, class> class CostT>
 void checkPolynomial(size_t full_dim) {
   const std::vector<size_t> counts = elementCounts(kObservationDim, kParamDim, sizeof(T));
   std::vector<T> x(full_dim, T{5});
@@ -229,7 +231,7 @@ void checkPolynomial(size_t full_dim) {
         SCOPED_TRACE(testing::Message() << "elements=" << num_elements << " noise=" << name(noise)
                                         << " loss=" << name(loss) << " full_dim=" << full_dim);
         const auto make = [&](const std::shared_ptr<ExecutionContext>& context) {
-          auto cost = std::make_shared<AnalyticalCost<PolyModel<T>, T>>(
+          auto cost = std::make_shared<CostT<PolyModel<T>, T>>(
               data.input.data(), data.observations.data(), num_elements, kInputDim, kObservationDim, full_dim,
               PolyModel<T>{}, kParamDim, context);
           if (noise == Noise::Weights) cost->setWeights(data.weights);
@@ -245,14 +247,16 @@ void checkPolynomial(size_t full_dim) {
 
 }  // namespace
 
-TEST(DeterminismDouble, Polynomial) { checkPolynomial<double>(kParamDim); }
+#define MOPTIM_DETERMINISM_TESTS(Suite, T, Kind, CostT)                                    \
+  TEST(Suite, Polynomial##Kind) { checkPolynomial<T, CostT>(kParamDim); }                  \
+  TEST(Suite, ActiveParamDimBelowParamDim##Kind) { checkPolynomial<T, CostT>(7); }
 
-TEST(DeterminismFloat, Polynomial) { checkPolynomial<float>(kParamDim); }
-
-// A parameter vector wider than what the model depends on.
-TEST(DeterminismDouble, ActiveParamDimBelowParamDim) { checkPolynomial<double>(7); }
-
-TEST(DeterminismFloat, ActiveParamDimBelowParamDim) { checkPolynomial<float>(7); }
+MOPTIM_DETERMINISM_TESTS(DeterminismDouble, double, Analytical, AnalyticalCost)
+MOPTIM_DETERMINISM_TESTS(DeterminismFloat, float, Analytical, AnalyticalCost)
+MOPTIM_DETERMINISM_TESTS(DeterminismDouble, double, Forward, NumericalCostForwardEuler)
+MOPTIM_DETERMINISM_TESTS(DeterminismFloat, float, Forward, NumericalCostForwardEuler)
+MOPTIM_DETERMINISM_TESTS(DeterminismDouble, double, Central, NumericalCostCentral)
+MOPTIM_DETERMINISM_TESTS(DeterminismFloat, float, Central, NumericalCostCentral)
 
 namespace {
 
@@ -283,7 +287,8 @@ PlaneCloud makePlaneCloud(size_t num_elements) {
 
 // SE(3) point-to-plane on a manifold, with weights and a loss; and the same pose inside a product
 // manifold whose second block the cost does not depend on (active_param_dim 6 of 8).
-TEST(DeterminismDouble, PointToPlaneOnManifolds) {
+template <template <class, class> class CostT>
+void checkPointToPlaneOnManifolds() {
   using namespace manifold_models;
   const std::shared_ptr<const IManifold<double>> pose = std::make_shared<SE3Manifold>();
   const std::shared_ptr<const IManifold<double>> product =
@@ -313,7 +318,7 @@ TEST(DeterminismDouble, PointToPlaneOnManifolds) {
       };
       expectIndependentOfThreads<double>(
           [&](const std::shared_ptr<ExecutionContext>& context) {
-            auto cost = std::make_shared<AnalyticalCost<PointToPlane, double>>(
+            auto cost = std::make_shared<CostT<PointToPlane, double>>(
                 cloud.inputs.data(), cloud.offsets.data(), num_elements, 6, 1, pose, PointToPlane{}, 0, context);
             configure(*cost);
             return cost;
@@ -321,7 +326,7 @@ TEST(DeterminismDouble, PointToPlaneOnManifolds) {
           std::vector<double>(pose_x.data(), pose_x.data() + 12));
       expectIndependentOfThreads<double>(
           [&](const std::shared_ptr<ExecutionContext>& context) {
-            auto cost = std::make_shared<AnalyticalCost<PointToPlane, double>>(
+            auto cost = std::make_shared<CostT<PointToPlane, double>>(
                 cloud.inputs.data(), cloud.offsets.data(), num_elements, 6, 1, product, PointToPlane{}, 6, context);
             configure(*cost);
             return cost;
@@ -330,3 +335,7 @@ TEST(DeterminismDouble, PointToPlaneOnManifolds) {
     }
   }
 }
+
+TEST(DeterminismDouble, PointToPlaneOnManifoldsAnalytical) { checkPointToPlaneOnManifolds<AnalyticalCost>(); }
+TEST(DeterminismDouble, PointToPlaneOnManifoldsForward) { checkPointToPlaneOnManifolds<NumericalCostForwardEuler>(); }
+TEST(DeterminismDouble, PointToPlaneOnManifoldsCentral) { checkPointToPlaneOnManifolds<NumericalCostCentral>(); }

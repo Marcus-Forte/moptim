@@ -21,6 +21,14 @@ struct AnalyticalJacobian {
   /// Both member functions can be called on a const model, so work-items can share the one model.
   static constexpr bool kConstCallable = ConstResidualModel<Model, T> && ConstJacobianModel<Model, T>;
 
+  /// Evaluation points besides `x` per active parameter: none, the model gives the jacobian.
+  static constexpr size_t kPointsPerParam = 0;
+
+  /// Values of scratch the policy needs: the transposed jacobian of one element.
+  static constexpr size_t auxValues(size_t /*chunk_rows*/, size_t params, size_t observation_dim) {
+    return params * observation_dim;
+  }
+
   /// Writes the jacobian rows of elements [first, first + count): column `p` of the chunk (column
   /// stride `jacobian_stride`) holds the derivatives with respect to step entry `p`.
   ///
@@ -28,10 +36,11 @@ struct AnalyticalJacobian {
   /// evaluateResiduals() for why they are declared so and why this is not inlined. The call of the
   /// model is forced inline: left to the heuristics, the compiler keeps the model's code out of the
   /// loop and the scatter then reloads everything the model stored.
-  template <class ModelRef>
-  [[gnu::noinline]] static void evaluateJacobian(ModelRef& model, const KernelArgs<T>& args, size_t first,
-                                                 size_t count, T* __restrict__ transposed, T* __restrict__ jacobian,
-                                                 size_t jacobian_stride) {
+  template <class ModelPtr>
+  [[gnu::noinline]] static void evaluateJacobian(ModelPtr models, const KernelArgs<T>& args, size_t first,
+                                                 size_t count, const T* /*residuals*/, T* __restrict__ transposed,
+                                                 T* __restrict__ jacobian, size_t jacobian_stride) {
+    auto& model = *models;
     const size_t params = args.params;
     const size_t dim = args.observation_dim;
 

@@ -41,6 +41,9 @@ add_executable(test_moptim
   test_device_normal_equations.cc
   test_determinism.cc
   test_cost_models.cc
+  test_tu_models.cc
+  test_tu_models_a.cc
+  test_tu_models_b.cc
 )
 add_subdirectory(nist)
 target_link_libraries(test_moptim moptim test_helper)

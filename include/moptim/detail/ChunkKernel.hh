@@ -25,8 +25,8 @@ struct SliceLayout {
   size_t residuals = 0;
   size_t scales = 0;
   size_t jacobian = 0;
-  size_t element_jacobian = 0;
-  size_t model = 0;   ///< Room for a copy of the model, if the work-items copy it.
+  size_t aux = 0;     ///< Policy scratch (the element's transposed jacobian, backward residuals, ...).
+  size_t model = 0;   ///< Room for copies of the models, if the work-items copy them.
   size_t stride = 0;  ///< Size of a slice.
 };
 
@@ -35,9 +35,9 @@ inline constexpr size_t kCacheLine = 64;
 constexpr size_t roundUp(size_t value, size_t multiple) { return (value + multiple - 1) / multiple * multiple; }
 
 /// Layout of the scratch slice for chunks of `chunk_rows` residual rows with `params` jacobian
-/// columns and elements of `observation_dim` residuals. The slice must start at a multiple of
-/// `sliceAlignment(model_align)`.
-constexpr SliceLayout makeSliceLayout(size_t value_bytes, size_t chunk_rows, size_t params, size_t observation_dim,
+/// columns, `aux_values` values of policy scratch and `model_bytes` of model copies. The slice must
+/// start at a multiple of `sliceAlignment(model_align)`.
+constexpr SliceLayout makeSliceLayout(size_t value_bytes, size_t chunk_rows, size_t params, size_t aux_values,
                                       size_t model_bytes, size_t model_align) {
   SliceLayout layout;
   size_t offset = 0;
@@ -47,8 +47,8 @@ constexpr SliceLayout makeSliceLayout(size_t value_bytes, size_t chunk_rows, siz
   offset += roundUp(chunk_rows * value_bytes, kCacheLine);
   layout.jacobian = offset;
   offset += roundUp(chunk_rows * params * value_bytes, kCacheLine);
-  layout.element_jacobian = offset;
-  offset += roundUp(params * observation_dim * value_bytes, kCacheLine);
+  layout.aux = offset;
+  offset += roundUp(aux_values * value_bytes, kCacheLine);
   layout.model = roundUp(offset, std::max(model_align, kCacheLine));
   offset = layout.model + roundUp(model_bytes, kCacheLine);
   layout.stride = roundUp(offset, std::max(model_align, kCacheLine));
@@ -69,7 +69,14 @@ struct KernelArgs {
   size_t input_dim = 0;
   size_t observation_dim = 0;
   size_t params = 0;  ///< Active parameters: columns of the jacobian.
+  size_t param_dim = 0;  ///< Entries of `x`.
   Partitioning partitioning;
+
+  // Finite differences (numerical policies): evaluation point `q` (0-based, one row of `param_dim`
+  // entries) of the jacobian; `inv_span` is 1 / the distance between the points of a parameter.
+  const T* points = nullptr;
+  T inv_span = T{0};
+  size_t model_count = 1;  ///< Models in the array the work-items use (1 + points).
 
   // Noise model and robust kernel. Null / false when not set.
   const T* weights = nullptr;                ///< One weight per element.
@@ -115,12 +122,12 @@ constexpr ModelAccess modelAccess() {
 /// stored. The function is kept out of line because GCC (and clang, from a lambda) only honour that
 /// promise for the parameters of the function being compiled, not once the loop was inlined.
 template <class T, class ModelRef>
-[[gnu::noinline]] void evaluateResiduals(ModelRef& model, const KernelArgs<T>& args, size_t first, size_t count,
-                                         T* __restrict__ residuals) {
+[[gnu::noinline]] void evaluateResiduals(ModelRef& model, const T* x, const KernelArgs<T>& args, size_t first,
+                                         size_t count, T* __restrict__ residuals) {
   const T* input = args.input + first * args.input_dim;
   const T* observation = args.observations + first * args.observation_dim;
   for (size_t e = 0; e < count; ++e) {
-    model.residual(args.x, input, observation, residuals);
+    model.residual(x, input, observation, residuals);
     input += args.input_dim;
     observation += args.observation_dim;
     residuals += args.observation_dim;
@@ -244,9 +251,9 @@ template <class T>
 }
 
 /// The chunk loop over the partitions this work-item claims. `ModelRef` is `const Model&` or `Model&`.
-template <class Policy, bool kLinearSystem, class T, class ModelRef, class Claim>
-void runPartitions(const KernelArgs<T>& args, ModelRef& model, T* residuals, T* scales, T* jacobian,
-                   T* element_jacobian, Claim& claim) {
+template <class Policy, bool kLinearSystem, class T, class ModelPtr, class Claim>
+void runPartitions(const KernelArgs<T>& args, ModelPtr models, T* residuals, T* scales, T* jacobian, T* aux,
+                   Claim& claim) {
   const Partitioning& parts = args.partitioning;
   const size_t dim = args.observation_dim;
   const size_t params = args.params;
@@ -269,9 +276,9 @@ void runPartitions(const KernelArgs<T>& args, ModelRef& model, T* residuals, T* 
       const size_t count = std::min(parts.chunk_elements, args.num_elements - first);
       const size_t rows = count * dim;
 
-      evaluateResiduals(model, args, first, count, residuals);
+      evaluateResiduals(*models, args.x, args, first, count, residuals);
       if constexpr (kLinearSystem) {
-        Policy::evaluateJacobian(model, args, first, count, element_jacobian, jacobian, chunk_rows);
+        Policy::evaluateJacobian(models, args, first, count, residuals, aux, jacobian, chunk_rows);
       }
       cost += robust ? robustifyChunk(args, first, count, residuals, jacobian, chunk_rows,
                                       kLinearSystem ? params : size_t{0}, scales)
@@ -288,28 +295,37 @@ void runPartitions(const KernelArgs<T>& args, ModelRef& model, T* residuals, T* 
  * The function every work-item of a launch runs. `claim()` returns the next unclaimed partition
  * (a value >= the number of partitions means there is none left); `worker` selects the scratch slice.
  *
- * `Policy` supplies the jacobian rows (`kConstCallable` and `evaluateJacobian()`, see AnalyticalCost.hh).
- * With ModelAccess::PerWorkItemCopy the work-item copy-constructs the model into its slice and
- * destroys the copy before returning; otherwise it uses the shared model in place.
+ * `models` is the array of `args.model_count` models (the first is the one at `x`; a numerical policy
+ * has one more per evaluation point). `Policy` supplies the jacobian rows (`kConstCallable` and
+ * `evaluateJacobian()`, see AnalyticalCost.hh and NumericalCost.hh). With ModelAccess::PerWorkItemCopy the
+ * work-item copy-constructs the models it needs (all of them for a linear system, the first for the cost
+ * alone) into its slice once, and destroys the copies before returning; otherwise it uses the shared
+ * models in place.
  */
 template <class Policy, class Model, class T, bool kLinearSystem, class Claim>
-[[gnu::noinline]] void runWorkItem(const KernelArgs<T>& args, Model* model, size_t worker, Claim claim) {
+[[gnu::noinline]] void runWorkItem(const KernelArgs<T>& args, Model* models, size_t worker, Claim claim) {
   unsigned char* slice = args.scratch + worker * args.slice.stride;
   T* residuals = reinterpret_cast<T*>(slice + args.slice.residuals);
   T* scales = reinterpret_cast<T*>(slice + args.slice.scales);
   T* jacobian = reinterpret_cast<T*>(slice + args.slice.jacobian);
-  T* element_jacobian = reinterpret_cast<T*>(slice + args.slice.element_jacobian);
+  T* aux = reinterpret_cast<T*>(slice + args.slice.aux);
 
   constexpr ModelAccess kAccess = modelAccess<Policy, Model>();
   if constexpr (kAccess == ModelAccess::Shared) {
-    const Model& shared = *model;
-    runPartitions<Policy, kLinearSystem>(args, shared, residuals, scales, jacobian, element_jacobian, claim);
+    const Model* shared = models;
+    runPartitions<Policy, kLinearSystem>(args, shared, residuals, scales, jacobian, aux, claim);
   } else if constexpr (kAccess == ModelAccess::PerWorkItemCopy) {
-    Model* local = ::new (static_cast<void*>(slice + args.slice.model)) Model(*static_cast<const Model*>(model));
-    runPartitions<Policy, kLinearSystem>(args, *local, residuals, scales, jacobian, element_jacobian, claim);
-    local->~Model();
+    const size_t used = kLinearSystem ? args.model_count : size_t{1};
+    Model* local = reinterpret_cast<Model*>(slice + args.slice.model);
+    for (size_t i = 0; i < used; ++i) {
+      ::new (static_cast<void*>(local + i)) Model(static_cast<const Model&>(models[i]));
+    }
+    runPartitions<Policy, kLinearSystem>(args, local, residuals, scales, jacobian, aux, claim);
+    for (size_t i = 0; i < used; ++i) {
+      local[i].~Model();
+    }
   } else {
-    runPartitions<Policy, kLinearSystem>(args, *model, residuals, scales, jacobian, element_jacobian, claim);
+    runPartitions<Policy, kLinearSystem>(args, models, residuals, scales, jacobian, aux, claim);
   }
 }
 

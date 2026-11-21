@@ -17,13 +17,13 @@ namespace moptim {
 //
 // NumericalModel<M, T>
 //   Required by NumericalCostForwardEuler and NumericalCostCentral.
-//   A ResidualModel that can be copied. When the elements span more than one chunk,
-//   the cost keeps one copy of the model per finite-difference evaluation point and
-//   calls setState() on each with its own perturbed parameter vector, so copies must
-//   not share state that setState() or residual() write to.
+//   A ResidualModel that can be copied. The cost keeps one copy of the model per finite-difference
+//   evaluation point (1 + P_active forward, 1 + 2 P_active central) and calls setState() on each with
+//   its own perturbed parameter vector, so copies must not share state that setState() or residual()
+//   write to. Only `residual` is called on them, in a kernel (see below).
 //
 // Where a model runs
-//   The analytical cost evaluates the model in a SYCL kernel, so `residual` and `jacobian` are device
+//   The costs evaluate the model in a SYCL kernel, so `residual` (and `jacobian`) are device
 //   code and must obey the rules of a kernel:
 //     - no virtual calls, exceptions, RTTI or heap allocation. That includes dynamic-size Eigen
 //       temporaries (fixed-size Eigen objects are fine; they run scalar in the device pass);

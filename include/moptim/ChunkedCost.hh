@@ -18,6 +18,7 @@
 #include "moptim/IModel.hh"
 #include "moptim/LossFunction.hh"
 #include "moptim/detail/ChunkKernel.hh"
+#include "moptim/detail/KernelName.hh"
 #include "moptim/detail/Partitioning.hh"
 #include "moptim/detail/Usm.hh"
 
@@ -35,7 +36,7 @@ void checkModelLayout(ExecutionContext& context) {
     sycl::queue& queue = context.queue();
     const UsmPtr<size_t> reported = makeSharedArray<size_t>(queue, 2);
     size_t* out = reported.get();
-    queue.single_task([out] {
+    queue.single_task<ModelLayoutKernelName<Model, CurrentTuId>>([out] {
       out[0] = sizeof(Model);
       out[1] = alignof(Model);
     });
@@ -67,8 +68,10 @@ void checkModelLayout(ExecutionContext& context) {
  * threads the context allows, and a cost that fits in one partition reproduces a sequential walk
  * over its chunks exactly.
  *
- * `Policy` says how the jacobian rows of a chunk are obtained (see AnalyticalJacobian in
- * AnalyticalCost.hh). This class owns everything else: the optional noise model (scalar weights or
+ * `Policy` says how the jacobian rows of a chunk are obtained (AnalyticalJacobian in AnalyticalCost.hh,
+ * NumericalJacobian in NumericalCost.hh). A policy with `kPointsPerParam` > 0 differentiates by finite
+ * differences: the cost then keeps `1 + kPointsPerParam * active_param_dim` models, one per evaluation
+ * point (point 0 is `x`), all copied from the one it was given. This class owns everything else: the optional noise model (scalar weights or
  * information matrices), the optional robust kernel, the model in USM and the buffers of the launch.
  * It allocates them on first use and reuses them afterwards.
  *
@@ -82,11 +85,7 @@ class ChunkedCost : public ICost<T> {
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
 
-  ~ChunkedCost() override {
-    if (model_ != nullptr) {
-      model_->~Model();
-    }
-  }
+  ~ChunkedCost() override { destroyModels(); }
 
   T computeCost(const T* x) final {
     requireSupportedStrategy();
@@ -202,12 +201,15 @@ class ChunkedCost : public ICost<T> {
       : ICost<T>(input_dim, observation_dim, std::move(space), num_elements, active_param_dim),
         context_(context ? std::move(context) : defaultContext()),
         pending_model_(std::move(model)),
+        model_count_(1 + Policy::kPointsPerParam * active_param_dim_),
         input_(input),
         observations_(observations),
         partitioning_(detail::makePartitioning(num_elements_, observation_dim_, active_param_dim_, sizeof(T))),
         partial_stride_(detail::partialStride(sizeof(T), active_param_dim_)),
-        slice_layout_(detail::makeSliceLayout(sizeof(T), partitioning_.chunk_elements * observation_dim_,
-                                              active_param_dim_, observation_dim_, sizeof(Model), alignof(Model))) {
+        slice_layout_(detail::makeSliceLayout(
+            sizeof(T), partitioning_.chunk_elements * observation_dim_, active_param_dim_,
+            Policy::auxValues(partitioning_.chunk_elements * observation_dim_, active_param_dim_, observation_dim_),
+            kAccess == detail::ModelAccess::PerWorkItemCopy ? model_count_ * sizeof(Model) : 0, alignof(Model))) {
     // A device that cannot read the caller's memory gets its own copy of the data, once.
     if (num_elements_ > 0 && !context_->hostAccessible()) {
       input_copy_ = copyToDevice(input, num_elements_ * input_dim_);
@@ -244,14 +246,12 @@ class ChunkedCost : public ICost<T> {
   /// first call, more scratch slices if the width grew.
   void ensureState(size_t width) {
     sycl::queue& queue = context_->queue();
-    if (model_ == nullptr) {
+    if (models_ == nullptr) {
       detail::checkModelLayout<Model>(*context_);
-      model_storage_ =
-          detail::makeSharedArray<unsigned char>(queue, sizeof(Model), detail::sliceAlignment(alignof(Model)));
-      model_ = ::new (static_cast<void*>(model_storage_.get())) Model(std::move(*pending_model_));
-      pending_model_.reset();
+      buildModels();
 
       x_ = detail::makeSharedArray<T>(queue, param_dim_);
+      points_ = detail::makeSharedArray<T>(queue, Policy::kPointsPerParam * active_param_dim_ * param_dim_);
       counter_ = detail::makeSharedArray<size_t>(queue, detail::kCacheLine / sizeof(size_t));  // a cache line of its own
       partials_ = detail::makeSharedArray<T>(queue, partitioning_.num_partitions * partial_stride_);
       args_ = detail::makeSharedArray<detail::KernelArgs<T>>(queue, 1);
@@ -261,6 +261,68 @@ class ChunkedCost : public ICost<T> {
       scratch_ = detail::makeSharedArray<unsigned char>(queue, width * slice_layout_.stride,
                                                         detail::sliceAlignment(alignof(Model)));
       scratch_slices_ = width;
+    }
+  }
+
+  /// Copy-constructs the models into USM (the given one is moved into the first slot). Throws what a
+  /// constructor throws, after destroying the ones already built.
+  void buildModels() {
+    model_storage_ = detail::makeSharedArray<unsigned char>(context_->queue(), model_count_ * sizeof(Model),
+                                                            detail::sliceAlignment(alignof(Model)));
+    Model* models = reinterpret_cast<Model*>(model_storage_.get());
+    try {
+      if constexpr (Policy::kPointsPerParam > 0) {
+        for (; models_built_ + 1 < model_count_; ++models_built_) {
+          ::new (static_cast<void*>(models + models_built_ + 1)) Model(*pending_model_);
+        }
+      }
+      ::new (static_cast<void*>(models)) Model(std::move(*pending_model_));
+    } catch (...) {
+      for (size_t i = 0; i < models_built_; ++i) {
+        models[i + 1].~Model();
+      }
+      models_built_ = 0;
+      model_storage_.reset();
+      throw;
+    }
+    // Slot 0 is built last, so the others were counted without it.
+    models_built_ = Policy::kPointsPerParam > 0 ? model_count_ : 1;
+    models_ = models;
+    pending_model_.reset();
+  }
+
+  void destroyModels() noexcept {
+    if (models_ != nullptr) {
+      for (size_t i = 0; i < models_built_; ++i) {
+        models_[i].~Model();
+      }
+      models_ = nullptr;
+    }
+  }
+
+  /// Evaluation points of a finite-difference policy: row `q` of the table is `x` stepped along
+  /// active parameter `q / kPointsPerParam`, up for even `q % kPointsPerParam` and down for odd. With a
+  /// manifold the step goes through its `plus`, on the tangent dimension; without, the entry is stepped
+  /// in place.
+  void fillPoints(const T* x) {
+    constexpr size_t kPerParam = Policy::kPointsPerParam;
+    const T step = Policy::step();
+    T* table = points_.get();
+    if (this->manifold() != nullptr) {
+      std::vector<T> delta(tangent_dim_, T{0});
+      for (size_t q = 0; q < kPerParam * active_param_dim_; ++q) {
+        const size_t param = q / kPerParam;
+        delta[param] = q % kPerParam == 0 ? step : -step;
+        this->manifold()->plus(x, delta.data(), table + q * param_dim_);
+        delta[param] = T{0};
+      }
+    } else {
+      for (size_t q = 0; q < kPerParam * active_param_dim_; ++q) {
+        const size_t param = q / kPerParam;
+        T* row = table + q * param_dim_;
+        std::copy_n(x, param_dim_, row);
+        row[param] = x[param] + (q % kPerParam == 0 ? step : -step);
+      }
     }
   }
 
@@ -275,6 +337,12 @@ class ChunkedCost : public ICost<T> {
     args.input_dim = input_dim_;
     args.observation_dim = observation_dim_;
     args.params = active_param_dim_;
+    args.param_dim = param_dim_;
+    args.points = points_.get();
+    if constexpr (Policy::kPointsPerParam > 0) {
+      args.inv_span = Policy::invSpan();
+    }
+    args.model_count = model_count_;
     args.partitioning = partitioning_;
     args.weights = weights_.get();
     args.information_factors = information_factors_.get();
@@ -297,22 +365,31 @@ class ChunkedCost : public ICost<T> {
     ensureState(width);
 
     std::copy_n(x, param_dim_, x_.get());
-    model_->setState(x_.get());
+    models_[0].setState(x_.get());
+    if constexpr (kLinearSystem && Policy::kPointsPerParam > 0) {
+      fillPoints(x_.get());
+      for (size_t i = 1; i < model_count_; ++i) {
+        models_[i].setState(points_.get() + (i - 1) * param_dim_);
+      }
+    }
     *args_ = makeArgs();
     *counter_ = 0;
 
     const detail::KernelArgs<T>* args = args_.get();
-    Model* model = model_;
-    detail::launch(*context_, width, [args, model](sycl::nd_item<1> item) {
+    Model* models = models_;
+    detail::launchNamed<detail::ChunkKernelName<kLinearSystem, Policy, T, detail::CurrentTuId>>(
+        *context_, width, [args, models](sycl::nd_item<1> item) {
       sycl::atomic_ref<size_t, sycl::memory_order::relaxed, sycl::memory_scope::device> counter(*args->counter);
-      detail::runWorkItem<Policy, Model, T, kLinearSystem>(*args, model, item.get_group_linear_id(),
+      detail::runWorkItem<Policy, Model, T, kLinearSystem>(*args, models, item.get_group_linear_id(),
                                                            [&counter] { return counter.fetch_add(size_t{1}); });
     });
   }
 
   std::shared_ptr<ExecutionContext> context_;
   std::optional<Model> pending_model_;  ///< Until the first evaluation moves it into USM.
-  Model* model_ = nullptr;              ///< In USM (model_storage_), constructed lazily, destroyed by ~ChunkedCost().
+  const size_t model_count_;            ///< 1 + kPointsPerParam * active_param_dim.
+  Model* models_ = nullptr;             ///< In USM (model_storage_), constructed lazily, destroyed by ~ChunkedCost().
+  size_t models_built_ = 0;
 
   const T* input_;  ///< The caller's array, or the device copy.
   const T* observations_;
@@ -330,6 +407,7 @@ class ChunkedCost : public ICost<T> {
   // Buffers of the launches, allocated on first use.
   detail::UsmPtr<unsigned char> model_storage_;
   detail::UsmPtr<T> x_;
+  detail::UsmPtr<T> points_;  ///< kPointsPerParam * active_param_dim rows of param_dim entries.
   detail::UsmPtr<size_t> counter_;
   detail::UsmPtr<T> partials_;
   detail::UsmPtr<detail::KernelArgs<T>> args_;

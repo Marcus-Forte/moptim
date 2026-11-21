@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Compare bench_moptim outputs: best time per label and checksum agreement.
 
-Usage: compare_bench.py DIR [--ref LABEL] [--filter SUBSTR] [--tol 1e-12]
+Usage: compare_bench.py DIR [--ref LABEL] [--filter SUBSTR] [--tol 1e-12] [--tol-numerical 1e-8]
 
 DIR holds outputs of bench_moptim (or of anything printing the same rows) named
 `<label>.<round>`, e.g. gcc.1 gcc.2 t1.1 t1.2. For every (row name, elements) the table gives the
 minimum time per label over the rounds, the ratio to the reference label and the largest relative
 difference of the `key=value` numbers of the notes column against the reference. A label missing a
-row prints "-". Differences above --tol are flagged with `!`.
+row prints "-". Differences above --tol (--tol-numerical for the forward/central rows) are flagged with `!`.
 """
 import argparse
 import re
@@ -18,7 +18,8 @@ from pathlib import Path
 # "<name> <elements> <time> us <ns/elem>  <notes>"; the name may contain spaces and digits, so it is
 # matched lazily up to the first "<int> <float> us <float>" that follows it.
 ROW = re.compile(r"^(?P<name>.+?)\s+(?P<n>\d+)\s+(?P<us>\d+(?:\.\d+)?) us\s+\d+(?:\.\d+)?(?:\s+(?P<notes>.*))?$")
-KEY_VALUE = re.compile(r"(\w+)=(\S+)")
+# A key is everything before an `=` up to the previous space, so `sum(JTJ)=...` is a key too.
+KEY_VALUE = re.compile(r"([^\s=]+)=(\S+)")
 
 
 def parse_notes(text):
@@ -52,17 +53,20 @@ def load(directory):
     return data
 
 
-def checksum_difference(runs, reference_runs):
-    """Largest relative difference of any note between any run and the first reference run."""
+def checksum_differences(runs, reference_runs):
+    """{key: largest relative difference of that note between any run and the first reference run}.
+    A key missing from the reference counts as infinite."""
     expected = reference_runs[0][1]
-    worst = 0.0
+    worst = {}
     for _, notes in runs:
         for key, value in notes.items():
-            if key in expected:
-                worst = max(worst, relative_difference(value, expected[key]))
-            else:
-                return float("inf")
+            diff = relative_difference(value, expected[key]) if key in expected else float("inf")
+            worst[key] = max(worst.get(key, 0.0), diff)
     return worst
+
+
+def format_differences(differences, tolerance):
+    return "  ".join(f"{key}={diff:.1e}" + ("!" if diff > tolerance else "") for key, diff in differences.items())
 
 
 def main():
@@ -71,6 +75,9 @@ def main():
     parser.add_argument("--ref", help="reference label (default: gcc if present, else the first label)")
     parser.add_argument("--filter", default="", help="only rows whose name contains this substring")
     parser.add_argument("--tol", type=float, default=1e-12, help="checksum tolerance (default 1e-12)")
+    parser.add_argument("--tol-numerical", type=float, default=1e-8,
+                        help="tolerance for rows whose name contains 'forward' or 'central' (default 1e-8): "
+                             "finite-difference jacobians differ by about 1e-9 between compilers")
     args = parser.parse_args()
 
     data = load(args.directory)
@@ -88,9 +95,10 @@ def main():
     failures = 0
     for name, n in rows:
         print(f"\n{name}  elements={n}")
-        print(f"  {'label':<14} {'rounds':>6} {'min us':>12} {'ratio':>8}  checksum max rel diff")
+        print(f"  {'label':<14} {'rounds':>6} {'min us':>12} {'ratio':>8}  max rel diff per note")
         reference_runs = data[ref].get((name, n))
         reference_us = min(us for us, _ in reference_runs) if reference_runs else None
+        tolerance = args.tol_numerical if ("forward" in name or "central" in name) else args.tol
         for label in labels:
             runs = data[label].get((name, n))
             if not runs:
@@ -98,20 +106,19 @@ def main():
                 continue
             best = min(us for us, _ in runs)
             ratio = f"{best / reference_us:8.3f}" if reference_us else f"{'-':>8}"
-            if label == ref or not reference_runs:
-                check = "(reference)" if label == ref else "-"
-                if label == ref and any(notes for _, notes in runs):
-                    # Rounds of the reference itself should agree with each other.
-                    spread = checksum_difference(runs, reference_runs)
-                    check = f"{spread:.2e}" + (" !" if spread > args.tol else " (reference)")
-                    failures += spread > args.tol
-            else:
-                diff = checksum_difference(runs, reference_runs)
-                check = f"{diff:.2e}" + (" !" if diff > args.tol else "")
-                failures += diff > args.tol
+            check = "-"
+            if reference_runs and any(notes for _, notes in runs):
+                # For the reference itself this is the spread between its own rounds.
+                differences = checksum_differences(runs, reference_runs)
+                check = format_differences(differences, tolerance)
+                failures += any(diff > tolerance for diff in differences.values())
+                if label == ref:
+                    check += " (reference)"
+            elif label == ref:
+                check = "(reference)"
             print(f"  {label:<14} {len(runs):>6} {best:12.2f} {ratio}  {check}")
     if failures:
-        print(f"\n{failures} checksum difference(s) above tolerance {args.tol:g}")
+        print(f"\n{failures} row(s) with a note above tolerance (default {args.tol:g}, numerical {args.tol_numerical:g})")
     return 1 if failures else 0
 
 

@@ -14,6 +14,8 @@
 #include "moptim/AnalyticalCost.hh"
 #include "moptim/ExecutionContext.hh"
 #include "moptim/LossFunction.hh"
+#include "moptim/NumericalCostCentral.hh"
+#include "moptim/NumericalCostForwardEuler.hh"
 
 using namespace moptim;
 
@@ -484,4 +486,145 @@ TEST(CostModels, Strategy) {
   context->setStrategy(AssemblyStrategy::WorkGroup);
   EXPECT_THROW(cost.computeCost(x), std::invalid_argument);
   EXPECT_THROW(cost.computeLinearSystem(x, jtj, jtb, value), std::invalid_argument);
+}
+
+// ─── Numerical costs: one model per evaluation point ─────────────────────────────────────────────
+
+namespace {
+// Finite differences of a function that is linear in the parameters are exact to a few 1e-9.
+constexpr double kNumericalTolerance = 1e-5;
+}  // namespace
+
+TEST(NumericalCostModels, NonConstModelIsCopiedPerWorkItem) {
+  const Data data = makeData(kManyElements);
+  for (const size_t threads : {size_t{1}, size_t{3}, size_t{0}}) {
+    SCOPED_TRACE(testing::Message() << "threads=" << threads);
+    ScratchModel model;
+    model.a = 1.25;
+    NumericalCostCentral<ScratchModel, double> central(data.input.data(), data.observations.data(), kManyElements, 1,
+                                                       1, kParams, model, 0, makeContext(threads));
+    expectMatchesLine(central, data, 1.25, kNumericalTolerance);
+    NumericalCostForwardEuler<ScratchModel, double> forward(data.input.data(), data.observations.data(),
+                                                            kManyElements, 1, 1, kParams, model, 0,
+                                                            makeContext(threads));
+    expectMatchesLine(forward, data, 1.25, kNumericalTolerance);
+  }
+}
+
+TEST(NumericalCostModels, EigenMembers) {
+  const Data data = makeData(5000);
+  NumericalCostCentral<EigenMembersModel, double> cost(data.input.data(), data.observations.data(), 5000, 1, 1,
+                                                       kParams, EigenMembersModel{}, 0, makeContext(0));
+  expectMatchesLine(cost, data, 1.0, kNumericalTolerance);
+}
+
+TEST(NumericalCostModels, ModelHoldingAReferenceToHostData) {
+  const std::vector<double> table{1.5};
+  const Data data = makeData(kManyElements);
+  NumericalCostForwardEuler<ReferenceModel, double> cost(data.input.data(), data.observations.data(), kManyElements,
+                                                         1, 1, kParams, ReferenceModel(table), 0, makeContext(0));
+  expectMatchesLine(cost, data, 1.5, kNumericalTolerance);
+}
+
+// A cost keeps 1 + P_active models (forward) or 1 + 2 P_active (central), built once; a model that is not
+// const-callable is also copied once per work-item and launch (all of them for a linear system, the
+// first for the cost alone), and every copy is destroyed.
+template <template <class, class> class CostT, size_t kPointsPerParam>
+void checkModelCounts() {
+  constexpr size_t kModels = 1 + kPointsPerParam * kParams;
+  constexpr int kWorkItems = 3;
+  const Data data = makeData(kManyElements);
+  Counters counters;
+  const auto alive = [&] { return counters.constructed - counters.destroyed; };
+  {
+    CostT<MutableCountingModel, double> cost(data.input.data(), data.observations.data(), kManyElements, 1, 1,
+                                             kParams, MutableCountingModel(&counters), 0, makeContext(kWorkItems));
+    EXPECT_EQ(alive(), 1) << "nothing is built before the first evaluation";
+    const double x[kParams] = {0.7, -0.3};
+    double jtj[kParams * kParams];
+    double jtb[kParams];
+    double value = 0.0;
+
+    cost.computeLinearSystem(x, jtj, jtb, value);
+    EXPECT_EQ(alive(), static_cast<int>(kModels));
+    EXPECT_EQ(counters.copied, static_cast<int>(kModels - 1) + kWorkItems * static_cast<int>(kModels));
+
+    const int copied = counters.copied;
+    cost.computeCost(x);
+    EXPECT_EQ(alive(), static_cast<int>(kModels));
+    EXPECT_EQ(counters.copied, copied + kWorkItems);
+
+    cost.computeLinearSystem(x, jtj, jtb, value);
+    EXPECT_EQ(alive(), static_cast<int>(kModels)) << "no model is built again";
+  }
+  EXPECT_EQ(counters.destroyed, counters.constructed);
+}
+
+TEST(NumericalCostModels, EveryConstructedModelIsDestroyedOnceForward) { checkModelCounts<NumericalCostForwardEuler, 1>(); }
+TEST(NumericalCostModels, EveryConstructedModelIsDestroyedOnceCentral) { checkModelCounts<NumericalCostCentral, 2>(); }
+
+TEST(NumericalCostModels, ConstModelIsNeverCopiedPerWorkItem) {
+  const Data data = makeData(kManyElements);
+  Counters counters;
+  {
+    NumericalCostCentral<ConstCountingModel, double> cost(data.input.data(), data.observations.data(), kManyElements,
+                                                          1, 1, kParams, ConstCountingModel(&counters), 0,
+                                                          makeContext(3));
+    const double x[kParams] = {0.7, -0.3};
+    double jtj[kParams * kParams];
+    double jtb[kParams];
+    double value = 0.0;
+    cost.computeLinearSystem(x, jtj, jtb, value);
+    cost.computeCost(x);
+    EXPECT_EQ(counters.copied, 2 * static_cast<int>(kParams));  // the 2 P extra models, once
+  }
+  EXPECT_EQ(counters.destroyed, counters.constructed);
+}
+
+TEST(NumericalCostModels, OneLaunchPerEvaluation) {
+  const auto context = makeContext(0);
+  for (const size_t n : {size_t{1}, size_t{7}, size_t{1500}, kManyElements}) {
+    SCOPED_TRACE(testing::Message() << "elements=" << n);
+    const Data data = makeData(n);
+    NumericalCostCentral<LineModel, double> cost(data.input.data(), data.observations.data(), n, 1, 1, kParams,
+                                                 LineModel{}, 0, context);
+    cost.setWeights(std::vector<double>(n, 2.0));
+    cost.setLossFunction(std::make_shared<HuberLoss<double>>(1.0));
+    const double x[kParams] = {0.7, -0.3};
+    double jtj[kParams * kParams];
+    double jtb[kParams];
+    double value = 0.0;
+    for (int repetition = 0; repetition < 3; ++repetition) {
+      const uint64_t before = context->launches();
+      cost.computeLinearSystem(x, jtj, jtb, value);
+      EXPECT_EQ(context->launches(), before + 1);
+      cost.computeCost(x);
+      EXPECT_EQ(context->launches(), before + 2);
+    }
+  }
+}
+
+TEST(NumericalCostModels, NoElementsNoLaunch) {
+  const auto context = makeContext(0);
+  NumericalCostForwardEuler<LineModel, double> cost(nullptr, nullptr, 0, 1, 1, kParams, LineModel{}, 0, context);
+  const double x[kParams] = {0.7, -0.3};
+  double jtj[kParams * kParams] = {1, 2, 3, 4};
+  double jtb[kParams] = {5, 6};
+  double value = 9.0;
+  cost.computeLinearSystem(x, jtj, jtb, value);
+  EXPECT_EQ(cost.computeCost(x), 0.0);
+  EXPECT_EQ(context->launches(), 0u);
+  EXPECT_EQ(value, 0.0);
+  for (const double entry : jtj) EXPECT_EQ(entry, 0.0);
+}
+
+TEST(NumericalCostModels, CustomLossIsRejectedAndStrategyHonoured) {
+  const Data data = makeData(10);
+  const auto context = makeContext(1);
+  NumericalCostCentral<LineModel, double> cost(data.input.data(), data.observations.data(), 10, 1, 1, kParams,
+                                               LineModel{}, 0, context);
+  EXPECT_THROW(cost.setLossFunction(std::make_shared<CustomLoss>()), std::invalid_argument);
+  const double x[kParams] = {0.7, -0.3};
+  context->setStrategy(AssemblyStrategy::WorkGroup);
+  EXPECT_THROW(cost.computeCost(x), std::invalid_argument);
 }

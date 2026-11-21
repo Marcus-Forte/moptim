@@ -56,9 +56,8 @@ cost keeps the one it was built with.
   (no launch, zeros out). A launch costs about 25 microseconds on `native_cpu`, so a problem of a
   few hundred elements is dominated by it.
 
-`AnalyticalCost` runs in kernels. `NumericalCostForwardEuler` and `NumericalCostCentral` still run on the
-calling thread (they accept the context argument but do not use it yet), and so do the optimizers and the
-linear solve.
+All the costs (`AnalyticalCost`, `NumericalCostForwardEuler`, `NumericalCostCentral`) run in kernels. The
+optimizers and the linear solve run on the calling thread.
 
 ## Key Concepts
 
@@ -168,12 +167,13 @@ for each chunk of elements:
 
 Memory use and construction time therefore do not grow with the number of elements, which matters
 when a cost is rebuilt for every new set of correspondences. The numerical costs run a chunk
-through every finite-difference evaluation point while its inputs are still in cache, instead of
-making one pass over the whole data set per parameter. The accumulation itself
+through every finite-difference evaluation point while its inputs are still in cache, writing the
+residuals at a point straight into its Jacobian column, instead of making one pass over the whole
+data set per parameter. The accumulation itself
 (`detail/NormalEquationsKernel.hh`) is a fused SIMD kernel for small parameter
 counts (up to 12 active parameters on AArch64) and a dot-product loop beyond that.
 
-**Partitions.** `AnalyticalCost` (`detail/ChunkedCost`) does the loop above in one kernel launch per
+**Partitions.** All the costs (`ChunkedCost`, with an analytical or a numerical Jacobian policy) do the loop above in one kernel launch per
 evaluation, on the work-items of the context's queue. The chunks are grouped into *partitions* of
 `max(4, ceil(chunks / 256))` consecutive chunks (`detail/Partitioning.hh`), so a partition is a
 function of `(N, O, P_active, sizeof(T))` only. Each work-item claims partitions through an atomic
@@ -188,8 +188,9 @@ result is bit-identical for every `threads` setting and every number of cores, r
 `computeLinearSystem()` and `computeCost()` use the same chunks, partitions and robustification, so
 the cost of a linear system is bit-identical to `computeCost()` at the same `x`. The results are not
 bit-identical to a plain left-to-right sum over all the elements (that order is the one-partition
-case), only equal to rounding, and the numerical costs, which run on the host, sum in that plain
-order.
+case), only equal to rounding. A numerical cost's Jacobian is a difference of residuals that are
+close to each other, so it amplifies rounding by about `1/h`: the same problem compiled by another
+compiler (or with another `-ffp-contract`) gives `JTJ` that agree to about 1e-9 relative, not 1e-12.
 
 **Buffers.** A cost allocates its USM buffers (the model, the copy of `x`, the scratch of each
 work-item, the partials) on first use and reuses them; steady-state evaluations allocate nothing and
@@ -216,7 +217,7 @@ struct MyModel {
   column-major order: `jac[j + active_param_dim * i] = ∂residual[i] / ∂delta[j]`, the derivative with
   respect to the step `delta` at `delta = 0`. For Euclidean parameters that is the ordinary
   `∂residual[i] / ∂x[j]`; on a manifold see [Manifolds](#manifolds).
-- **`residual` and `jacobian` run in a SYCL kernel** (`AnalyticalCost`). They may not use virtual
+- **`residual` (and `jacobian`, for `AnalyticalCost`) run in a SYCL kernel**. They may not use virtual
   calls, exceptions, RTTI or heap allocation, which includes the temporaries of dynamic-size Eigen
   expressions (fixed-size Eigen is fine, it runs scalar there), and they may not call functions defined in
   another translation unit unless those are `SYCL_EXTERNAL`. Calls to `std::sin`, `std::exp` and the like work on
@@ -235,17 +236,29 @@ struct MyModel {
 - `sizeof` and `alignof` of the model must be the same in the host and the device pass. The build gives
   Eigen the same alignment in both (see above), and the cost checks the two sizes once per model type
   and throws `std::logic_error` if they differ.
-- When its elements span more than one chunk, a numerical cost keeps one copy of the model per
-  finite-difference evaluation point and calls `setState` on each copy with its own perturbed `x`.
-  The model must therefore be copy-constructible, and copies must not share state that `setState`
-  or `residual` write to. A cost that fits in a single chunk uses its one model for every point.
-  (Numerical costs run on the host and have none of the device restrictions above.)
+- **A numerical cost keeps `1 + P_active` models (forward) or `1 + 2·P_active` (central)**, one per
+  finite-difference evaluation point (point 0 is `x`). They are copy-constructed from the model given, once,
+  on the first evaluation, and `setState` is called on each with its own perturbed `x` before every linear
+  system (before every `computeCost`, only the first one is set and used). The model must therefore be
+  copy-constructible, and copies must not share state that `setState` or `residual` write to. Memory is
+  `(1 + kP·P_active) · sizeof(Model)` in USM, which is negligible for a small model and not for one that
+  carries data: a 24-parameter central cost over a model with a 24x24 matrix holds 49 copies of it (about
+  226 KiB). With a non-const `residual` each work-item also copies the models it uses, once per launch, into
+  its scratch.
+- **Kernel names.** A SYCL kernel is named after the types it instantiates, and a model in an anonymous
+  namespace mangles the same in every file. The costs' kernels (and the model layout check) therefore carry a
+  per-translation-unit id in their name (`detail/KernelName.hh`: the unique stable id of an internal-linkage
+  variable, which starts with the `uid<hash>` prefix the driver gives each translation unit), so files that each
+  declare their own `namespace { struct Model }` get their own kernels (`test_tu_models*.cc`). Limits: the same source
+  file compiled twice with the same options into one executable gets the same prefix; and a model with external
+  linkage used from several files gets one kernel per file, of which the linker keeps the host side of one, which
+  is harmless as they are identical.
 
 | Cost | Jacobian from | Model calls per element, per linear system |
 |---|---|---|
-| `AnalyticalCost<Model, T>` | `Model::jacobian` | 1 residual + 1 jacobian |
-| `NumericalCostForwardEuler<Model, T>` | forward differences | `1 + P_active` residuals |
-| `NumericalCostCentral<Model, T>` | central differences | `1 + 2·P_active` residuals |
+| `AnalyticalCost<Model, T>` | `Model::jacobian` | 1 residual + 1 jacobian, 1 model |
+| `NumericalCostForwardEuler<Model, T>` | forward differences | `1 + P_active` residuals, `1 + P_active` models |
+| `NumericalCostCentral<Model, T>` | central differences | `1 + 2·P_active` residuals, `1 + 2·P_active` models |
 
 ### Manifolds
 
@@ -286,7 +299,7 @@ consumer to be instantiated in the library.
   per tangent dimension. For a pose with `plus(T, delta) = Exp(delta) * T` that is the derivative
   with respect to a left increment; a Jacobian taken for a right increment is silently wrong.
 - **Numerical costs** evaluate the residuals at `plus(x, ±h e_p)` for every active tangent
-  dimension `p` (computed once per linear system), with the same step `h` as for plain vectors, so
+  dimension `p` (computed on the host once per linear system), with the same step `h` as for plain vectors, so
   they give the same quantity as the analytical Jacobian. The models still read the full `x`.
 - **`active_param_dim`** counts leading tangent dimensions. With a `ProductManifold` a cost on the
   first block passes that block's `tangentDim()`.
@@ -325,7 +338,7 @@ evaluation). Weights and information matrices replace each other, and an empty v
 
 `AnalyticalCost` evaluates the loss in its kernel, so it accepts the built-in losses only: for a
 `LossFunction` subclass of your own (`descriptor().kind == LossKind::Custom`) `setLossFunction()` throws
-`std::invalid_argument`. The numerical costs still call `evaluate()` on the host and take any loss.
+`std::invalid_argument`; this holds for the numerical costs too.
 
 ## Observability
 
@@ -410,8 +423,7 @@ build/test/bench_moptim --threads 4 --strategy chunked   # configure the default
 
 `--threads N` and `--strategy auto|chunked|workgroup` set the default `ExecutionContext` before
 anything runs. The analytical rows read it (`--threads 1` is a single work-group; without the option all
-compute units are used); the numerical rows run on the host and do not. `--strategy workgroup` makes
-the analytical rows throw.
+compute units are used). `--strategy workgroup` makes every cost row throw.
 
 Each row is the best time over several repetitions. Rows that assemble a linear system also print
 the cost and the sums of `JTJ` and `JTb`, so two builds can be compared for numerical equivalence
