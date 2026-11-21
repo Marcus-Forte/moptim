@@ -1,5 +1,47 @@
 # Moptim
-Non linear optimization library built with option for SYCL.
+Non linear least-squares optimization library on Eigen, built on SYCL.
+
+## Building
+
+moptim is built with a SYCL compiler: DPC++ (`intel/llvm`) `clang++` with `-fsycl` is required, and the
+configure step stops with an error for any other compiler. The rest is Eigen 3 and, for the tests,
+GoogleTest (fetched at configure time).
+
+```sh
+cmake --preset default      # DPC++ in /opt/sycl, Release, Ninja, SYCL target native_cpu, build/
+cmake --preset sycl         # native_cpu + nvptx64-nvidia-cuda + spir64, build_sycl/
+cmake --build build && ctest --test-dir build
+# or, with the compiler anywhere else:
+cmake -S . -B <dir> -G Ninja -DCMAKE_CXX_COMPILER=<dpcpp>/bin/clang++ -DCMAKE_C_COMPILER=<dpcpp>/bin/clang
+```
+
+| CMake variable | Default | Meaning |
+|---|---|---|
+| `SYCL_TARGETS` | `native_cpu` | comma separated `-fsycl-targets` list |
+| `MOPTIM_NATIVE_CPU_ARCH` | empty | `-mcpu` value for the `native_cpu` device code, e.g. a core name on AArch64 or an x86-64 level on x86 hosts, where it enables AVX in device code. It is applied at link time |
+| `USE_CLANG_TIDY` | `OFF` | clang-tidy cannot parse a `-fsycl` compilation; configuring with it prints a warning |
+| `FORMAT_CODE` | `OFF` | runs clang-format over all `.cc`/`.hh` on build |
+
+The `moptim` target passes its compiler settings on to everything that links it (`PUBLIC`):
+`-fsycl -fsycl-targets=...`, `-ffp-contract=fast` (contract `a*b+c` into an FMA across statements, as
+GCC does by default) and the Eigen settings below.
+
+**Eigen in the device pass.** A `-fsycl` compilation parses every translation unit twice, once for
+the host and once per device target. Eigen 3.4's NEON code does not survive the `native_cpu` device
+front end, so the build defines `EIGEN_DONT_VECTORIZE` for the device pass only
+(`-Xsycl-target-frontend=<triple> -DEIGEN_DONT_VECTORIZE` for each target of `SYCL_TARGETS`), while
+the host pass keeps Eigen's SIMD code. `EIGEN_MAX_STATIC_ALIGN_BYTES=16` is defined for both passes
+so that fixed-size Eigen members (e.g. in a model that is copied to the device) have the same size
+and alignment on both sides. Code that includes Eigen in a kernel therefore runs scalar Eigen there.
+
+### Execution context
+
+Kernels are launched through an `ExecutionContext` (`moptim/ExecutionContext.hh`): an in-order SYCL
+queue, a `threads` knob (the number of work-groups of a launch, `0` = all compute units; it never
+changes a result), an `AssemblyStrategy` and a launch counter. `defaultContext()` is the process-wide
+instance, `setDefaultContext()` replaces it. The costs still assemble their linear systems on the
+host; the context and the device kernels in `moptim/detail/` (`NormalEquationsKernel.hh`, `Usm.hh`)
+are the infrastructure they will move onto.
 
 ## Key Concepts
 
@@ -186,7 +228,6 @@ consumer to be instantiated in the library.
   they give the same quantity as the analytical Jacobian. The models still read the full `x`.
 - **`active_param_dim`** counts leading tangent dimensions. With a `ProductManifold` a cost on the
   first block passes that block's `tangentDim()`.
-- `NumericalCostSycl` is Euclidean only.
 
 ```cpp
 // A pose stored as 12 numbers [R | t], tangent [rho, omega], plus(T, d) = Exp(d) * T (consumer code).
@@ -298,7 +339,11 @@ Levenberg-Marquardt runs, plus the SE(3) point-to-plane problem through a manifo
 ```sh
 build/test/bench_moptim            # everything
 build/test/bench_moptim forward    # only the rows whose name contains "forward"
+build/test/bench_moptim --threads 4 --strategy chunked   # configure the default ExecutionContext first
 ```
+
+`--threads N` and `--strategy auto|chunked|workgroup` set the default `ExecutionContext` before
+anything runs; the costs do not read it yet, so they do not change the timings.
 
 Each row is the best time over several repetitions. Rows that assemble a linear system also print
 the cost and the sums of `JTJ` and `JTb`, so two builds can be compared for numerical equivalence

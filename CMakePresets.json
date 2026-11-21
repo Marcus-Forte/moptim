@@ -3,39 +3,26 @@
     "configurePresets": [
         {
             "name": "default",
-            "displayName": "Build without SYCL",
-            "description": "Build moptim without SYCL support",
-            "toolchainFile": "/opt/toolchain/gcc.cmake",
-            "generator": "Ninja",
-            "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release",
-                "WITH_SYCL": "OFF"
-            },
-            "binaryDir": "${sourceDir}/build"
-        },
-        {
-            "name": "sycl",
-            "displayName": "Build with SYCL",
-            "description": "Build moptim with SYCL support",
+            "displayName": "DPC++, native_cpu",
+            "description": "moptim with the DPC++ clang and the host CPU as the only SYCL target (native_cpu)",
             "generator": "Ninja",
             "cacheVariables": {
                 "CMAKE_C_COMPILER": "/opt/sycl/bin/clang",
                 "CMAKE_CXX_COMPILER": "/opt/sycl/bin/clang++",
                 "CMAKE_BUILD_TYPE": "Release",
-                "WITH_SYCL": "ON",
+                "SYCL_TARGETS": "native_cpu"
+            },
+            "binaryDir": "${sourceDir}/build"
+        },
+        {
+            "name": "sycl",
+            "displayName": "DPC++, native_cpu + CUDA + SPIR-V",
+            "description": "moptim with the DPC++ clang for the host CPU, NVIDIA GPUs and spir64 devices; needs the CUDA and libspirv bitcode libraries of the toolchain",
+            "inherits": "default",
+            "cacheVariables": {
                 "SYCL_TARGETS": "native_cpu,nvptx64-nvidia-cuda,spir64"
             },
             "binaryDir": "${sourceDir}/build_sycl"
-        },
-        {
-            "name": "sycl-cpu",
-            "inherits": "sycl",
-            "displayName": "Build with SYCL (native_cpu only)",
-            "description": "SYCL for the host CPU only; for toolchains without CUDA or spir64 libspirv (e.g. mdnf1992/sycl-dev)",
-            "cacheVariables": {
-                "SYCL_TARGETS": "native_cpu"
-            },
-            "binaryDir": "${sourceDir}/build_sycl_cpu"
         }
     ]
 }

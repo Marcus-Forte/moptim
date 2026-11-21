@@ -3,6 +3,10 @@
 // Not part of the unit-test suite. Build the `bench_moptim` target and run it by hand:
 //   build/test/bench_moptim            # everything
 //   build/test/bench_moptim forward    # only benchmarks whose name contains "forward"
+//   build/test/bench_moptim --threads 4 --strategy chunked [filter]
+//
+// --threads N and --strategy auto|chunked|workgroup configure the default ExecutionContext before
+// anything runs. The costs do not read them yet, so they have no effect on the timings.
 //
 // Every row reports the best time per call over several repetitions. Rows that assemble a linear
 // system also print the cost and the sums of J^T J and J^T b, so two builds can be compared for
@@ -15,11 +19,13 @@
 #include <limits>
 #include <memory>
 #include <random>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 #include "manifold_models.hh"
 #include "moptim/AnalyticalCost.hh"
+#include "moptim/ExecutionContext.hh"
 #include "moptim/LevenbergMarquardt.hh"
 #include "moptim/LossFunction.hh"
 #include "moptim/NumericalCostCentral.hh"
@@ -435,7 +441,6 @@ PlaneCloud makePlaneCloud(size_t num_elements) {
   return cloud;
 }
 
-constexpr size_t kPoseAmbientDim = 12;
 constexpr size_t kPoseTangentDim = 6;
 
 template <class Cost>
@@ -495,10 +500,63 @@ void benchManifold(const Report& report) {
       report, "lm_optimize/manifold_se3/central", cloud, 10000, manifold);
 }
 
+struct Options {
+  std::string filter;
+  bool configure_context = false;
+  size_t threads = 0;
+  AssemblyStrategy strategy = AssemblyStrategy::Auto;
+};
+
+Options parseOptions(int argc, char** argv) {
+  Options options;
+  const auto value = [&](int& i) -> std::string {
+    if (i + 1 >= argc) throw std::invalid_argument(std::string("missing value for ") + argv[i]);
+    return argv[++i];
+  };
+  for (int i = 1; i < argc; ++i) {
+    const std::string arg = argv[i];
+    if (arg == "--threads") {
+      const std::string text = value(i);
+      size_t used = 0;
+      const unsigned long long threads = std::stoull(text, &used);
+      if (used != text.size()) throw std::invalid_argument("bad --threads value: " + text);
+      options.threads = static_cast<size_t>(threads);
+      options.configure_context = true;
+    } else if (arg == "--strategy") {
+      const std::string text = value(i);
+      if (text == "auto") options.strategy = AssemblyStrategy::Auto;
+      else if (text == "chunked") options.strategy = AssemblyStrategy::Chunked;
+      else if (text == "workgroup") options.strategy = AssemblyStrategy::WorkGroup;
+      else throw std::invalid_argument("--strategy must be auto, chunked or workgroup, not " + text);
+      options.configure_context = true;
+    } else if (arg.rfind("--", 0) == 0) {
+      throw std::invalid_argument("unknown option " + arg);
+    } else {
+      options.filter = arg;
+    }
+  }
+  return options;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
-  const Report report(argc > 1 ? argv[1] : "");
+  Options options;
+  try {
+    options = parseOptions(argc, argv);
+  } catch (const std::exception& error) {
+    std::fprintf(stderr, "%s\nusage: bench_moptim [--threads N] [--strategy auto|chunked|workgroup] [name-filter]\n",
+                 error.what());
+    return 2;
+  }
+  // Only touch the default context when asked: creating it initializes the SYCL runtime.
+  if (options.configure_context) {
+    const std::shared_ptr<ExecutionContext> context = defaultContext();
+    context->setThreads(options.threads);
+    context->setStrategy(options.strategy);
+  }
+
+  const Report report(options.filter);
 
   for (const size_t num_elements : {size_t{1000}, size_t{10000}, size_t{100000}, size_t{1000000}}) {
     benchCloudCosts(report, num_elements);

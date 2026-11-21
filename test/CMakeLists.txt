@@ -35,39 +35,18 @@ add_executable(test_moptim
   test_chunked_cost.cc
   test_optimizer.cc
   test_manifold.cc
+  test_regressions.cc
+  test_execution_context.cc
+  test_device_loss.cc
+  test_device_normal_equations.cc
 )
 add_subdirectory(nist)
 target_link_libraries(test_moptim moptim test_helper)
 gtest_discover_tests(test_moptim)
 
-if(WITH_SYCL)
-  add_executable(test_moptim_sycl
-    sycl/test_sycl_cost.cc
-    sycl/test_sycl_jacobian.cc
-    sycl/test_sycl_regressions.cc
-    sycl/test_sycl_transform2d.cc
-    sycl/test_sycl_transform3d.cc
-  )
-  target_include_directories(test_moptim_sycl PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  target_link_libraries(test_moptim_sycl test_helper gtest gtest_main)
-  gtest_discover_tests(test_moptim_sycl)
-  # Opt-in benchmark, not run by ctest: SYCL vs CPU cost over a range of dataset sizes.
-  add_executable(bench_sycl_cost sycl/bench_sycl_cost.cc)
-  target_include_directories(bench_sycl_cost PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-  target_link_libraries(bench_sycl_cost moptim gtest)
-  # Opt-in micro-benchmark of kernel launch latency and multi-core scaling of the default device.
-  add_executable(bench_launch bench_launch.cc)
-  target_link_libraries(bench_launch moptim)
-  # Bug reproduction
-  # add_executable(bug_reduction
-  # sycl/bug_reduction.cc
-  # )
-  # add_executable(test_sycl_matmult
-  #   sycl/test_sycl_matmult.cc
-  # )
-  # target_link_libraries(test_sycl_matmult onemath_blas_generic)
-endif()
-
+# Opt-in micro-benchmark of kernel launch latency and multi-core scaling of the default device.
+add_executable(bench_launch bench_launch.cc)
+target_link_libraries(bench_launch moptim)
 
 # Benchmarks of the cost classes and optimizers. Built with the tests, run by hand.
 add_executable(bench_moptim
