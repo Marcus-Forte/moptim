@@ -19,6 +19,7 @@ cmake -S . -B <dir> -G Ninja -DCMAKE_CXX_COMPILER=<dpcpp>/bin/clang++ -DCMAKE_C_
 |---|---|---|
 | `SYCL_TARGETS` | `native_cpu` | comma separated `-fsycl-targets` list |
 | `MOPTIM_NATIVE_CPU_ARCH` | empty | `-mcpu` value for the `native_cpu` device code, e.g. a core name on AArch64 or an x86-64 level on x86 hosts, where it enables AVX in device code. It is applied at link time |
+| `MOPTIM_FP_CONTRACT` | `fast` | value of `-ffp-contract` for moptim and its consumers. `fast` (GCC's default) was measured 4 to 19% faster than clang's default `on` on the analytical costs |
 | `USE_CLANG_TIDY` | `OFF` | clang-tidy cannot parse a `-fsycl` compilation; configuring with it prints a warning |
 | `FORMAT_CODE` | `OFF` | runs clang-format over all `.cc`/`.hh` on build |
 
@@ -37,11 +38,27 @@ and alignment on both sides. Code that includes Eigen in a kernel therefore runs
 ### Execution context
 
 Kernels are launched through an `ExecutionContext` (`moptim/ExecutionContext.hh`): an in-order SYCL
-queue, a `threads` knob (the number of work-groups of a launch, `0` = all compute units; it never
-changes a result), an `AssemblyStrategy` and a launch counter. `defaultContext()` is the process-wide
-instance, `setDefaultContext()` replaces it. The costs still assemble their linear systems on the
-host; the context and the device kernels in `moptim/detail/` (`NormalEquationsKernel.hh`, `Usm.hh`)
-are the infrastructure they will move onto.
+queue, a `threads` knob, an `AssemblyStrategy` and a launch counter. `defaultContext()` is the
+process-wide instance and `setDefaultContext()` replaces it. Every cost constructor takes a trailing
+`std::shared_ptr<ExecutionContext> context = nullptr`; a null context means `defaultContext()`, and a
+cost keeps the one it was built with.
+
+- **`threads`** is the number of work-groups (of one work-item each) of a launch, at most the number of
+  partitions of the problem; `0` means all the compute units of the device. It decides how the work is
+  shared out and never the result (see [How a linear system is assembled](#how-a-linear-system-is-assembled)).
+  On `native_cpu` a launch of one work-group runs on the calling thread; wider launches run on the
+  SYCL runtime's thread pool, whose threads exist whatever `threads` says. To have literally one
+  thread in the process, also set `SYCL_NATIVE_CPU_HOST_THREADS=1` in the environment.
+- **`AssemblyStrategy`**: `Auto` and `Chunked` use the chunked kernel. `WorkGroup` is not implemented
+  yet: a cost evaluated with it throws `std::invalid_argument("not implemented yet")`.
+- **`launches()`** counts the kernel launches issued through `detail::launch()`: an evaluation of an
+  analytical cost is exactly one, whatever the number of elements, except for no elements at all
+  (no launch, zeros out). A launch costs about 25 microseconds on `native_cpu`, so a problem of a
+  few hundred elements is dominated by it.
+
+`AnalyticalCost` runs in kernels. `NumericalCostForwardEuler` and `NumericalCostCentral` still run on the
+calling thread (they accept the context argument but do not use it yet), and so do the optimizers and the
+linear solve.
 
 ## Key Concepts
 
@@ -153,8 +170,32 @@ Memory use and construction time therefore do not grow with the number of elemen
 when a cost is rebuilt for every new set of correspondences. The numerical costs run a chunk
 through every finite-difference evaluation point while its inputs are still in cache, instead of
 making one pass over the whole data set per parameter. The accumulation itself
-(`accumulateNormalEquations`, `src/NormalEquations.cc`) is a fused SIMD kernel for small parameter
+(`detail/NormalEquationsKernel.hh`) is a fused SIMD kernel for small parameter
 counts (up to 12 active parameters on AArch64) and a dot-product loop beyond that.
+
+**Partitions.** `AnalyticalCost` (`detail/ChunkedCost`) does the loop above in one kernel launch per
+evaluation, on the work-items of the context's queue. The chunks are grouped into *partitions* of
+`max(4, ceil(chunks / 256))` consecutive chunks (`detail/Partitioning.hh`), so a partition is a
+function of `(N, O, P_active, sizeof(T))` only. Each work-item claims partitions through an atomic
+counter, runs the chunk loop over them on its own scratch buffers, and writes one partial result
+(cost, `JTb`, lower triangle of `JTJ`) per partition, each in its own cache lines. The host then adds
+the partials in partition order, mirrors the lower triangle and zeroes everything outside the active
+block. A cost that fits in one partition (up to four chunks, about 400 elements for `O = 3`,
+`P = 6`) is the plain sequential chunk loop.
+
+**Determinism.** Because the partials are fixed by the problem and added in a fixed order, the
+result is bit-identical for every `threads` setting and every number of cores, run after run.
+`computeLinearSystem()` and `computeCost()` use the same chunks, partitions and robustification, so
+the cost of a linear system is bit-identical to `computeCost()` at the same `x`. The results are not
+bit-identical to a plain left-to-right sum over all the elements (that order is the one-partition
+case), only equal to rounding, and the numerical costs, which run on the host, sum in that plain
+order.
+
+**Buffers.** A cost allocates its USM buffers (the model, the copy of `x`, the scratch of each
+work-item, the partials) on first use and reuses them; steady-state evaluations allocate nothing and
+enqueue no copies. The caller's `input` and `observations` arrays are read in place when the device can
+read host memory (`native_cpu` can) and are copied to device memory once, at construction, otherwise.
+Weights and information factors are stored in USM by `setWeights()` / `setInformation()`.
 
 ### Models
 
@@ -162,22 +203,43 @@ A model is a plain class, nothing is inherited. The cost classes call:
 
 ```cpp
 struct MyModel {
-  void setState(const T* x);                                        // once per evaluation, before any element
-  void residual(const T* x, const T* input, const T* obs, T* res);  // one element
-  void jacobian(const T* x, const T* input, const T* obs, T* jac);  // AnalyticalCost only
+  void setState(const T* x);                                              // host, once per evaluation, before any element
+  void residual(const T* x, const T* input, const T* obs, T* res) const;  // device, one element
+  void jacobian(const T* x, const T* input, const T* obs, T* jac) const;  // device, AnalyticalCost only
 };
 ```
 
 - `setState` is the place to precompute whatever depends only on `x` (a rotation matrix, a
-  transform), so that `residual` and `jacobian` do no per-element setup.
+  transform), so that `residual` and `jacobian` do no per-element setup. It runs on the host, so it
+  may do anything (Eigen, heap allocation, trigonometry).
 - `jacobian` writes the transposed Jacobian of the element, `active_param_dim × observation_dim` in
   column-major order: `jac[j + active_param_dim * i] = ∂residual[i] / ∂delta[j]`, the derivative with
   respect to the step `delta` at `delta = 0`. For Euclidean parameters that is the ordinary
   `∂residual[i] / ∂x[j]`; on a manifold see [Manifolds](#manifolds).
+- **`residual` and `jacobian` run in a SYCL kernel** (`AnalyticalCost`). They may not use virtual
+  calls, exceptions, RTTI or heap allocation, which includes the temporaries of dynamic-size Eigen
+  expressions (fixed-size Eigen is fine, it runs scalar there), and they may not call functions defined in
+  another translation unit unless those are `SYCL_EXTERNAL`. Calls to `std::sin`, `std::exp` and the like work on
+  `native_cpu` (they resolve against the host libm when the program is linked) but the DPC++ linker prints
+  `Undefined function <name> found in ... This may result in runtime errors` for each one; `sycl::sin` &co.
+  (or `LossFunction.hh`'s `__SYCL_DEVICE_ONLY__` pattern) avoid the warning and are the portable choice. A
+  reference or pointer to host memory held by the model only works on devices with `usm_system_allocations`
+  (`native_cpu` has it).
+- **The model lives in USM.** The cost move-constructs it there on its first evaluation (so it must
+  be move-constructible), calls `setState` on it, and destroys it with the cost; it is never copied
+  bytewise. If `residual` and `jacobian` can be called on a `const` model, every work-item uses that one
+  model in place, so they must not write to it. If they cannot, each work-item copy-constructs its own
+  model (in the kernel, so the copy constructor and destructor follow the same rules) and destroys it before
+  the launch ends; a model that is neither const-callable nor copy-constructible is evaluated by one
+  work-item. Declare `residual` and `jacobian` `const` when you can: it avoids the copies.
+- `sizeof` and `alignof` of the model must be the same in the host and the device pass. The build gives
+  Eigen the same alignment in both (see above), and the cost checks the two sizes once per model type
+  and throws `std::logic_error` if they differ.
 - When its elements span more than one chunk, a numerical cost keeps one copy of the model per
   finite-difference evaluation point and calls `setState` on each copy with its own perturbed `x`.
   The model must therefore be copy-constructible, and copies must not share state that `setState`
   or `residual` write to. A cost that fits in a single chunk uses its one model for every point.
+  (Numerical costs run on the host and have none of the device restrictions above.)
 
 | Cost | Jacobian from | Model calls per element, per linear system |
 |---|---|---|
@@ -258,8 +320,12 @@ With `Ω` the weight or information matrix of an element and `s = rᵀ·Ω·r`, 
 `ρ(s)` to the cost, and its residual and Jacobian rows are whitened and scaled by `sqrt(ρ'(s))`
 before they are accumulated (iteratively reweighted least squares). `LossFunction.hh` provides
 `HuberLoss`, `CauchyLoss`, `GemanMcClureLoss` and `TrivialLoss`; the kernel is shared, so its scale
-can be adapted between iterations with `setScale()`. Weights and information matrices replace each
-other, and an empty vector removes either.
+can be adapted between iterations with `setScale()` (the analytical cost reads the loss at every
+evaluation). Weights and information matrices replace each other, and an empty vector removes either.
+
+`AnalyticalCost` evaluates the loss in its kernel, so it accepts the built-in losses only: for a
+`LossFunction` subclass of your own (`descriptor().kind == LossKind::Custom`) `setLossFunction()` throws
+`std::invalid_argument`. The numerical costs still call `evaluate()` on the host and take any loss.
 
 ## Observability
 
@@ -343,7 +409,9 @@ build/test/bench_moptim --threads 4 --strategy chunked   # configure the default
 ```
 
 `--threads N` and `--strategy auto|chunked|workgroup` set the default `ExecutionContext` before
-anything runs; the costs do not read it yet, so they do not change the timings.
+anything runs. The analytical rows read it (`--threads 1` is a single work-group; without the option all
+compute units are used); the numerical rows run on the host and do not. `--strategy workgroup` makes
+the analytical rows throw.
 
 Each row is the best time over several repetitions. Rows that assemble a linear system also print
 the cost and the sums of `JTJ` and `JTb`, so two builds can be compared for numerical equivalence

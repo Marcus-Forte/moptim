@@ -6,7 +6,7 @@
 //   build/test/bench_moptim --threads 4 --strategy chunked [filter]
 //
 // --threads N and --strategy auto|chunked|workgroup configure the default ExecutionContext before
-// anything runs. The costs do not read them yet, so they have no effect on the timings.
+// anything runs. The analytical costs read them; the numerical ones run on the host and do not.
 //
 // Every row reports the best time per call over several repetitions. Rows that assemble a linear
 // system also print the cost and the sums of J^T J and J^T b, so two builds can be compared for

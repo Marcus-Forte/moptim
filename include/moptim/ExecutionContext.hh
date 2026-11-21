@@ -8,8 +8,9 @@
 
 namespace moptim {
 
-/// How a cost splits its elements between the work-items of one launch (used from Phase 2 on; the
-/// costs do not read it yet). `Auto` lets the cost choose from the device and the problem size.
+/// How a cost splits its elements between the work-items of one launch. `Auto` and `Chunked` run
+/// the chunked kernel (whole chunks of elements per work-item, see ChunkedCost.hh); `WorkGroup` is not
+/// implemented yet and makes a cost throw std::invalid_argument.
 enum class AssemblyStrategy { Auto, Chunked, WorkGroup };
 
 /**
@@ -18,7 +19,7 @@ enum class AssemblyStrategy { Auto, Chunked, WorkGroup };
  * - The queue is in-order, so a cost can enqueue its kernels back to back.
  * - `threads` bounds the number of work-groups of one launch (`0` = all compute units of the
  *   device). It only changes how the work is shared out, never the result: partial sums are
- *   combined in an order that does not depend on it.
+ *   combined in an order that does not depend on it (see ChunkedCost.hh).
  * - `launches()` counts the kernel launches issued through `detail::launch()`, so a test or a
  *   benchmark can check how many launches an operation takes.
  *
@@ -85,8 +86,8 @@ namespace detail {
 /**
  * Runs `kernel` (a callable taking `sycl::nd_item<1>`) on `work_groups` work-groups of one
  * work-item each, and waits for it. Rethrows asynchronous errors. One launch costs about 10 to 25
- * microseconds on native_cpu (Phase 0 measurements), and a launch of one work-group runs on the
- * calling thread. Does nothing for `work_groups == 0`.
+ * microseconds on native_cpu, and a launch of one work-group runs on the calling thread. Does
+ * nothing for `work_groups == 0`.
  */
 template <class Kernel>
 void launch(ExecutionContext& context, size_t work_groups, Kernel kernel) {

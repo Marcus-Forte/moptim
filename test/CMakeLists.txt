@@ -39,6 +39,8 @@ add_executable(test_moptim
   test_execution_context.cc
   test_device_loss.cc
   test_device_normal_equations.cc
+  test_determinism.cc
+  test_cost_models.cc
 )
 add_subdirectory(nist)
 target_link_libraries(test_moptim moptim test_helper)

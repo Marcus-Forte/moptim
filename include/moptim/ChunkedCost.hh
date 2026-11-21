@@ -3,81 +3,133 @@
 #include <Eigen/Dense>
 #include <algorithm>
 #include <cassert>
-#include <cmath>
 #include <cstddef>
 #include <memory>
+#include <mutex>
+#include <new>
+#include <optional>
+#include <stdexcept>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "moptim/ExecutionContext.hh"
 #include "moptim/ICost.hh"
 #include "moptim/IModel.hh"
 #include "moptim/LossFunction.hh"
-#include "moptim/NormalEquations.hh"
+#include "moptim/detail/ChunkKernel.hh"
+#include "moptim/detail/Partitioning.hh"
+#include "moptim/detail/Usm.hh"
 
 namespace moptim {
+namespace detail {
+
+/// Once per model type: checks in a kernel that `sizeof` and `alignof` of `Model` are the same in
+/// the device pass as in the host pass. The model is built on the host and read by the device, so a
+/// layout that differs between the two (e.g. Eigen members aligned differently) would corrupt it.
+/// Not counted as a launch of the context. Throws std::logic_error on a mismatch.
+template <class Model>
+void checkModelLayout(ExecutionContext& context) {
+  static std::once_flag checked;
+  std::call_once(checked, [&context] {
+    sycl::queue& queue = context.queue();
+    const UsmPtr<size_t> reported = makeSharedArray<size_t>(queue, 2);
+    size_t* out = reported.get();
+    queue.single_task([out] {
+      out[0] = sizeof(Model);
+      out[1] = alignof(Model);
+    });
+    queue.wait_and_throw();
+    if (out[0] != sizeof(Model) || out[1] != alignof(Model)) {
+      throw std::logic_error("moptim: the model has a different size or alignment in the device pass (" +
+                             std::to_string(out[0]) + " bytes, alignment " + std::to_string(out[1]) +
+                             ") than in the host pass (" + std::to_string(sizeof(Model)) + ", " +
+                             std::to_string(alignof(Model)) + ")");
+    }
+  });
+}
+
+}  // namespace detail
 
 /**
- * @brief CPU cost that streams its elements through cache-sized chunks.
+ * @brief Cost that streams its elements through cache-sized chunks, in one kernel launch.
  *
  * The residuals and jacobian rows of a chunk of elements are evaluated into small buffers that stay
  * in the L1 data cache and are folded into J^T J, J^T b and the cost right away. The full jacobian
  * (num_elements * observation_dim rows) is never stored, so memory use and construction time do not
  * grow with the number of elements.
  *
- * A derived class only says how the jacobian rows of a chunk are obtained (evaluateJacobian()).
- * This class owns everything else: the element loop, the optional noise model (scalar weights or
- * information matrices), the optional robust kernel and the accumulation.
+ * Every evaluation (computeCost() and computeLinearSystem()) is one launch on the queue of the
+ * cost's ExecutionContext, even for a handful of elements; with no elements there is no launch. The
+ * chunks are grouped into partitions whose size depends only on the problem (detail/Partitioning.hh);
+ * the work-items of the launch claim partitions, each writes one partial sum per partition, and the
+ * host adds the partials in partition order. The result is therefore bit-identical whatever number of
+ * threads the context allows, and a cost that fits in one partition reproduces a sequential walk
+ * over its chunks exactly.
+ *
+ * `Policy` says how the jacobian rows of a chunk are obtained (see AnalyticalJacobian in
+ * AnalyticalCost.hh). This class owns everything else: the optional noise model (scalar weights or
+ * information matrices), the optional robust kernel, the model in USM and the buffers of the launch.
+ * It allocates them on first use and reuses them afterwards.
+ *
+ * Only the built-in losses (LossFunction::descriptor() other than Custom) can run in a kernel.
+ * Not thread-safe: one evaluation at a time per cost.
  */
-template <class Model, class T>
+template <class Model, class T, class Policy>
   requires ResidualModel<Model, T>
 class ChunkedCost : public ICost<T> {
  public:
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
 
+  ~ChunkedCost() override {
+    if (model_ != nullptr) {
+      model_->~Model();
+    }
+  }
+
   T computeCost(const T* x) final {
-    model_.setState(x);
+    requireSupportedStrategy();
+    if (num_elements_ == 0) {
+      return T{0};
+    }
+    launch<false>(x);
 
     T cost{0};
-    for (size_t first = 0; first < num_elements_; first += chunk_elements_) {
-      const size_t count = std::min(chunk_elements_, num_elements_ - first);
-      auto residuals = residuals_.head(count * observation_dim_);
-
-      evaluateResiduals(model_, x, first, count, residuals.data());
-      // A jacobian without columns: only the cost of the chunk is wanted.
-      cost += isRobustified() ? robustify(first, count, residuals, jacobian_.block(0, 0, residuals.size(), 0))
-                              : residuals.squaredNorm();
+    for (size_t partition = 0; partition < partitioning_.num_partitions; ++partition) {
+      cost += partials_.get()[partition * partial_stride_];
     }
     return cost;
   }
 
   void computeLinearSystem(const T* x, T* JTJ, T* JTb, T& cost) final {
-    model_.setState(x);
-    prepareJacobian(x);
-
-    Eigen::Map<MatrixT> hessian(JTJ, tangent_dim_, tangent_dim_);
-    Eigen::Map<VectorT> gradient(JTb, tangent_dim_);
-    hessian.setZero();
-    gradient.setZero();
-    // Only the leading active_param_dim_ block is populated; the trailing
-    // rows/columns (tangent dimensions this cost does not depend on) stay zero.
-    auto active_hessian = hessian.topLeftCorner(active_param_dim_, active_param_dim_);
-    auto active_gradient = gradient.head(active_param_dim_);
-
+    requireSupportedStrategy();
+    std::fill_n(JTJ, tangent_dim_ * tangent_dim_, T{0});
+    std::fill_n(JTb, tangent_dim_, T{0});
     cost = T{0};
-    for (size_t first = 0; first < num_elements_; first += chunk_elements_) {
-      const size_t count = std::min(chunk_elements_, num_elements_ - first);
-      auto residuals = residuals_.head(count * observation_dim_);
-      auto jacobian = jacobian_.topRows(count * observation_dim_);
-
-      evaluateResiduals(model_, x, first, count, residuals.data());
-      evaluateJacobian(x, first, count, residuals, jacobian);
-      cost += isRobustified() ? robustify(first, count, residuals, jacobian) : residuals.squaredNorm();
-      accumulateNormalEquations<T>(jacobian, residuals, active_hessian, active_gradient);
+    if (num_elements_ == 0) {
+      return;
     }
+    launch<true>(x);
 
-    // The accumulation fills the lower triangle only.
-    active_hessian.template triangularView<Eigen::StrictlyUpper>() = active_hessian.transpose();
+    // Only the leading active_param_dim_ block is populated; the trailing rows/columns (tangent
+    // dimensions this cost does not depend on) stay zero. The partials hold the lower triangle.
+    const size_t params = active_param_dim_;
+    for (size_t partition = 0; partition < partitioning_.num_partitions; ++partition) {
+      const T* partial = partials_.get() + partition * partial_stride_;
+      cost += partial[0];
+      for (size_t a = 0; a < params; ++a) {
+        JTb[a] += partial[1 + a];
+        for (size_t b = a; b < params; ++b) {
+          JTJ[b + a * tangent_dim_] += partial[1 + params + b + a * params];
+        }
+      }
+    }
+    for (size_t a = 0; a < params; ++a) {
+      for (size_t b = a + 1; b < params; ++b) {
+        JTJ[a + b * tangent_dim_] = JTJ[b + a * tangent_dim_];
+      }
+    }
   }
 
   /**
@@ -85,9 +137,20 @@ class ChunkedCost : public ICost<T> {
    * (optionally whitened) squared residual norm. Passing nullptr (default)
    * disables it, falling back to plain least-squares. Shared ownership
    * allows the same kernel to be reused/adapted (e.g. online scale updates,
-   * a la KISS-ICP) across multiple costs.
+   * a la KISS-ICP) across multiple costs: its descriptor() is read at every
+   * evaluation, so setScale() takes effect on the next one.
+   *
+   * @throws std::invalid_argument if the loss is a custom one (descriptor() of kind Custom): the
+   *   kernel evaluates the built-in losses only.
    */
-  void setLossFunction(std::shared_ptr<LossFunction<T>> loss) { loss_ = std::move(loss); }
+  void setLossFunction(std::shared_ptr<LossFunction<T>> loss) {
+    if (loss && loss->descriptor().kind == LossKind::Custom) {
+      throw std::invalid_argument(
+          "moptim: this cost evaluates its loss in a kernel, which supports the built-in losses only "
+          "(LossFunction::descriptor() of a custom loss is LossKind::Custom)");
+    }
+    loss_ = std::move(loss);
+  }
 
   /**
    * @brief Set a scalar, isotropic weight per element (w_i = 1/sigma_i^2).
@@ -95,10 +158,14 @@ class ChunkedCost : public ICost<T> {
    * Clears any previously set information matrices.
    * `weights.size()` must equal the number of elements; an empty vector removes the weights.
    */
-  void setWeights(std::vector<T> weights) {
+  void setWeights(const std::vector<T>& weights) {
     assert(weights.empty() || weights.size() == num_elements_);
-    weights_ = std::move(weights);
-    information_factors_.resize(0, 0);
+    information_factors_.reset();
+    weights_.reset();
+    if (!weights.empty()) {
+      weights_ = detail::makeSharedArray<T>(context_->queue(), weights.size());
+      std::copy(weights.begin(), weights.end(), weights_.get());
+    }
   }
 
   /**
@@ -111,72 +178,44 @@ class ChunkedCost : public ICost<T> {
    */
   void setInformation(const std::vector<MatrixT>& information) {
     assert(information.empty() || information.size() == num_elements_);
-    weights_.clear();
-    information_factors_.resize(observation_dim_ * observation_dim_, information.size());
+    weights_.reset();
+    information_factors_.reset();
+    if (information.empty()) {
+      return;
+    }
+    const size_t entries = observation_dim_ * observation_dim_;
+    information_factors_ = detail::makeSharedArray<T>(context_->queue(), entries * information.size());
     for (size_t e = 0; e < information.size(); ++e) {
       assert(static_cast<size_t>(information[e].rows()) == observation_dim_ &&
              static_cast<size_t>(information[e].cols()) == observation_dim_);
-      Eigen::Map<MatrixT>(information_factors_.col(e).data(), observation_dim_, observation_dim_) =
+      Eigen::Map<MatrixT>(information_factors_.get() + e * entries, observation_dim_, observation_dim_) =
           information[e].llt().matrixL();
     }
   }
 
+  const std::shared_ptr<ExecutionContext>& context() const { return context_; }
+
  protected:
   ChunkedCost(const T* input, const T* observations, size_t num_elements, size_t input_dim, size_t observation_dim,
-              typename ICost<T>::ParamSpace space, Model model, size_t active_param_dim)
+              typename ICost<T>::ParamSpace space, Model model, size_t active_param_dim,
+              std::shared_ptr<ExecutionContext> context)
       : ICost<T>(input_dim, observation_dim, std::move(space), num_elements, active_param_dim),
-        model_(std::move(model)),
+        context_(context ? std::move(context) : defaultContext()),
+        pending_model_(std::move(model)),
         input_(input),
         observations_(observations),
-        chunk_elements_(chunkElements(num_elements_, observation_dim_, active_param_dim_)),
-        residuals_(chunk_elements_ * observation_dim_),
-        scales_(chunk_elements_ * observation_dim_),
-        jacobian_(chunk_elements_ * observation_dim_, active_param_dim_) {}
-
-  /// Called once per computeLinearSystem(), after the model's state was set to `x` and before the
-  /// first chunk.
-  virtual void prepareJacobian(const T* /*x*/) {}
-
-  /**
-   * @brief Writes the jacobian rows of elements [first, first + count).
-   *
-   * @param residuals Residuals of those elements at `x`, `count * observation_dim` entries.
-   * @param jacobian `count * observation_dim` rows by `active_param_dim` columns. Row
-   *   `e * observation_dim + i` receives the derivatives of residual `i` of element `first + e`
-   *   with respect to the step (the parameters themselves when they are Euclidean).
-   */
-  virtual void evaluateJacobian(const T* x, size_t first, size_t count, const Eigen::Ref<const VectorT>& residuals,
-                                Eigen::Ref<MatrixT> jacobian) = 0;
-
-  /// Evaluates `model` on elements [first, first + count), writing `count * observation_dim`
-  /// residuals. `x` is the parameter vector `model` had its state set to.
-  ///
-  /// `residuals` must be a buffer of this cost, which nothing else points into. Declaring it so
-  /// lets the compiler keep the model's state in registers across the loop instead of reloading
-  /// it after every residual is stored. The function is kept out of line because GCC only honours
-  /// that promise for the parameters of the function it is compiling, not once the loop has been
-  /// inlined into its caller.
-  [[gnu::noinline]] void evaluateResiduals(Model& model, const T* x, size_t first, size_t count,
-                                           T* __restrict__ residuals) const {
-    const T* input = input_ + first * input_dim_;
-    const T* observation = observations_ + first * observation_dim_;
-    for (size_t e = 0; e < count; ++e) {
-      model.residual(x, input, observation, residuals);
-      input += input_dim_;
-      observation += observation_dim_;
-      residuals += observation_dim_;
+        partitioning_(detail::makePartitioning(num_elements_, observation_dim_, active_param_dim_, sizeof(T))),
+        partial_stride_(detail::partialStride(sizeof(T), active_param_dim_)),
+        slice_layout_(detail::makeSliceLayout(sizeof(T), partitioning_.chunk_elements * observation_dim_,
+                                              active_param_dim_, observation_dim_, sizeof(Model), alignof(Model))) {
+    // A device that cannot read the caller's memory gets its own copy of the data, once.
+    if (num_elements_ > 0 && !context_->hostAccessible()) {
+      input_copy_ = copyToDevice(input, num_elements_ * input_dim_);
+      observations_copy_ = copyToDevice(observations, num_elements_ * observation_dim_);
+      input_ = input_copy_.get();
+      observations_ = observations_copy_.get();
     }
   }
-
-  const T* input(size_t element) const { return input_ + element * input_dim_; }
-  const T* observation(size_t element) const { return observations_ + element * observation_dim_; }
-
-  /// Largest number of residual rows evaluateJacobian() is asked for at once.
-  size_t chunkRows() const { return chunk_elements_ * observation_dim_; }
-
-  /// True if all the elements fit in one chunk, so evaluateJacobian() is called at most once per
-  /// linear system.
-  bool isSingleChunk() const { return num_elements_ <= chunk_elements_; }
 
   using ICost<T>::input_dim_;
   using ICost<T>::observation_dim_;
@@ -185,109 +224,117 @@ class ChunkedCost : public ICost<T> {
   using ICost<T>::num_elements_;
   using ICost<T>::active_param_dim_;
 
-  Model model_;
-
  private:
-  // Budget for the residual and jacobian block of one chunk. It leaves room in a 32 KiB L1 data
-  // cache, the smallest in common use, for the chunk's inputs and observations.
-  static constexpr size_t kChunkBytes = 16 * 1024;
+  static constexpr detail::ModelAccess kAccess = detail::modelAccess<Policy, Model>();
 
-  static size_t chunkElements(size_t num_elements, size_t observation_dim, size_t active_param_dim) {
-    const size_t bytes_per_element = observation_dim * (active_param_dim + 1) * sizeof(T);
-    const size_t fitting = kChunkBytes / std::max<size_t>(bytes_per_element, 1);
-    return std::clamp<size_t>(fitting, 1, std::max<size_t>(num_elements, 1));
+  detail::UsmPtr<T> copyToDevice(const T* host, size_t count) {
+    sycl::queue& queue = context_->queue();
+    detail::UsmPtr<T> device = detail::makeDeviceArray<T>(queue, count);
+    queue.memcpy(device.get(), host, count * sizeof(T)).wait();
+    return device;
   }
 
-  /// True if any noise model or robust kernel is configured. Checked once per chunk, so the default
-  /// (unconfigured) case never touches the per-element robust path.
-  bool isRobustified() const { return loss_ || !weights_.empty() || information_factors_.cols() > 0; }
-
-  /**
-   * @brief Applies the noise model and the robust kernel to a chunk in place and returns its cost.
-   *
-   * With W_e the whitening of element e (sqrt of its weight, or L_e^T for an information matrix
-   * L_e L_e^T) and s_e = ||W_e r_e||^2, the element costs rho(s_e), and its residual block and
-   * jacobian rows become sqrt(rho'(s_e)) * W_e * (r_e, J_e): the first-order (IRLS) correction.
-   * Without a kernel rho(s) = s.
-   *
-   * `jacobian` may have no columns, in which case only the cost is computed and the residuals are
-   * left whitened but unscaled.
-   */
-  T robustify(size_t first, size_t count, Eigen::Ref<VectorT> residuals, Eigen::Ref<MatrixT> jacobian) {
-    const Eigen::Index dim = observation_dim_;
-    const bool has_information = information_factors_.cols() > 0;
-    const bool has_weights = !weights_.empty();
-
-    T cost{0};
-    for (size_t e = 0; e < count; ++e) {
-      T* residual = residuals.data() + e * dim;
-      if (has_information) {
-        const T* factor = information_factors_.col(first + e).data();
-        whiten(factor, dim, residual);
-        for (Eigen::Index col = 0; col < jacobian.cols(); ++col) {
-          whiten(factor, dim, jacobian.col(col).data() + e * dim);
-        }
-      }
-
-      T squared_norm{0};
-      for (Eigen::Index i = 0; i < dim; ++i) {
-        squared_norm += residual[i] * residual[i];
-      }
-
-      T scale{1};
-      if (has_weights) {
-        const T weight = weights_[first + e];
-        squared_norm *= weight;
-        scale = std::sqrt(weight);
-      }
-      if (loss_) {
-        T rho[3];
-        loss_->evaluate(squared_norm, rho);
-        cost += rho[0];
-        scale *= std::sqrt(rho[1]);
-      } else {
-        cost += squared_norm;
-      }
-      std::fill_n(scales_.data() + e * dim, dim, scale);
-    }
-
-    // The scales of all the rows of the chunk are applied at once, one vectorized pass per column.
-    if (jacobian.cols() > 0 && (has_weights || loss_)) {
-      const auto scales = scales_.head(residuals.size()).array();
-      residuals.array() *= scales;
-      for (Eigen::Index col = 0; col < jacobian.cols(); ++col) {
-        jacobian.col(col).array() *= scales;
-      }
-    }
-    return cost;
-  }
-
-  /// column <- L^T * column, in place, for the `dim` entries of one element. `factor` is the
-  /// column-major lower factor L. Row i of L^T only reads entries >= i, so going down the rows
-  /// never reads an entry that was already overwritten.
-  static void whiten(const T* factor, Eigen::Index dim, T* column) {
-    for (Eigen::Index row = 0; row < dim; ++row) {
-      T sum{0};
-      for (Eigen::Index k = row; k < dim; ++k) {
-        sum += factor[k + row * dim] * column[k];
-      }
-      column[row] = sum;
+  void requireSupportedStrategy() const {
+    if (context_->strategy() == AssemblyStrategy::WorkGroup) {
+      throw std::invalid_argument("not implemented yet");
     }
   }
 
-  const T* input_;
+  /// Allocates what a launch of `width` work-items needs and was not allocated yet: everything on the
+  /// first call, more scratch slices if the width grew.
+  void ensureState(size_t width) {
+    sycl::queue& queue = context_->queue();
+    if (model_ == nullptr) {
+      detail::checkModelLayout<Model>(*context_);
+      model_storage_ =
+          detail::makeSharedArray<unsigned char>(queue, sizeof(Model), detail::sliceAlignment(alignof(Model)));
+      model_ = ::new (static_cast<void*>(model_storage_.get())) Model(std::move(*pending_model_));
+      pending_model_.reset();
+
+      x_ = detail::makeSharedArray<T>(queue, param_dim_);
+      counter_ = detail::makeSharedArray<size_t>(queue, detail::kCacheLine / sizeof(size_t));  // a cache line of its own
+      partials_ = detail::makeSharedArray<T>(queue, partitioning_.num_partitions * partial_stride_);
+      args_ = detail::makeSharedArray<detail::KernelArgs<T>>(queue, 1);
+      ::new (static_cast<void*>(args_.get())) detail::KernelArgs<T>();
+    }
+    if (width > scratch_slices_) {
+      scratch_ = detail::makeSharedArray<unsigned char>(queue, width * slice_layout_.stride,
+                                                        detail::sliceAlignment(alignof(Model)));
+      scratch_slices_ = width;
+    }
+  }
+
+  /// Everything the kernel reads, as of this evaluation: the loss descriptor is read now so that a
+  /// scale changed between two evaluations is seen.
+  detail::KernelArgs<T> makeArgs() const {
+    detail::KernelArgs<T> args;
+    args.x = x_.get();
+    args.input = input_;
+    args.observations = observations_;
+    args.num_elements = num_elements_;
+    args.input_dim = input_dim_;
+    args.observation_dim = observation_dim_;
+    args.params = active_param_dim_;
+    args.partitioning = partitioning_;
+    args.weights = weights_.get();
+    args.information_factors = information_factors_.get();
+    if (loss_) {
+      args.loss = loss_->descriptor();
+      args.has_loss = true;
+    }
+    args.scratch = scratch_.get();
+    args.slice = slice_layout_;
+    args.partials = partials_.get();
+    args.partial_stride = partial_stride_;
+    args.counter = counter_.get();
+    return args;
+  }
+
+  /// Sets the model's state to `x` and runs the one launch of an evaluation.
+  template <bool kLinearSystem>
+  void launch(const T* x) {
+    const size_t width = kAccess == detail::ModelAccess::Exclusive ? 1 : context_->launchWidth(partitioning_.num_partitions);
+    ensureState(width);
+
+    std::copy_n(x, param_dim_, x_.get());
+    model_->setState(x_.get());
+    *args_ = makeArgs();
+    *counter_ = 0;
+
+    const detail::KernelArgs<T>* args = args_.get();
+    Model* model = model_;
+    detail::launch(*context_, width, [args, model](sycl::nd_item<1> item) {
+      sycl::atomic_ref<size_t, sycl::memory_order::relaxed, sycl::memory_scope::device> counter(*args->counter);
+      detail::runWorkItem<Policy, Model, T, kLinearSystem>(*args, model, item.get_group_linear_id(),
+                                                           [&counter] { return counter.fetch_add(size_t{1}); });
+    });
+  }
+
+  std::shared_ptr<ExecutionContext> context_;
+  std::optional<Model> pending_model_;  ///< Until the first evaluation moves it into USM.
+  Model* model_ = nullptr;              ///< In USM (model_storage_), constructed lazily, destroyed by ~ChunkedCost().
+
+  const T* input_;  ///< The caller's array, or the device copy.
   const T* observations_;
+  detail::UsmPtr<T> input_copy_;
+  detail::UsmPtr<T> observations_copy_;
 
-  const size_t chunk_elements_;
-  VectorT residuals_;  ///< Residuals of the current chunk.
-  VectorT scales_;     ///< Per-row scale of the current chunk, used by robustify().
-  MatrixT jacobian_;   ///< Jacobian rows of the current chunk, one column per active parameter.
+  const detail::Partitioning partitioning_;
+  const size_t partial_stride_;
+  const detail::SliceLayout slice_layout_;
 
   std::shared_ptr<LossFunction<T>> loss_;
-  std::vector<T> weights_;
-  /// Column e holds the lower Cholesky factor of element e's information matrix, in column-major
-  /// order. No columns when no information matrices are set.
-  MatrixT information_factors_;
+  detail::UsmPtr<T> weights_;               ///< One per element, or null.
+  detail::UsmPtr<T> information_factors_;   ///< observation_dim^2 per element (lower Cholesky factor), or null.
+
+  // Buffers of the launches, allocated on first use.
+  detail::UsmPtr<unsigned char> model_storage_;
+  detail::UsmPtr<T> x_;
+  detail::UsmPtr<size_t> counter_;
+  detail::UsmPtr<T> partials_;
+  detail::UsmPtr<detail::KernelArgs<T>> args_;
+  detail::UsmPtr<unsigned char> scratch_;
+  size_t scratch_slices_ = 0;
 };
 
 }  // namespace moptim

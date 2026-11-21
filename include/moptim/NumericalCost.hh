@@ -8,8 +8,9 @@
 #include <utility>
 #include <vector>
 
-#include "moptim/ChunkedCost.hh"
+#include "moptim/ExecutionContext.hh"
 #include "moptim/IModel.hh"
+#include "moptim/detail/HostChunkedCost.hh"
 
 namespace moptim {
 
@@ -38,11 +39,15 @@ enum class DifferenceScheme {
  * in place.
  *
  * Use it through the NumericalCostForwardEuler and NumericalCostCentral aliases.
+ *
+ * It runs on the calling thread, not in a kernel (detail::HostChunkedCost). The trailing
+ * `ExecutionContext` constructor argument is accepted so that every cost is built the same way; it is
+ * not used yet.
  */
 template <class Model, class T, DifferenceScheme Scheme>
   requires NumericalModel<Model, T>
-class NumericalCost : public ChunkedCost<Model, T> {
-  using Base = ChunkedCost<Model, T>;
+class NumericalCost : public detail::HostChunkedCost<Model, T> {
+  using Base = detail::HostChunkedCost<Model, T>;
 
  public:
   using typename Base::MatrixT;
@@ -50,19 +55,22 @@ class NumericalCost : public ChunkedCost<Model, T> {
 
   /// Euclidean parameters: `x` has `param_dim` entries.
   NumericalCost(const T* input, const T* observations, size_t num_elements, size_t input_dim, size_t observation_dim,
-                size_t param_dim, Model model = Model{}, size_t active_param_dim = 0)
+                size_t param_dim, Model model = Model{}, size_t active_param_dim = 0,
+                std::shared_ptr<ExecutionContext> context = nullptr)
       : NumericalCost(input, observations, num_elements, input_dim, observation_dim, Base::euclideanSpace(param_dim),
-                      std::move(model), active_param_dim) {}
+                      std::move(model), active_param_dim, std::move(context)) {}
 
   /// Parameters on a manifold. `active_param_dim` counts leading tangent dimensions.
   NumericalCost(const T* input, const T* observations, size_t num_elements, size_t input_dim, size_t observation_dim,
-                std::shared_ptr<const IManifold<T>> manifold, Model model = Model{}, size_t active_param_dim = 0)
+                std::shared_ptr<const IManifold<T>> manifold, Model model = Model{}, size_t active_param_dim = 0,
+                std::shared_ptr<ExecutionContext> context = nullptr)
       : NumericalCost(input, observations, num_elements, input_dim, observation_dim, Base::spaceOf(std::move(manifold)),
-                      std::move(model), active_param_dim) {}
+                      std::move(model), active_param_dim, std::move(context)) {}
 
  private:
   NumericalCost(const T* input, const T* observations, size_t num_elements, size_t input_dim, size_t observation_dim,
-                typename Base::ParamSpace space, Model model, size_t active_param_dim)
+                typename Base::ParamSpace space, Model model, size_t active_param_dim,
+                std::shared_ptr<ExecutionContext> /*context*/)
       : Base(input, observations, num_elements, input_dim, observation_dim, std::move(space), std::move(model),
              active_param_dim),
         point_models_(this->isSingleChunk() ? 0 : kPointsPerParam * active_param_dim_, this->model_),

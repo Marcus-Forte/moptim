@@ -187,6 +187,34 @@ TEST(ChunkedCost, AnalyticalMatchesDenseReference) {
   }
 }
 
+// Element counts that span many chunks and several partitions of the kernel (a partition is four
+// chunks, 816 elements for this model), checked against the same dense reference.
+TEST(ChunkedCost, AnalyticalMatchesDenseReferenceOverManyPartitions) {
+  const Eigen::VectorXd x = linearizationPoint();
+
+  for (const size_t num_elements : {size_t{20000}, size_t{50001}}) {
+    const Dataset data = makeDataset(num_elements);
+    for (const Noise noise : kNoiseModels) {
+      for (const bool robust : {false, true}) {
+        SCOPED_TRACE(testing::Message() << "elements=" << num_elements << " noise=" << name(noise)
+                                        << " robust=" << robust);
+        const std::shared_ptr<LossFunction<double>> loss = robust ? std::make_shared<HuberLoss<double>>(1.5) : nullptr;
+
+        AnalyticalCost<CurveModel, double> cost(data.input.data(), data.observations.data(), num_elements, kInputDim,
+                                                kObservationDim, kParamDim);
+        configure(cost, data, noise, loss);
+
+        const LinearSystem expected = referenceSystem(data, x, noise, loss.get());
+        const LinearSystem actual = linearSystem(cost, x);
+        expectSameSystem(actual, expected, 1e-12);
+        EXPECT_EQ(actual.jtj, actual.jtj.transpose());
+        EXPECT_NEAR(cost.computeCost(x.data()), expected.cost, 1e-12 * (1.0 + expected.cost));
+        EXPECT_EQ(actual.cost, cost.computeCost(x.data()));
+      }
+    }
+  }
+}
+
 TEST(ChunkedCost, NumericalMatchesDenseReference) {
   const Eigen::VectorXd x = linearizationPoint();
 

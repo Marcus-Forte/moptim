@@ -55,17 +55,18 @@ set(MOPTIM_SYCL_FLAGS -fsycl -fsycl-targets=${SYCL_TARGETS})
 # translation unit that links moptim whatever its include order, and to every target of SYCL_TARGETS:
 # `-Xsycl-target-frontend=<triple>` passes an option to the device front end of that target only.
 # -ffp-contract=fast (GCC's default; clang's is `on`) lets the device pass contract a*b+c across
-# statements, which the Phase 0 spike measured at ~12% on the kernel.
+# statements, which measured 4 to 19% faster than `on` on the analytical costs (MOPTIM_FP_CONTRACT).
 # Fixed-size Eigen members are shared between the host and the device pass (a model is copied into
 # USM), so their layout must be identical: EIGEN_MAX_STATIC_ALIGN_BYTES=16 on both passes.
 # SHELL: keeps CMake from de-duplicating the repeated -Xsycl-target-frontend halves.
+set(MOPTIM_FP_CONTRACT "fast" CACHE STRING "Value of -ffp-contract for moptim and its consumers (fast, on or off)")
 set(MOPTIM_DEVICE_ONLY_FLAGS "")
 foreach(triple IN LISTS MOPTIM_SYCL_TARGET_LIST)
   list(APPEND MOPTIM_DEVICE_ONLY_FLAGS "SHELL:-Xsycl-target-frontend=${triple} -DEIGEN_DONT_VECTORIZE")
 endforeach()
-target_compile_options(moptim PUBLIC ${MOPTIM_SYCL_FLAGS} -ffp-contract=fast ${MOPTIM_DEVICE_ONLY_FLAGS})
+target_compile_options(moptim PUBLIC ${MOPTIM_SYCL_FLAGS} -ffp-contract=${MOPTIM_FP_CONTRACT} ${MOPTIM_DEVICE_ONLY_FLAGS})
 target_compile_definitions(moptim PUBLIC EIGEN_MAX_STATIC_ALIGN_BYTES=16)
-target_link_options(moptim PUBLIC ${MOPTIM_SYCL_FLAGS} -ffp-contract=fast)
+target_link_options(moptim PUBLIC ${MOPTIM_SYCL_FLAGS} -ffp-contract=${MOPTIM_FP_CONTRACT})
 if(MOPTIM_NATIVE_CPU_ARCH)
   target_link_options(moptim PUBLIC "SHELL:-Xsycl-target-frontend=native_cpu -mcpu=${MOPTIM_NATIVE_CPU_ARCH}")
 endif()
