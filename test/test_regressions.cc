@@ -1,5 +1,4 @@
-// Regression checks that were written for the removed SYCL cost (NumericalCostSycl), ported to the
-// numerical forward-difference cost. Where there is a jacobian, the numerical result is compared with
+// Regression checks for the numerical forward-difference cost. Where there is a jacobian, the numerical result is compared with
 // the analytical one, which is exact for these models.
 #include <gtest/gtest.h>
 
