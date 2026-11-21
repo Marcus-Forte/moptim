@@ -84,32 +84,39 @@ struct LaunchAccess {
 namespace detail {
 
 /**
- * Runs `kernel` (a callable taking `sycl::nd_item<1>`) on `work_groups` work-groups of one
- * work-item each, and waits for it. Rethrows asynchronous errors. One launch costs about 10 to 25
- * microseconds on native_cpu, and a launch of one work-group runs on the calling thread. Does
- * nothing for `work_groups == 0`. The kernel is named `Name`: one that is instantiated with a type of
- * the caller puts `CurrentTuId` (detail/KernelName.hh) in its name, or same-named types of other
- * translation units would share a kernel.
+ * Starts `kernel` (a callable taking `sycl::nd_item<1>`) on `work_groups` work-groups of one
+ * work-item each and returns without waiting; complete() (or a later wait on the queue) finishes it.
+ * The kernel is named `Name`: one that is instantiated with a type of the caller puts `CurrentTuId`
+ * (detail/KernelName.hh) in its name, or same-named types of other translation units would share a
+ * kernel. Counted as one launch. Does nothing for `work_groups == 0`. On native_cpu a launch of one
+ * work-group runs inside this call, on the calling thread.
  */
 template <class Name, class Kernel>
-void launchNamed(ExecutionContext& context, size_t work_groups, Kernel kernel) {
+void submitNamed(ExecutionContext& context, size_t work_groups, Kernel kernel) {
   if (work_groups == 0) {
     return;
   }
   LaunchAccess::count(context);
   sycl::ext::oneapi::experimental::nd_launch<Name>(context.queue(), sycl::nd_range<1>{work_groups, 1}, kernel);
-  context.queue().wait_and_throw();
+}
+
+/// Waits for everything submitted on the context's queue and rethrows asynchronous errors.
+inline void complete(ExecutionContext& context) { context.queue().wait_and_throw(); }
+
+/// submitNamed() followed by complete(). One launch costs about 10 to 25 microseconds on native_cpu.
+template <class Name, class Kernel>
+void launchNamed(ExecutionContext& context, size_t work_groups, Kernel kernel) {
+  if (work_groups == 0) {
+    return;
+  }
+  submitNamed<Name>(context, work_groups, kernel);
+  complete(context);
 }
 
 /// launchNamed() with the kernel named after its own type (for kernels of the library's own types).
 template <class Kernel>
 void launch(ExecutionContext& context, size_t work_groups, Kernel kernel) {
-  if (work_groups == 0) {
-    return;
-  }
-  LaunchAccess::count(context);
-  sycl::ext::oneapi::experimental::nd_launch(context.queue(), sycl::nd_range<1>{work_groups, 1}, kernel);
-  context.queue().wait_and_throw();
+  launchNamed<Kernel>(context, work_groups, kernel);
 }
 
 }  // namespace detail

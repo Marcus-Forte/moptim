@@ -41,6 +41,11 @@ typename LevenbergMarquardt<T>::StepResult LevenbergMarquardt<T>::stepImpl(T* x,
     linear_system_cost_ = this->assembleLinearSystem(x, iteration);
     diagonal_ = this->hessian_.diagonal();
     linear_system_is_current_ = true;
+    spec_event_pending_ = false;
+  } else if (spec_event_pending_) {
+    // The system of the trial that was accepted last iteration is used now.
+    this->notifyLinearSystem(iteration, spec_event_cost_, spec_event_elapsed_);
+    spec_event_pending_ = false;
   }
   const T initial_cost = linear_system_cost_;
 
@@ -87,7 +92,21 @@ typename LevenbergMarquardt<T>::StepResult LevenbergMarquardt<T>::stepImpl(T* x,
     }
 
     this->applyStep(x, delta_.data(), trial_x_.data());
-    const T trial_cost = this->evaluateCost(trial_x_.data());
+    T trial_cost;
+    std::chrono::nanoseconds assembly_elapsed{};
+    if (speculative_) {
+      if (spec_hessian_.size() == 0) {
+        spec_hessian_.resize(this->tangent_dim_, this->tangent_dim_);
+        spec_gradient_.resize(this->tangent_dim_);
+      }
+      const auto assembly_start = this->now();
+      trial_cost = this->assembleLinearSystemInto(trial_x_.data(), spec_hessian_, spec_gradient_);
+      if (this->observer_) {
+        assembly_elapsed = Clock::now() - assembly_start;
+      }
+    } else {
+      trial_cost = this->evaluateCost(trial_x_.data());
+    }
     const T rho = (initial_cost - trial_cost) / delta_.dot(lambda * delta_ - this->gradient_);
 
     if (rho < 0 || std::isnan(rho)) {
@@ -104,7 +123,19 @@ typename LevenbergMarquardt<T>::StepResult LevenbergMarquardt<T>::stepImpl(T* x,
     }
 
     x_map = trial_x_;
-    linear_system_is_current_ = false;
+    if (speculative_) {
+      // The trial's system is the one at the new x.
+      this->hessian_.swap(spec_hessian_);
+      this->gradient_.swap(spec_gradient_);
+      diagonal_ = this->hessian_.diagonal();
+      linear_system_cost_ = trial_cost;
+      linear_system_is_current_ = true;
+      spec_event_pending_ = true;
+      spec_event_cost_ = trial_cost;
+      spec_event_elapsed_ = assembly_elapsed;
+    } else {
+      linear_system_is_current_ = false;
+    }
     *lambda_ *= static_cast<T>(std::max(1.0 / 3.0, 1 - std::pow(2 * rho - 1, 3)));
     emit(Phase::ACCEPTED, Status::STEP_OK, trial_cost, rho);
     return {Status::STEP_OK, trial_cost};
@@ -119,6 +150,7 @@ template <class T>
 void LevenbergMarquardt<T>::onOptimizeStart() {
   lambda_.reset();
   linear_system_is_current_ = false;
+  spec_event_pending_ = false;
 }
 
 template <class T>

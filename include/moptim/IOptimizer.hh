@@ -62,8 +62,12 @@ class IOptimizer {
     assert(cost && cost->manifold() == manifold_.get() && cost->paramDim() == ambient_dim_ &&
            cost->tangentDim() == tangent_dim_);
     costs_.push_back(cost);
+    workspaces_.emplace_back(tangent_dim_);
   }
-  void clearCosts() { costs_.clear(); }
+  void clearCosts() {
+    costs_.clear();
+    workspaces_.clear();
+  }
 
   /// Entries of `x`.
   size_t ambientDim() const { return ambient_dim_; }
@@ -104,6 +108,22 @@ class IOptimizer {
   /// Sums the linear system of every cost at `x` into hessian_ and gradient_, reports it to the
   /// observer and returns the total cost.
   T assembleLinearSystem(const T* x, size_t iteration);
+
+  /// The same sum into `hessian` and `gradient` (tangent_dim_ square and tangent_dim_ entries), without
+  /// telling the observer. Every cost is submitted before the first is waited for, and the results are
+  /// added in the order of the costs, so the sum is the one a sequential evaluation gives.
+  T assembleLinearSystemInto(const T* x, MatrixT& hessian, VectorT& gradient);
+
+  /// Reports an assembled linear system to the observer (if any).
+  void notifyLinearSystem(size_t iteration, T cost, std::chrono::nanoseconds elapsed) {
+    if (observer_) {
+      LinearSystemEvent<T> event;
+      event.iteration = iteration;
+      event.cost = cost;
+      event.elapsed = elapsed;
+      observer_->onLinearSystem(event);
+    }
+  }
 
   /// Total cost at `x`.
   T evaluateCost(const T* x);
@@ -147,12 +167,27 @@ class IOptimizer {
         tangent_dim_(tangent_dim),
         manifold_(std::move(manifold)),
         hessian_(tangent_dim, tangent_dim),
-        gradient_(tangent_dim),
-        cost_hessian_(tangent_dim, tangent_dim),
-        cost_gradient_(tangent_dim) {}
+        gradient_(tangent_dim) {}
 
-  MatrixT cost_hessian_;  ///< Linear system of a single cost, before it is added to the sum.
-  VectorT cost_gradient_;
+  /// Where one cost writes its results between its submit and its wait; sized once, in addCost().
+  struct CostWorkspace {
+    explicit CostWorkspace(size_t tangent_dim) : hessian(tangent_dim, tangent_dim), gradient(tangent_dim) {}
+    MatrixT hessian;
+    VectorT gradient;
+    T cost{0};
+  };
+
+  std::vector<CostWorkspace> workspaces_;  ///< One per entry of costs_.
+
+  /// Waits for every cost, so that no submitted evaluation outlives the workspace it writes into.
+  void settleCosts() noexcept {
+    for (const auto& cost : costs_) {
+      try {
+        cost->wait();
+      } catch (...) {  // NOLINT: the error that got us here is the one that matters
+      }
+    }
+  }
 };
 
 template <class T>
@@ -196,34 +231,56 @@ Result<T> IOptimizer<T>::optimize(T* x) {
 template <class T>
 T IOptimizer<T>::assembleLinearSystem(const T* x, size_t iteration) {
   const auto start = now();
-
-  hessian_.setZero();
-  gradient_.setZero();
-  T total_cost{0};
-  for (const auto& cost : costs_) {
-    T cost_value{0};
-    cost->computeLinearSystem(x, cost_hessian_.data(), cost_gradient_.data(), cost_value);
-    hessian_ += cost_hessian_;
-    gradient_ += cost_gradient_;
-    total_cost += cost_value;
-  }
-
+  const T total_cost = assembleLinearSystemInto(x, hessian_, gradient_);
   if (observer_) {
-    LinearSystemEvent<T> event;
-    event.iteration = iteration;
-    event.cost = total_cost;
-    event.elapsed = Clock::now() - start;
-    observer_->onLinearSystem(event);
+    notifyLinearSystem(iteration, total_cost, Clock::now() - start);
+  }
+  return total_cost;
+}
+
+template <class T>
+T IOptimizer<T>::assembleLinearSystemInto(const T* x, MatrixT& hessian, VectorT& gradient) {
+  try {
+    for (size_t i = 0; i < costs_.size(); ++i) {
+      CostWorkspace& workspace = workspaces_[i];
+      costs_[i]->submitLinearSystem(x, workspace.hessian.data(), workspace.gradient.data(), &workspace.cost);
+    }
+    for (const auto& cost : costs_) {
+      cost->wait();
+    }
+  } catch (...) {
+    settleCosts();
+    throw;
   }
 
+  hessian.setZero();
+  gradient.setZero();
+  T total_cost{0};
+  for (const CostWorkspace& workspace : workspaces_) {
+    hessian += workspace.hessian;
+    gradient += workspace.gradient;
+    total_cost += workspace.cost;
+  }
   return total_cost;
 }
 
 template <class T>
 T IOptimizer<T>::evaluateCost(const T* x) {
+  try {
+    for (size_t i = 0; i < costs_.size(); ++i) {
+      costs_[i]->submitCost(x, &workspaces_[i].cost);
+    }
+    for (const auto& cost : costs_) {
+      cost->wait();
+    }
+  } catch (...) {
+    settleCosts();
+    throw;
+  }
+
   T total_cost{0};
-  for (const auto& cost : costs_) {
-    total_cost += cost->computeCost(x);
+  for (const CostWorkspace& workspace : workspaces_) {
+    total_cost += workspace.cost;
   }
   return total_cost;
 }

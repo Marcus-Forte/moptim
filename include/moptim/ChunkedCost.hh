@@ -76,7 +76,8 @@ void checkModelLayout(ExecutionContext& context) {
  * It allocates them on first use and reuses them afterwards.
  *
  * Only the built-in losses (LossFunction::descriptor() other than Custom) can run in a kernel.
- * Not thread-safe: one evaluation at a time per cost.
+ * submitCost() and submitLinearSystem() start the launch without waiting; wait() completes it and
+ * writes the results. Not thread-safe: one evaluation at a time per cost.
  */
 template <class Model, class T, class Policy>
   requires ResidualModel<Model, T>
@@ -85,32 +86,76 @@ class ChunkedCost : public ICost<T> {
   using MatrixT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
   using VectorT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
 
-  ~ChunkedCost() override { destroyModels(); }
+  ~ChunkedCost() override {
+    // The kernel reads this cost's buffers: let it finish before they go.
+    try {
+      wait();
+    } catch (...) {  // NOLINT: nowhere to report it from a destructor
+    }
+    destroyModels();
+  }
 
   T computeCost(const T* x) final {
-    requireSupportedStrategy();
-    if (num_elements_ == 0) {
-      return T{0};
-    }
-    launch<false>(x);
-
     T cost{0};
-    for (size_t partition = 0; partition < partitioning_.num_partitions; ++partition) {
-      cost += partials_.get()[partition * partial_stride_];
-    }
+    submitCost(x, &cost);
+    wait();
     return cost;
   }
 
   void computeLinearSystem(const T* x, T* JTJ, T* JTb, T& cost) final {
+    submitLinearSystem(x, JTJ, JTb, &cost);
+    wait();
+  }
+
+  /// Starts the launch of a cost-only evaluation and returns; wait() writes `cost`. A pending
+  /// evaluation is completed first.
+  void submitCost(const T* x, T* cost) final {
+    wait();
     requireSupportedStrategy();
-    std::fill_n(JTJ, tangent_dim_ * tangent_dim_, T{0});
-    std::fill_n(JTb, tangent_dim_, T{0});
-    cost = T{0};
     if (num_elements_ == 0) {
+      *cost = T{0};
+      return;
+    }
+    launch<false>(x);
+    pending_ = Pending{Pending::Kind::Cost, nullptr, nullptr, cost};
+  }
+
+  void submitLinearSystem(const T* x, T* JTJ, T* JTb, T* cost) final {
+    wait();
+    requireSupportedStrategy();
+    if (num_elements_ == 0) {
+      std::fill_n(JTJ, tangent_dim_ * tangent_dim_, T{0});
+      std::fill_n(JTb, tangent_dim_, T{0});
+      *cost = T{0};
       return;
     }
     launch<true>(x);
+    pending_ = Pending{Pending::Kind::LinearSystem, JTJ, JTb, cost};
+  }
 
+  /// Completes the outstanding evaluation: waits for the launch and adds the partial results, in
+  /// partition order, into the outputs given to submit*().
+  void wait() final {
+    if (pending_.kind == Pending::Kind::None) {
+      return;
+    }
+    const Pending pending = pending_;
+    pending_.kind = Pending::Kind::None;  // even if the wait throws: there is nothing more to wait for
+    detail::complete(*context_);
+
+    T cost{0};
+    if (pending.kind == Pending::Kind::Cost) {
+      for (size_t partition = 0; partition < partitioning_.num_partitions; ++partition) {
+        cost += partials_.get()[partition * partial_stride_];
+      }
+      *pending.cost = cost;
+      return;
+    }
+
+    T* JTJ = pending.JTJ;
+    T* JTb = pending.JTb;
+    std::fill_n(JTJ, tangent_dim_ * tangent_dim_, T{0});
+    std::fill_n(JTb, tangent_dim_, T{0});
     // Only the leading active_param_dim_ block is populated; the trailing rows/columns (tangent
     // dimensions this cost does not depend on) stay zero. The partials hold the lower triangle.
     const size_t params = active_param_dim_;
@@ -129,6 +174,7 @@ class ChunkedCost : public ICost<T> {
         JTJ[a + b * tangent_dim_] = JTJ[b + a * tangent_dim_];
       }
     }
+    *pending.cost = cost;
   }
 
   /**
@@ -143,6 +189,7 @@ class ChunkedCost : public ICost<T> {
    *   kernel evaluates the built-in losses only.
    */
   void setLossFunction(std::shared_ptr<LossFunction<T>> loss) {
+    wait();
     if (loss && loss->descriptor().kind == LossKind::Custom) {
       throw std::invalid_argument(
           "moptim: this cost evaluates its loss in a kernel, which supports the built-in losses only "
@@ -159,6 +206,7 @@ class ChunkedCost : public ICost<T> {
    */
   void setWeights(const std::vector<T>& weights) {
     assert(weights.empty() || weights.size() == num_elements_);
+    wait();
     information_factors_.reset();
     weights_.reset();
     if (!weights.empty()) {
@@ -177,6 +225,7 @@ class ChunkedCost : public ICost<T> {
    */
   void setInformation(const std::vector<MatrixT>& information) {
     assert(information.empty() || information.size() == num_elements_);
+    wait();
     weights_.reset();
     information_factors_.reset();
     if (information.empty()) {
@@ -358,7 +407,7 @@ class ChunkedCost : public ICost<T> {
     return args;
   }
 
-  /// Sets the model's state to `x` and runs the one launch of an evaluation.
+  /// Sets the model's state to `x` and submits the one launch of an evaluation (wait() completes it).
   template <bool kLinearSystem>
   void launch(const T* x) {
     const size_t width = kAccess == detail::ModelAccess::Exclusive ? 1 : context_->launchWidth(partitioning_.num_partitions);
@@ -377,7 +426,7 @@ class ChunkedCost : public ICost<T> {
 
     const detail::KernelArgs<T>* args = args_.get();
     Model* models = models_;
-    detail::launchNamed<detail::ChunkKernelName<kLinearSystem, Policy, T, detail::CurrentTuId>>(
+    detail::submitNamed<detail::ChunkKernelName<kLinearSystem, Policy, T, detail::CurrentTuId>>(
         *context_, width, [args, models](sycl::nd_item<1> item) {
       sycl::atomic_ref<size_t, sycl::memory_order::relaxed, sycl::memory_scope::device> counter(*args->counter);
       detail::runWorkItem<Policy, Model, T, kLinearSystem>(*args, models, item.get_group_linear_id(),
@@ -385,7 +434,17 @@ class ChunkedCost : public ICost<T> {
     });
   }
 
+  /// The evaluation that was submitted and not yet completed by wait(), and where its results go.
+  struct Pending {
+    enum class Kind { None, Cost, LinearSystem };
+    Kind kind = Kind::None;
+    T* JTJ = nullptr;
+    T* JTb = nullptr;
+    T* cost = nullptr;
+  };
+
   std::shared_ptr<ExecutionContext> context_;
+  Pending pending_;
   std::optional<Model> pending_model_;  ///< Until the first evaluation moves it into USM.
   const size_t model_count_;            ///< 1 + kPointsPerParam * active_param_dim.
   Model* models_ = nullptr;             ///< In USM (model_storage_), constructed lazily, destroyed by ~ChunkedCost().

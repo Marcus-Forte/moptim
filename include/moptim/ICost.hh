@@ -72,6 +72,28 @@ class ICost {
    */
   virtual void computeLinearSystem(const T* x, T* JTJ, T* JTb, T& cost) = 0;
 
+  /**
+   * @brief Asynchronous form of computeLinearSystem(): starts the evaluation and returns, possibly
+   * before it is done.
+   *
+   * `x` is read before the call returns, so the caller may reuse it. `JTJ`, `JTb` and `cost` are
+   * written by the time wait() returns, not before, and must stay valid until then. The default
+   * calls computeLinearSystem(), so a cost that does not override it behaves as before.
+   *
+   * At most one evaluation of a cost is outstanding: calling any of computeCost(),
+   * computeLinearSystem(), submitCost() or submitLinearSystem() on a cost with one outstanding first
+   * waits for it (its outputs are then written), then runs the new one.
+   */
+  virtual void submitLinearSystem(const T* x, T* JTJ, T* JTb, T* cost) { computeLinearSystem(x, JTJ, JTb, *cost); }
+
+  /// Asynchronous form of computeCost(); `cost` is written by the time wait() returns. Same rules as
+  /// submitLinearSystem().
+  virtual void submitCost(const T* x, T* cost) { *cost = computeCost(x); }
+
+  /// Completes the outstanding submitLinearSystem() / submitCost(), if any. Does nothing when there
+  /// is none, so it is safe to call more than once. Rethrows an error of the evaluation.
+  virtual void wait() {}
+
   size_t inputDim() const { return input_dim_; }
   size_t observationDim() const { return observation_dim_; }
   /// Entries of `x` (the ambient dimension of the manifold, if any).

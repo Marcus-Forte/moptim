@@ -55,13 +55,14 @@ def load(directory):
 
 def checksum_differences(runs, reference_runs):
     """{key: largest relative difference of that note between any run and the first reference run}.
-    A key missing from the reference counts as infinite."""
+    A key the reference does not print is not compared."""
     expected = reference_runs[0][1]
     worst = {}
     for _, notes in runs:
         for key, value in notes.items():
-            diff = relative_difference(value, expected[key]) if key in expected else float("inf")
-            worst[key] = max(worst.get(key, 0.0), diff)
+            if key not in expected:
+                continue  # a note the reference build does not print (e.g. launches=)
+            worst[key] = max(worst.get(key, 0.0), relative_difference(value, expected[key]))
     return worst
 
 

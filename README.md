@@ -59,6 +59,26 @@ cost keeps the one it was built with.
 All the costs (`AnalyticalCost`, `NumericalCostForwardEuler`, `NumericalCostCentral`) run in kernels. The
 optimizers and the linear solve run on the calling thread.
 
+**Asynchronous evaluation.** `ICost` has `submitLinearSystem(x, JTJ, JTb, &cost)`, `submitCost(x, &cost)` and
+`wait()` next to the synchronous `computeLinearSystem()` / `computeCost()`. A submit reads `x` and starts the
+launch; the outputs are valid after `wait()`, which also adds the partial results. The defaults call the
+synchronous functions, so a user subclass of `ICost` needs no change. A cost has at most one evaluation in
+flight: any call (compute or submit) on a cost with one pending completes it first. The optimizers submit every
+cost before waiting for the first and add the results in the order of the costs, so they give the same bits as
+evaluating the costs one after the other. **On `native_cpu` this does not overlap anything**: a submit runs
+the whole kernel inside the call (also with several work-groups), and `wait()` only does the host reduction (0.5
+to 2.5 microseconds); two costs on two queues take as long submitted together as one after the other. The
+interface is there for devices whose queues really run asynchronously.
+
+**Launch overhead.** Every evaluation is a launch, about 25 microseconds on `native_cpu`, and
+Levenberg-Marquardt makes about two per iteration (a linear system and a trial cost). For a problem of a
+few hundred to a few thousand elements that is most of the time (`bench_moptim lm_optimize/curve_fit` is about
+30 launches for 13 iterations). What helps: put as much as possible in one cost rather than many small ones
+(each cost is a launch per evaluation), turn on `LevenbergMarquardt::setSpeculativeLinearSystems()` (see
+[Speculative linear systems](#speculative-linear-systems)), and prefer analytical to numerical costs only when the
+element loop dominates, since the launch count is the same. The context's `launches()` counter shows what a
+run costs.
+
 ## Key Concepts
 
 ### Cost
@@ -340,6 +360,26 @@ evaluation). Weights and information matrices replace each other, and an empty v
 `LossFunction` subclass of your own (`descriptor().kind == LossKind::Custom`) `setLossFunction()` throws
 `std::invalid_argument`; this holds for the numerical costs too.
 
+### Speculative linear systems
+
+`LevenbergMarquardt::setSpeculativeLinearSystems(true)` (default off) evaluates each trial point with a full
+linear system instead of the cost alone. If the trial is accepted, the next iteration uses that system rather
+than assembling one at the new `x`, so an accepted iteration is one launch instead of two. x, the status, the
+iteration count and the final cost are identical bit for bit with and without it, for the `ChunkedCost`-based
+costs (the cost of their linear system is `computeCost()` bitwise).
+
+Use it when most trials are accepted and the launch overhead matters, e.g. a handful of iterations on a
+problem of a few thousand elements. It loses when many trials are rejected (a rejected trial costs a linear
+system instead of a cost) and on large problems where a linear system is much dearer than a cost, and the
+last accepted iteration of a run assembles a system that is never used. Do not use it with a custom `ICost`
+whose `computeLinearSystem()` cost differs from its `computeCost()`. `bench_moptim --speculative` runs every
+Levenberg-Marquardt row this way; the rows `lm_optimize/two_costs` and `registration_loop/two_costs (25 x 5 it)`
+mimic a scan matcher (a 1200-element point-to-plane cost and a one-element numerical prior on SE(3)).
+
+For observers, `onLinearSystem` still fires once per linear system that is used: for an accepted trial's
+system it fires at the start of the iteration that uses it (with the time its assembly took), and not at all
+for the systems of rejected trials.
+
 ## Observability
 
 The optimizer produces structured telemetry and never formats or writes logs
@@ -421,7 +461,9 @@ build/test/bench_moptim forward    # only the rows whose name contains "forward"
 build/test/bench_moptim --threads 4 --strategy chunked   # configure the default ExecutionContext first
 ```
 
-`--threads N` and `--strategy auto|chunked|workgroup` set the default `ExecutionContext` before
+`--speculative` turns on speculative linear systems for every Levenberg-Marquardt row, and the
+Levenberg-Marquardt rows print `launches=` (kernel launches of one `optimize` call). `--threads N` and
+`--strategy auto|chunked|workgroup` set the default `ExecutionContext` before
 anything runs. The analytical rows read it (`--threads 1` is a single work-group; without the option all
 compute units are used). `--strategy workgroup` makes every cost row throw.
 

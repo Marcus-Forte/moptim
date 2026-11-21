@@ -4,6 +4,7 @@
 //   build/test/bench_moptim            # everything
 //   build/test/bench_moptim forward    # only benchmarks whose name contains "forward"
 //   build/test/bench_moptim --threads 4 --strategy chunked [filter]
+//   build/test/bench_moptim --speculative   # LM rows evaluate trial points with linear systems
 //
 // --threads N and --strategy auto|chunked|workgroup configure the default ExecutionContext before
 // anything runs. The analytical costs read them; the numerical ones run on the host and do not.
@@ -138,6 +139,23 @@ Cloud makeCloud(size_t num_elements) {
 using Clock = std::chrono::steady_clock;
 
 volatile double g_sink = 0.0;
+
+/// --speculative: every Levenberg-Marquardt row evaluates its trial points with linear systems.
+bool g_speculative = false;
+
+template <class Solver>
+void configureSolver(Solver& solver) {
+  solver.setSpeculativeLinearSystems(g_speculative);
+}
+
+/// Kernel launches one `call()` issues on the default context.
+template <class Call>
+unsigned long long launchesOf(Call&& call) {
+  const std::shared_ptr<ExecutionContext> context = defaultContext();
+  const uint64_t before = context->launches();
+  call();
+  return static_cast<unsigned long long>(context->launches() - before);
+}
 
 /// Best wall time of one `call()`, in nanoseconds.
 template <class Call>
@@ -298,18 +316,21 @@ void benchOptimize(const Report& report, const std::string& name, size_t num_ele
   auto cost = std::make_shared<Cost>(cloud.source.data(), cloud.target.data(), num_elements, kInputDim, kObservationDim,
                                      kParamDim);
   LevenbergMarquardt<double> solver(kParamDim);
+  configureSolver(solver);
   solver.addCost(cost);
 
   Eigen::VectorXd x(kParamDim);
   Result<double> result;
-  const double ns = nsPerCall([&] {
+  const auto run = [&] {
     x.setZero();
     result = solver.optimize(x.data());
     g_sink = g_sink + x[0];
-  });
+  };
+  const auto launches = launchesOf(run);
+  const double ns = nsPerCall(run);
   report.row(name, num_elements, ns,
-             format("iterations=%zu status=%d final_cost=%.12g x0=%.9g", result.iterations,
-                    static_cast<int>(result.status), result.final_cost, x[0]));
+             format("iterations=%zu status=%d final_cost=%.12g x0=%.9g launches=%llu", result.iterations,
+                    static_cast<int>(result.status), result.final_cost, x[0], launches));
 }
 
 /// The inner loop of a scan-registration front end: every outer iteration rebuilds the cost for a
@@ -320,10 +341,11 @@ void benchRegistrationLoop(const Report& report, size_t num_elements) {
 
   const Cloud cloud = makeCloud(num_elements);
   LevenbergMarquardt<double> solver(kParamDim);
+  configureSolver(solver);
   solver.setMaxIterations(5);
 
   Eigen::VectorXd x(kParamDim);
-  const double ns = nsPerCall([&] {
+  const auto run = [&] {
     x.setZero();
     for (int outer = 0; outer < 10; ++outer) {
       solver.clearCosts();
@@ -332,8 +354,10 @@ void benchRegistrationLoop(const Report& report, size_t num_elements) {
       solver.optimize(x.data());
     }
     g_sink = g_sink + x[0];
-  });
-  report.row(name, num_elements, ns, format("x0=%.9g", x[0]));
+  };
+  const auto launches = launchesOf(run);
+  const double ns = nsPerCall(run);
+  report.row(name, num_elements, ns, format("x0=%.9g launches=%llu", x[0], launches));
 }
 
 /// Tiny problem (67 elements, 2 parameters): dominated by per-call overhead, not by the element loop.
@@ -352,16 +376,19 @@ void benchCurveFit(const Report& report) {
     if (!report.wants(name)) return;
     Eigen::VectorXd x(2);
     Result<double> result;
-    const double ns = nsPerCall([&] {
+    const auto call = [&] {
       x.setZero();
       LevenbergMarquardt<double> solver(2);
+      configureSolver(solver);
       solver.addCost(make_cost());
       result = solver.optimize(x.data());
       g_sink = g_sink + x[0];
-    });
+    };
+    const auto launches = launchesOf(call);
+    const double ns = nsPerCall(call);
     report.row(name, kNumElements, ns,
-               format("iterations=%zu status=%d final_cost=%.12g x0=%.9g", result.iterations,
-                      static_cast<int>(result.status), result.final_cost, x[0]));
+               format("iterations=%zu status=%d final_cost=%.12g x0=%.9g launches=%llu", result.iterations,
+                      static_cast<int>(result.status), result.final_cost, x[0], launches));
   };
 
   run("lm_optimize/curve_fit/analytical", [&] {
@@ -393,17 +420,20 @@ void benchDenseFactor(const Report& report) {
 
   Eigen::VectorXd x(kDim);
   Result<double> result;
-  const double ns = nsPerCall([&] {
+  const auto call = [&] {
     x.setZero();
     LevenbergMarquardt<double> solver(kDim);
+    configureSolver(solver);
     solver.addCost(std::make_shared<NumericalCostCentral<DenseFactor, double>>(unused_input.data(), observation.data(),
                                                                                1, kDim, kDim, kDim, model));
     result = solver.optimize(x.data());
     g_sink = g_sink + x[0];
-  });
+  };
+  const auto launches = launchesOf(call);
+  const double ns = nsPerCall(call);
   report.row(name, 1, ns,
-             format("iterations=%zu status=%d final_cost=%.12g x0=%.9g", result.iterations,
-                    static_cast<int>(result.status), result.final_cost, x[0]));
+             format("iterations=%zu status=%d final_cost=%.12g x0=%.9g launches=%llu", result.iterations,
+                    static_cast<int>(result.status), result.final_cost, x[0], launches));
 }
 
 // ─── Manifold path: SE(3) point-to-plane ───────────────────────────────────────────────────────
@@ -470,18 +500,101 @@ void benchManifoldOptimize(const Report& report, const std::string& name, const 
 
   auto cost = std::make_shared<Cost>(cloud.inputs.data(), cloud.offsets.data(), num_elements, 6, 1, manifold);
   LevenbergMarquardt<double> solver(manifold);
+  configureSolver(solver);
   solver.addCost(cost);
 
   Eigen::Matrix<double, 12, 1> x;
   Result<double> result;
-  const double ns = nsPerCall([&] {
+  const auto call = [&] {
     x = manifold_models::poseFromTangent(Eigen::Matrix<double, 6, 1>::Zero());
     result = solver.optimize(x.data());
     g_sink = g_sink + x[9];
-  });
+  };
+  const auto launches = launchesOf(call);
+  const double ns = nsPerCall(call);
   report.row(name, num_elements, ns,
-             format("iterations=%zu status=%d final_cost=%.12g t0=%.9g", result.iterations,
-                    static_cast<int>(result.status), result.final_cost, x[9]));
+             format("iterations=%zu status=%d final_cost=%.12g t0=%.9g launches=%llu", result.iterations,
+                    static_cast<int>(result.status), result.final_cost, x[9], launches));
+}
+
+// ─── mslam's pattern: a point-to-plane cloud and a one-element prior on the same pose ─────────────
+// Per scan mslam clears the costs, builds an analytical point-to-plane cost of about 1200 elements and
+// a one-element numerical factor (its IMU term) on the same SE(3) manifold, and runs 5 iterations,
+// 25 times. The prior here pulls the translation to a measured value.
+
+struct TranslationPrior {
+  void setState(const double* /*x*/) {}
+  void residual(const double* x, const double* /*input*/, const double* obs, double* res) const {
+    for (int i = 0; i < 3; ++i) res[i] = obs[i] - x[9 + i];
+  }
+};
+
+constexpr size_t kScanElements = 1200;
+
+Eigen::Matrix<double, 12, 1> perturbedPose() {
+  Eigen::Matrix<double, 6, 1> tangent;
+  tangent << 0.02, -0.03, 0.04, 0.01, -0.02, 0.015;
+  return manifold_models::poseFromTangent(tangent);
+}
+
+void addScanCosts(LevenbergMarquardt<double>& solver, const PlaneCloud& cloud, const double* prior,
+                  const std::shared_ptr<const IManifold<double>>& manifold) {
+  solver.addCost(std::make_shared<AnalyticalCost<manifold_models::PointToPlane, double>>(
+      cloud.inputs.data(), cloud.offsets.data(), kScanElements, 6, 1, manifold));
+  static const double unused_input = 0.0;  // read by the cost on every evaluation
+  solver.addCost(std::make_shared<NumericalCostCentral<TranslationPrior, double>>(&unused_input, prior, 1, 1, 3,
+                                                                                  manifold));
+}
+
+void benchTwoCosts(const Report& report) {
+  const std::string optimize_name = "lm_optimize/two_costs";
+  const std::string loop_name = "registration_loop/two_costs (25 x 5 it)";
+  if (!report.wants(optimize_name) && !report.wants(loop_name)) return;
+
+  const std::shared_ptr<const IManifold<double>> manifold = std::make_shared<manifold_models::SE3Manifold>();
+  const PlaneCloud cloud = makePlaneCloud(kScanElements);
+  const double prior[3] = {0.1, -0.2, 0.3};
+  const Eigen::Matrix<double, 12, 1> start = perturbedPose();
+
+  if (report.wants(optimize_name)) {
+    LevenbergMarquardt<double> solver(manifold);
+    configureSolver(solver);
+    solver.setMaxIterations(5);
+    addScanCosts(solver, cloud, prior, manifold);
+
+    Eigen::Matrix<double, 12, 1> x;
+    Result<double> result;
+    const auto call = [&] {
+      x = start;
+      result = solver.optimize(x.data());
+      g_sink = g_sink + x[9];
+    };
+    const auto launches = launchesOf(call);
+    const double ns = nsPerCall(call);
+    report.row(optimize_name, kScanElements, ns,
+               format("iterations=%zu status=%d final_cost=%.12g t0=%.9g launches=%llu", result.iterations,
+                      static_cast<int>(result.status), result.final_cost, x[9], launches));
+  }
+
+  if (report.wants(loop_name)) {
+    LevenbergMarquardt<double> solver(manifold);
+    configureSolver(solver);
+    solver.setMaxIterations(5);
+
+    Eigen::Matrix<double, 12, 1> x;
+    const auto call = [&] {
+      x = start;
+      for (int scan = 0; scan < 25; ++scan) {
+        solver.clearCosts();
+        addScanCosts(solver, cloud, prior, manifold);
+        solver.optimize(x.data());
+      }
+      g_sink = g_sink + x[9];
+    };
+    const auto launches = launchesOf(call);
+    const double ns = nsPerCall(call);
+    report.row(loop_name, kScanElements, ns, format("t0=%.9g launches=%llu", x[9], launches));
+  }
 }
 
 void benchManifold(const Report& report) {
@@ -505,6 +618,7 @@ struct Options {
   bool configure_context = false;
   size_t threads = 0;
   AssemblyStrategy strategy = AssemblyStrategy::Auto;
+  bool speculative = false;
 };
 
 Options parseOptions(int argc, char** argv) {
@@ -522,6 +636,8 @@ Options parseOptions(int argc, char** argv) {
       if (used != text.size()) throw std::invalid_argument("bad --threads value: " + text);
       options.threads = static_cast<size_t>(threads);
       options.configure_context = true;
+    } else if (arg == "--speculative") {
+      options.speculative = true;
     } else if (arg == "--strategy") {
       const std::string text = value(i);
       if (text == "auto") options.strategy = AssemblyStrategy::Auto;
@@ -545,10 +661,11 @@ int main(int argc, char** argv) {
   try {
     options = parseOptions(argc, argv);
   } catch (const std::exception& error) {
-    std::fprintf(stderr, "%s\nusage: bench_moptim [--threads N] [--strategy auto|chunked|workgroup] [name-filter]\n",
+    std::fprintf(stderr, "%s\nusage: bench_moptim [--threads N] [--strategy auto|chunked|workgroup] [--speculative] [name-filter]\n",
                  error.what());
     return 2;
   }
+  g_speculative = options.speculative;
   // Only touch the default context when asked: creating it initializes the SYCL runtime.
   if (options.configure_context) {
     const std::shared_ptr<ExecutionContext> context = defaultContext();
@@ -570,6 +687,7 @@ int main(int argc, char** argv) {
   benchCurveFit(report);
   benchDenseFactor(report);
   benchManifold(report);
+  benchTwoCosts(report);
 
   return 0;
 }
