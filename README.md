@@ -49,8 +49,10 @@ cost keeps the one it was built with.
   On `native_cpu` a launch of one work-group runs on the calling thread; wider launches run on the
   SYCL runtime's thread pool, whose threads exist whatever `threads` says. To have literally one
   thread in the process, also set `SYCL_NATIVE_CPU_HOST_THREADS=1` in the environment.
-- **`AssemblyStrategy`**: `Auto` and `Chunked` use the chunked kernel. `WorkGroup` is not implemented
-  yet: a cost evaluated with it throws `std::invalid_argument("not implemented yet")`.
+- **`AssemblyStrategy`**: how a launch splits the elements (see [Assembly strategies](#assembly-strategies)).
+  `Auto` (the default) uses `Chunked` on a CPU device and `WorkGroup` on any other device; `setStrategy()`
+  forces one. `workGroupSize()` / `setWorkGroupSize()` is the length `L` of a work-group in the
+  `WorkGroup` strategy (0 = 128, or the device's maximum if smaller).
 - **`launches()`** counts the kernel launches issued through `detail::launch()`: an evaluation of an
   analytical cost is exactly one, whatever the number of elements, except for no elements at all
   (no launch, zeros out). A launch costs about 25 microseconds on `native_cpu`, so a problem of a
@@ -360,6 +362,40 @@ evaluation). Weights and information matrices replace each other, and an empty v
 `LossFunction` subclass of your own (`descriptor().kind == LossKind::Custom`) `setLossFunction()` throws
 `std::invalid_argument`; this holds for the numerical costs too.
 
+### Assembly strategies
+
+- **`Chunked`** (CPUs): the description above. A work-item owns whole chunks, so a work-group is one work-item
+  and the launch width is `threads`.
+- **`WorkGroup`** (GPUs and other accelerators, `detail/WorkGroupKernel.hh`): one element per work-item. A launch
+  has `ceil(N / L)` work-groups of `L` work-items; group `g` owns the elements `[g·L, min((g+1)·L, N))`, so what
+  a group computes depends only on `(N, L, dimensions)`, never on scheduling. Each work-item evaluates its
+  element's residuals and Jacobian rows (analytical, or the finite-difference points of a numerical cost) into
+  work-group local memory and applies the noise model and loss to them; after a barrier the group's
+  work-items compute its sums (cost, `JTb`, lower triangle of `JTJ`) together, entry by entry, each a
+  sequential sum over the group's rows in order. The last group to finish (a 32-bit atomic counter with
+  release/acquire fences) adds the groups' partials in group order into one result slot, so the host reads a
+  single partial and only mirrors the triangle. It is still one launch per evaluation, with the same
+  submit/wait behaviour, and `computeCost()` equals the linear system's cost bitwise (same groups and sums).
+  The local memory per element is about `O · (1 + P)` values plus a little scratch (`P · O` more for an analytical
+  cost, `O` for a central one), so a group needs `L` times that; `L` is reduced from its setting when the
+  device's local memory cannot hold that many elements (about 5 KiB per element for a 24-residual, 24-parameter
+  numerical cost). A model whose `residual` / `jacobian` are not const-callable cannot be shared between the
+  elements' work-items and takes the `Chunked` kernel whatever the strategy; declare them `const`.
+- The two strategies sum in different orders, so their results agree to rounding (about 1e-12 relative in
+  double), not bitwise. Each is bitwise reproducible by itself, for any `threads` setting.
+
+`Auto` chooses `WorkGroup` exactly when `!context.isCpu()`. **GPU performance is unverified:** this repository
+has no GPU, so the `WorkGroup` kernel is tested for correctness on `native_cpu` (forced with
+`setStrategy(AssemblyStrategy::WorkGroup)`; `bench_moptim --strategy workgroup`) and compiles device-only for
+`spir64` and `nvptx64-nvidia-cuda`, but it has never run on either. Its time on `native_cpu` says nothing about
+a GPU. Known follow-ups once real hardware is available:
+- The group partials, the finished-groups counter and the result live in shared USM, which may migrate
+  pages between host and device on a discrete GPU; device USM plus one small readback of the result would
+  be better.
+- The group sums use one work-item per entry of the partial (`K = P(P+1)/2 + P + 1` of the `L` work-items
+  are busy, each a sequential sum over the rows) and should get a GPU-oriented reduction (all the
+  work-items cooperating on each entry).
+
 ### Speculative linear systems
 
 `LevenbergMarquardt::setSpeculativeLinearSystems(true)` (default off) evaluates each trial point with a full
@@ -465,7 +501,8 @@ build/test/bench_moptim --threads 4 --strategy chunked   # configure the default
 Levenberg-Marquardt rows print `launches=` (kernel launches of one `optimize` call). `--threads N` and
 `--strategy auto|chunked|workgroup` set the default `ExecutionContext` before
 anything runs. The analytical rows read it (`--threads 1` is a single work-group; without the option all
-compute units are used). `--strategy workgroup` makes every cost row throw.
+compute units are used). `--strategy workgroup` runs every cost row with the WorkGroup kernel (informational on
+native_cpu).
 
 Each row is the best time over several repetitions. Rows that assemble a linear system also print
 the cost and the sums of `JTJ` and `JTb`, so two builds can be compared for numerical equivalence

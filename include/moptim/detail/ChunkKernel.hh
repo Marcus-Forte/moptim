@@ -90,6 +90,14 @@ struct KernelArgs {
   T* partials = nullptr;             ///< One slot per partition: cost, J^T r (params), J^T J (params x params).
   size_t partial_stride = 0;         ///< Entries of a slot.
   size_t* counter = nullptr;         ///< Next unclaimed partition.
+
+  // WorkGroup kernel (see WorkGroupKernel.hh).
+  size_t local_size = 0;             ///< Work-items (elements) per group.
+  size_t group_count = 0;
+  size_t aux_per_element = 0;        ///< Values of policy scratch per element, in local memory.
+  T* group_partials = nullptr;       ///< One slot of `partial_stride` entries per group.
+  T* result = nullptr;               ///< The sum over the groups, one slot.
+  unsigned int* group_counter = nullptr;  ///< Groups that finished; the last one reduces.
 };
 
 /// Entries of a partial slot: the cost, the gradient and the dense `params x params` hessian (only

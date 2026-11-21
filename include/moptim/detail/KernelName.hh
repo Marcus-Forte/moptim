@@ -50,6 +50,10 @@ using CurrentTuId = decltype(tuIdType(std::make_index_sequence<constStringLength
 template <bool kLinearSystem, class Policy, class T, class TuId>
 struct ChunkKernelName;
 
+/// Name of the work-group kernel of a cost (see ChunkKernelName).
+template <bool kLinearSystem, class Policy, class T, class TuId>
+struct WorkGroupKernelName;
+
 /// Name of the layout check of a model.
 template <class Model, class TuId>
 struct ModelLayoutKernelName;

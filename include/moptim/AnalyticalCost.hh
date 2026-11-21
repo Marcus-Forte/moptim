@@ -29,6 +29,24 @@ struct AnalyticalJacobian {
     return params * observation_dim;
   }
 
+  /// WorkGroup kernel: values of local memory per element (the element's transposed jacobian).
+  static constexpr size_t auxPerElement(size_t observation_dim, size_t params) { return params * observation_dim; }
+
+  /// WorkGroup kernel: writes the jacobian rows of one element. `jacobian` is the element's first row of
+  /// column 0; column `p` is `jacobian_stride` values further on each. `aux` has auxPerElement() values.
+  template <class ModelPtr>
+  static void evaluateElementJacobian(ModelPtr models, const KernelArgs<T>& args, size_t element,
+                                      const T* /*residual*/, T* aux, T* jacobian, size_t jacobian_stride) {
+    const size_t params = args.params;
+    const size_t dim = args.observation_dim;
+    models[0].jacobian(args.x, args.input + element * args.input_dim, args.observations + element * dim, aux);
+    for (size_t p = 0; p < params; ++p) {
+      for (size_t i = 0; i < dim; ++i) {
+        jacobian[p * jacobian_stride + i] = aux[p + params * i];
+      }
+    }
+  }
+
   /// Writes the jacobian rows of elements [first, first + count): column `p` of the chunk (column
   /// stride `jacobian_stride`) holds the derivatives with respect to step entry `p`.
   ///

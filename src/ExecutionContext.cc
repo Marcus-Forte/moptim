@@ -34,6 +34,8 @@ ExecutionContext::ExecutionContext(sycl::queue queue, size_t threads, AssemblySt
   }
   const sycl::device device = queue_.get_device();
   compute_units_ = std::max<size_t>(1, device.get_info<sycl::info::device::max_compute_units>());
+  max_work_group_size_ = std::max<size_t>(1, device.get_info<sycl::info::device::max_work_group_size>());
+  local_memory_bytes_ = device.get_info<sycl::info::device::local_mem_size>();
   host_accessible_ = device.has(sycl::aspect::usm_system_allocations);
   is_cpu_ = device.is_cpu();
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -8,9 +9,13 @@
 
 namespace moptim {
 
-/// How a cost splits its elements between the work-items of one launch. `Auto` and `Chunked` run
-/// the chunked kernel (whole chunks of elements per work-item, see ChunkedCost.hh); `WorkGroup` is not
-/// implemented yet and makes a cost throw std::invalid_argument.
+/// How a cost splits its elements between the work-items of one launch.
+///  - `Chunked`: whole chunks of elements per work-item, each work-item owning its scratch and
+///    accumulating partial sums (for CPUs; see ChunkedCost.hh).
+///  - `WorkGroup`: one element per work-item, the work-group sums its elements' contributions together in
+///    local memory (for GPUs and other accelerators; see detail/WorkGroupKernel.hh). A cost whose model
+///    cannot be called through a const reference uses Chunked instead.
+///  - `Auto`: `WorkGroup` on a device that is not a CPU, `Chunked` on a CPU.
 enum class AssemblyStrategy { Auto, Chunked, WorkGroup };
 
 /**
@@ -54,6 +59,23 @@ class ExecutionContext {
   AssemblyStrategy strategy() const { return strategy_; }
   void setStrategy(AssemblyStrategy strategy) { strategy_ = strategy; }
 
+  /// True if a cost evaluated on this context uses the WorkGroup kernel (when its model allows it):
+  /// the strategy is `WorkGroup`, or `Auto` on a device that is not a CPU.
+  bool usesWorkGroupKernel() const {
+    return strategy_ == AssemblyStrategy::WorkGroup || (strategy_ == AssemblyStrategy::Auto && !is_cpu_);
+  }
+
+  /// Work-items per work-group of the WorkGroup kernel; 0 (the default) means 128, or the device's
+  /// maximum if that is smaller. A cost may use fewer to fit its local memory.
+  size_t workGroupSize() const { return work_group_size_; }
+  void setWorkGroupSize(size_t size) { work_group_size_ = size; }
+  /// workGroupSize() with 0 resolved and capped by the device's maximum work-group size.
+  size_t resolvedWorkGroupSize() const {
+    return std::max<size_t>(1, std::min(work_group_size_ != 0 ? work_group_size_ : size_t{128}, max_work_group_size_));
+  }
+  /// Local memory of a work-group, in bytes.
+  size_t localMemoryBytes() const { return local_memory_bytes_; }
+
   /// Kernel launches issued through `detail::launch()` so far.
   uint64_t launches() const { return launches_.load(std::memory_order_relaxed); }
 
@@ -64,6 +86,9 @@ class ExecutionContext {
   size_t threads_;
   AssemblyStrategy strategy_;
   size_t compute_units_;
+  size_t work_group_size_ = 0;
+  size_t max_work_group_size_;
+  size_t local_memory_bytes_;
   bool host_accessible_;
   bool is_cpu_;
   std::atomic<uint64_t> launches_{0};
@@ -102,6 +127,29 @@ void submitNamed(ExecutionContext& context, size_t work_groups, Kernel kernel) {
 
 /// Waits for everything submitted on the context's queue and rethrows asynchronous errors.
 inline void complete(ExecutionContext& context) { context.queue().wait_and_throw(); }
+
+/**
+ * Starts a kernel on `groups` work-groups of `local_size` work-items with `local_values` elements of
+ * work-group local memory of type `T` and one `unsigned int` of local memory more, and returns without
+ * waiting. `kernel` is called as `kernel(sycl::nd_item<1>, T* local, unsigned int* local_flag)` and
+ * is named `Name` (see submitNamed()). Counted as one launch. Does nothing for `groups == 0`.
+ */
+template <class Name, class T, class Kernel>
+void submitWithLocalMemory(ExecutionContext& context, size_t groups, size_t local_size, size_t local_values,
+                           Kernel kernel) {
+  if (groups == 0) {
+    return;
+  }
+  LaunchAccess::count(context);
+  context.queue().submit([&](sycl::handler& handler) {
+    sycl::local_accessor<T, 1> local(sycl::range<1>(std::max<size_t>(local_values, 1)), handler);
+    sycl::local_accessor<unsigned int, 1> flag(sycl::range<1>(1), handler);
+    handler.parallel_for<Name>(sycl::nd_range<1>(groups * local_size, local_size), [=](sycl::nd_item<1> item) {
+      kernel(item, local.template get_multi_ptr<sycl::access::decorated::no>().get(),
+             flag.template get_multi_ptr<sycl::access::decorated::no>().get());
+    });
+  });
+}
 
 /// submitNamed() followed by complete(). One launch costs about 10 to 25 microseconds on native_cpu.
 template <class Name, class Kernel>

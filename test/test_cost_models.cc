@@ -483,9 +483,11 @@ TEST(CostModels, Strategy) {
   context->setStrategy(AssemblyStrategy::Auto);
   EXPECT_EQ(cost.computeCost(x), chunked);
 
+  // WorkGroup is implemented: the same cost up to the order of the sums.
   context->setStrategy(AssemblyStrategy::WorkGroup);
-  EXPECT_THROW(cost.computeCost(x), std::invalid_argument);
-  EXPECT_THROW(cost.computeLinearSystem(x, jtj, jtb, value), std::invalid_argument);
+  EXPECT_NEAR(cost.computeCost(x), chunked, 1e-12 * chunked);
+  EXPECT_NO_THROW(cost.computeLinearSystem(x, jtj, jtb, value));
+  EXPECT_NEAR(value, chunked, 1e-12 * chunked);
 }
 
 // ─── Numerical costs: one model per evaluation point ─────────────────────────────────────────────
@@ -618,13 +620,14 @@ TEST(NumericalCostModels, NoElementsNoLaunch) {
   for (const double entry : jtj) EXPECT_EQ(entry, 0.0);
 }
 
-TEST(NumericalCostModels, CustomLossIsRejectedAndStrategyHonoured) {
+TEST(NumericalCostModels, CustomLossIsRejectedAndWorkGroupStrategyWorks) {
   const Data data = makeData(10);
   const auto context = makeContext(1);
   NumericalCostCentral<LineModel, double> cost(data.input.data(), data.observations.data(), 10, 1, 1, kParams,
                                                LineModel{}, 0, context);
   EXPECT_THROW(cost.setLossFunction(std::make_shared<CustomLoss>()), std::invalid_argument);
   const double x[kParams] = {0.7, -0.3};
+  const double chunked = cost.computeCost(x);
   context->setStrategy(AssemblyStrategy::WorkGroup);
-  EXPECT_THROW(cost.computeCost(x), std::invalid_argument);
+  EXPECT_NEAR(cost.computeCost(x), chunked, 1e-12 * chunked);
 }

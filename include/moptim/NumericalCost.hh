@@ -45,6 +45,37 @@ struct NumericalJacobian {
     return Scheme == DifferenceScheme::Central ? chunk_rows : 0;
   }
 
+  /// WorkGroup kernel: values of local memory per element (the backward residuals of the central scheme).
+  static constexpr size_t auxPerElement(size_t observation_dim, size_t /*params*/) {
+    return Scheme == DifferenceScheme::Central ? observation_dim : 0;
+  }
+
+  /// WorkGroup kernel: the jacobian row block of one element, from its residuals at the evaluation points
+  /// (the same differences as evaluateJacobian(), for a chunk of one element).
+  template <class ModelPtr>
+  static void evaluateElementJacobian(ModelPtr models, const KernelArgs<T>& args, size_t element,
+                                      const T* residual, T* backward, T* jacobian, size_t jacobian_stride) {
+    const size_t dim = args.observation_dim;
+    const T* input = args.input + element * args.input_dim;
+    const T* observation = args.observations + element * dim;
+    const T inv_span = args.inv_span;
+    for (size_t p = 0; p < args.params; ++p) {
+      T* column = jacobian + p * jacobian_stride;
+      const size_t point = kPointsPerParam * p;
+      models[1 + point].residual(args.points + point * args.param_dim, input, observation, column);
+      if constexpr (Scheme == DifferenceScheme::Central) {
+        models[2 + point].residual(args.points + (point + 1) * args.param_dim, input, observation, backward);
+        for (size_t i = 0; i < dim; ++i) {
+          column[i] = (column[i] - backward[i]) * inv_span;
+        }
+      } else {
+        for (size_t i = 0; i < dim; ++i) {
+          column[i] = (column[i] - residual[i]) * inv_span;
+        }
+      }
+    }
+  }
+
   /// Fills each column of the chunk's jacobian straight from the residuals at its evaluation points.
   /// `residuals` are those of the chunk at `x`. The buffers are the work-item's own and nothing else
   /// points into them (see evaluateResiduals() for why they are declared so and why this is not inlined).

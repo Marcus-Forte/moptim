@@ -21,6 +21,7 @@
 #include "moptim/detail/KernelName.hh"
 #include "moptim/detail/Partitioning.hh"
 #include "moptim/detail/Usm.hh"
+#include "moptim/detail/WorkGroupKernel.hh"
 
 namespace moptim {
 namespace detail {
@@ -111,18 +112,16 @@ class ChunkedCost : public ICost<T> {
   /// evaluation is completed first.
   void submitCost(const T* x, T* cost) final {
     wait();
-    requireSupportedStrategy();
     if (num_elements_ == 0) {
       *cost = T{0};
       return;
     }
     launch<false>(x);
-    pending_ = Pending{Pending::Kind::Cost, nullptr, nullptr, cost};
+    pending_ = Pending{Pending::Kind::Cost, nullptr, nullptr, cost, reduce_from_, reduce_count_};
   }
 
   void submitLinearSystem(const T* x, T* JTJ, T* JTb, T* cost) final {
     wait();
-    requireSupportedStrategy();
     if (num_elements_ == 0) {
       std::fill_n(JTJ, tangent_dim_ * tangent_dim_, T{0});
       std::fill_n(JTb, tangent_dim_, T{0});
@@ -130,7 +129,7 @@ class ChunkedCost : public ICost<T> {
       return;
     }
     launch<true>(x);
-    pending_ = Pending{Pending::Kind::LinearSystem, JTJ, JTb, cost};
+    pending_ = Pending{Pending::Kind::LinearSystem, JTJ, JTb, cost, reduce_from_, reduce_count_};
   }
 
   /// Completes the outstanding evaluation: waits for the launch and adds the partial results, in
@@ -145,8 +144,8 @@ class ChunkedCost : public ICost<T> {
 
     T cost{0};
     if (pending.kind == Pending::Kind::Cost) {
-      for (size_t partition = 0; partition < partitioning_.num_partitions; ++partition) {
-        cost += partials_.get()[partition * partial_stride_];
+      for (size_t partition = 0; partition < pending.count; ++partition) {
+        cost += pending.partials[partition * partial_stride_];
       }
       *pending.cost = cost;
       return;
@@ -159,8 +158,8 @@ class ChunkedCost : public ICost<T> {
     // Only the leading active_param_dim_ block is populated; the trailing rows/columns (tangent
     // dimensions this cost does not depend on) stay zero. The partials hold the lower triangle.
     const size_t params = active_param_dim_;
-    for (size_t partition = 0; partition < partitioning_.num_partitions; ++partition) {
-      const T* partial = partials_.get() + partition * partial_stride_;
+    for (size_t partition = 0; partition < pending.count; ++partition) {
+      const T* partial = pending.partials + partition * partial_stride_;
       cost += partial[0];
       for (size_t a = 0; a < params; ++a) {
         JTb[a] += partial[1 + a];
@@ -285,9 +284,40 @@ class ChunkedCost : public ICost<T> {
     return device;
   }
 
-  void requireSupportedStrategy() const {
-    if (context_->strategy() == AssemblyStrategy::WorkGroup) {
-      throw std::invalid_argument("not implemented yet");
+  /// Whether evaluations use the WorkGroup kernel: the context asks for it and the model can be
+  /// called through a const reference from every work-item (a model that needs a private copy per
+  /// work-item would be copied once per element; those take the chunked kernel).
+  bool usesWorkGroup() const {
+    if constexpr (Policy::kConstCallable) {
+      return context_->usesWorkGroupKernel();
+    } else {
+      return false;
+    }
+  }
+
+  /// Work-items per group of the WorkGroup kernel: the context's size, fewer if the local memory of a
+  /// work-group cannot hold that many elements' residuals and jacobian rows.
+  size_t workGroupLength() const {
+    const size_t bytes_per_element = sizeof(T) * detail::workGroupValuesPerElement(
+                                                     observation_dim_, active_param_dim_,
+                                                     Policy::auxPerElement(observation_dim_, active_param_dim_));
+    size_t length = context_->resolvedWorkGroupSize();
+    const size_t local_bytes = context_->localMemoryBytes();
+    if (local_bytes > 64) {
+      length = std::min(length, std::max<size_t>(1, (local_bytes - 64) / bytes_per_element));
+    }
+    return length;
+  }
+
+  void ensureGroupBuffers(size_t groups) {
+    sycl::queue& queue = context_->queue();
+    if (!group_counter_) {
+      group_counter_ = detail::makeSharedArray<unsigned int>(queue, detail::kCacheLine / sizeof(unsigned int));
+      group_result_ = detail::makeSharedArray<T>(queue, partial_stride_);
+    }
+    if (groups > group_partials_capacity_) {
+      group_partials_ = detail::makeSharedArray<T>(queue, groups * partial_stride_);
+      group_partials_capacity_ = groups;
     }
   }
 
@@ -410,7 +440,11 @@ class ChunkedCost : public ICost<T> {
   /// Sets the model's state to `x` and submits the one launch of an evaluation (wait() completes it).
   template <bool kLinearSystem>
   void launch(const T* x) {
-    const size_t width = kAccess == detail::ModelAccess::Exclusive ? 1 : context_->launchWidth(partitioning_.num_partitions);
+    const bool work_group = usesWorkGroup();
+    const size_t width =
+        work_group ? 0
+                   : (kAccess == detail::ModelAccess::Exclusive ? 1
+                                                                : context_->launchWidth(partitioning_.num_partitions));
     ensureState(width);
 
     std::copy_n(x, param_dim_, x_.get());
@@ -422,6 +456,13 @@ class ChunkedCost : public ICost<T> {
       }
     }
     *args_ = makeArgs();
+
+    if (work_group) {
+      launchWorkGroup<kLinearSystem>();
+      return;
+    }
+    reduce_from_ = partials_.get();
+    reduce_count_ = partitioning_.num_partitions;
     *counter_ = 0;
 
     const detail::KernelArgs<T>* args = args_.get();
@@ -434,6 +475,40 @@ class ChunkedCost : public ICost<T> {
     });
   }
 
+  /// One element per work-item, one group per `workGroupLength()` elements; the last group to finish
+  /// adds the groups' partials, in group order, into `group_result_`, which wait() then reads as the
+  /// single partial.
+  template <bool kLinearSystem>
+  void launchWorkGroup() {
+    if constexpr (!Policy::kConstCallable) {
+      throw std::logic_error("moptim: the WorkGroup kernel needs a model whose functions are const");
+    } else {
+    const size_t length = workGroupLength();
+    const size_t groups = (num_elements_ + length - 1) / length;
+    ensureGroupBuffers(groups);
+
+    detail::KernelArgs<T>& args_ref = *args_;
+    args_ref.local_size = length;
+    args_ref.group_count = groups;
+    args_ref.aux_per_element = Policy::auxPerElement(observation_dim_, active_param_dim_);
+    args_ref.group_partials = group_partials_.get();
+    args_ref.result = group_result_.get();
+    args_ref.group_counter = group_counter_.get();
+    *group_counter_ = 0;
+    reduce_from_ = group_result_.get();
+    reduce_count_ = 1;
+
+    const detail::WorkGroupLayout layout = detail::makeWorkGroupLayout(
+        length, observation_dim_, active_param_dim_, args_ref.aux_per_element, kLinearSystem);
+    const detail::KernelArgs<T>* args = args_.get();
+    const Model* models = models_;
+    detail::submitWithLocalMemory<detail::WorkGroupKernelName<kLinearSystem, Policy, T, detail::CurrentTuId>, T>(
+        *context_, groups, length, layout.total, [args, models](sycl::nd_item<1> item, T* local, unsigned int* flag) {
+          detail::runWorkGroupItem<Policy, T, Model, kLinearSystem>(*args, models, item, local, flag);
+        });
+    }
+  }
+
   /// The evaluation that was submitted and not yet completed by wait(), and where its results go.
   struct Pending {
     enum class Kind { None, Cost, LinearSystem };
@@ -441,6 +516,8 @@ class ChunkedCost : public ICost<T> {
     T* JTJ = nullptr;
     T* JTb = nullptr;
     T* cost = nullptr;
+    const T* partials = nullptr;  ///< The partial results wait() adds up, in this order...
+    size_t count = 0;             ///< ...and how many there are (one per partition, or the group sum).
   };
 
   std::shared_ptr<ExecutionContext> context_;
@@ -469,6 +546,12 @@ class ChunkedCost : public ICost<T> {
   detail::UsmPtr<T> points_;  ///< kPointsPerParam * active_param_dim rows of param_dim entries.
   detail::UsmPtr<size_t> counter_;
   detail::UsmPtr<T> partials_;
+  const T* reduce_from_ = nullptr;  ///< What the submitted evaluation's wait() adds up (see Pending).
+  size_t reduce_count_ = 0;
+  detail::UsmPtr<T> group_partials_;  ///< WorkGroup kernel: one slot per group, allocated when first needed.
+  size_t group_partials_capacity_ = 0;
+  detail::UsmPtr<T> group_result_;
+  detail::UsmPtr<unsigned int> group_counter_;
   detail::UsmPtr<detail::KernelArgs<T>> args_;
   detail::UsmPtr<unsigned char> scratch_;
   size_t scratch_slices_ = 0;
