@@ -54,15 +54,27 @@ set(MOPTIM_SYCL_FLAGS -fsycl -fsycl-targets=${SYCL_TARGETS})
 # The device-only define is given to the compiler (not set in a header), so it applies to every
 # translation unit that links moptim whatever its include order, and to every target of SYCL_TARGETS:
 # `-Xsycl-target-frontend=<triple>` passes an option to the device front end of that target only.
-# -ffp-contract=fast (GCC's default; clang's is `on`) lets the device pass contract a*b+c across
-# statements, which measured 4 to 19% faster than `on` on the analytical costs (MOPTIM_FP_CONTRACT).
+# -ffp-contract=on (clang's default) fuses a*b+c only within one source expression (the frontend emits
+# llvm.fmuladd), so the result does not depend on where a model is inlined. `fast` lets the backend fuse
+# across statements, differently per inlining context (MOPTIM_FP_CONTRACT).
 # Fixed-size Eigen members are shared between the host and the device pass (a model is copied into
 # USM), so their layout must be identical: EIGEN_MAX_STATIC_ALIGN_BYTES=16 on both passes.
 # SHELL: keeps CMake from de-duplicating the repeated -Xsycl-target-frontend halves.
-set(MOPTIM_FP_CONTRACT "fast" CACHE STRING "Value of -ffp-contract for moptim and its consumers (fast, on or off)")
+set(MOPTIM_FP_CONTRACT "on" CACHE STRING
+    "Value of -ffp-contract for moptim and its consumers (on, fast or off). 'fast' lets the backend fuse \
+across statements depending on the inlining context, which breaks the bitwise cost invariant between kernels \
+once models are inlined into several kernels (seen with Eigen 5); 'on' fuses within expressions only.")
 set(MOPTIM_DEVICE_ONLY_FLAGS "")
 foreach(triple IN LISTS MOPTIM_SYCL_TARGET_LIST)
   list(APPEND MOPTIM_DEVICE_ONLY_FLAGS "SHELL:-Xsycl-target-frontend=${triple} -DEIGEN_DONT_VECTORIZE")
+  if(triple STREQUAL "native_cpu")
+    # The native_cpu device front end also aborts (ItaniumMangle "unexpected Neon vector element type") on
+    # any <arm_neon.h>, which OpenCV's and abseil's (protobuf's) headers include under __ARM_NEON on an
+    # aarch64 host. Undefining it in the device pass only keeps them out; a no-op on x86 hosts.
+    list(APPEND MOPTIM_DEVICE_ONLY_FLAGS
+      "SHELL:-Xsycl-target-frontend=${triple} -U__ARM_NEON"
+      "SHELL:-Xsycl-target-frontend=${triple} -U__ARM_NEON__")
+  endif()
 endforeach()
 target_compile_options(moptim PUBLIC ${MOPTIM_SYCL_FLAGS} -ffp-contract=${MOPTIM_FP_CONTRACT} ${MOPTIM_DEVICE_ONLY_FLAGS})
 target_compile_definitions(moptim PUBLIC EIGEN_MAX_STATIC_ALIGN_BYTES=16)

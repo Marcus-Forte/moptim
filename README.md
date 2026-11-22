@@ -24,7 +24,7 @@ cmake -S . -B <dir> -G Ninja -DCMAKE_CXX_COMPILER=<dpcpp>/bin/clang++ -DCMAKE_C_
 |---|---|---|
 | `SYCL_TARGETS` | `native_cpu` | comma separated `-fsycl-targets` list |
 | `MOPTIM_NATIVE_CPU_ARCH` | empty | `-mcpu` value for the `native_cpu` device code, e.g. a core name on AArch64 or an x86-64 level (`x86-64-v3`) on x86 hosts, where it enables AVX in device code. It is applied at link time |
-| `MOPTIM_FP_CONTRACT` | `fast` | value of `-ffp-contract` for moptim and its consumers. `fast` (GCC's default) was measured 4 to 19% faster than clang's default `on` on the analytical costs |
+| `MOPTIM_FP_CONTRACT` | `on` | value of `-ffp-contract` for moptim and its consumers. `on` fuses multiply-adds within one expression only, so the result does not depend on the inlining context; `fast` (4 to 19% faster on the analytical costs) let the backend fuse differently per kernel and broke the bitwise cost invariant with Eigen 5. Benchmark reference outputs from builds before this change differ in the last bits for that reason |
 | `USE_CLANG_TIDY` | `OFF` | clang-tidy cannot parse a `-fsycl` compilation; configuring with it prints a warning |
 | `FORMAT_CODE` | `OFF` | runs clang-format over all `.cc`/`.hh` on build |
 
@@ -39,6 +39,12 @@ build defines `EIGEN_DONT_VECTORIZE` for the device pass only (`-Xsycl-target-fr
 `EIGEN_MAX_STATIC_ALIGN_BYTES=16` is defined for both passes so that fixed-size Eigen members (e.g. in a
 model) have the same size and alignment on both sides. Eigen in a kernel therefore runs scalar. The library's
 own device code uses no Eigen.
+
+For the same reason the `native_cpu` device pass also gets `-U__ARM_NEON -U__ARM_NEON__` (again through
+`-Xsycl-target-frontend=native_cpu`, `PUBLIC`, so consumers inherit it): on an aarch64 host the `native_cpu` device
+front end crashes on `<arm_neon.h>` ("unexpected Neon vector element type"), which OpenCV's and abseil's (hence
+protobuf's) headers include when `__ARM_NEON` is defined. The flags are no-ops on x86 hosts. Including
+`<arm_neon.h>` directly in a SYCL translation unit still crashes this compiler; there is no workaround.
 
 ## Execution context
 
@@ -250,6 +256,8 @@ heap allocation (including temporaries of dynamic-size Eigen expressions; fixed-
 scalar), and no calls to functions defined in another translation unit unless they are `SYCL_EXTERNAL` (or
 inline). A reference or pointer to host memory held by the model works only on devices with
 `usm_system_allocations` (`native_cpu` has it).
+
+**Standard algorithms.** With GCC >= 16 libstdc++, DPC++ rejects `std::copy`, `std::distance` and the `std::ranges` algorithms on iterators in device code (a false positive: `default_initializable` contains `::new`, reported as "SYCL kernel cannot allocate storage"), and `std::sort` (recursion). Use plain loops or `__builtin_memcpy`; `std::fill`, `std::min`/`std::max`, `std::array` and `std::swap` are fine.
 
 **Math functions.** `std::sin`, `std::exp` and the like work on `native_cpu` (they resolve against the host libm at
 link time), but the DPC++ linker prints `Undefined function <name> found in ... This may result in runtime
