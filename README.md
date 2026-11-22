@@ -43,7 +43,10 @@ own device code uses no Eigen.
 For the same reason the `native_cpu` device pass also gets `-U__ARM_NEON -U__ARM_NEON__` (again through
 `-Xsycl-target-frontend=native_cpu`, `PUBLIC`, so consumers inherit it): on an aarch64 host the `native_cpu` device
 front end crashes on `<arm_neon.h>` ("unexpected Neon vector element type"), which OpenCV's and abseil's (hence
-protobuf's) headers include when `__ARM_NEON` is defined. The flags are no-ops on x86 hosts. Including
+protobuf's) headers include when `__ARM_NEON` is defined. The flags are no-ops on x86 hosts. With a host CPU that
+has FP16 arithmetic (e.g. `-mcpu=cortex-a76`) Eigen 5 stores `Eigen::half` as `__fp16`, which the device front end
+rejects as a parameter type, so the device pass also gets `-U__ARM_FEATURE_FP16_SCALAR_ARITHMETIC
+-U__ARM_FEATURE_FP16_VECTOR_ARITHMETIC`. Including
 `<arm_neon.h>` directly in a SYCL translation unit still crashes this compiler; there is no workaround.
 
 ## Execution context

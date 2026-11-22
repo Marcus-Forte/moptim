@@ -71,9 +71,13 @@ foreach(triple IN LISTS MOPTIM_SYCL_TARGET_LIST)
     # The native_cpu device front end also aborts (ItaniumMangle "unexpected Neon vector element type") on
     # any <arm_neon.h>, which OpenCV's and abseil's (protobuf's) headers include under __ARM_NEON on an
     # aarch64 host. Undefining it in the device pass only keeps them out; a no-op on x86 hosts.
+    # With a CPU that has FP16 arithmetic (e.g. -mcpu=cortex-a76), Eigen stores Eigen::half as __fp16,
+    # which the device front end rejects as a parameter type: hide the feature in the device pass too.
     list(APPEND MOPTIM_DEVICE_ONLY_FLAGS
       "SHELL:-Xsycl-target-frontend=${triple} -U__ARM_NEON"
-      "SHELL:-Xsycl-target-frontend=${triple} -U__ARM_NEON__")
+      "SHELL:-Xsycl-target-frontend=${triple} -U__ARM_NEON__"
+      "SHELL:-Xsycl-target-frontend=${triple} -U__ARM_FEATURE_FP16_SCALAR_ARITHMETIC"
+      "SHELL:-Xsycl-target-frontend=${triple} -U__ARM_FEATURE_FP16_VECTOR_ARITHMETIC")
   endif()
 endforeach()
 target_compile_options(moptim PUBLIC ${MOPTIM_SYCL_FLAGS} -ffp-contract=${MOPTIM_FP_CONTRACT} ${MOPTIM_DEVICE_ONLY_FLAGS})
