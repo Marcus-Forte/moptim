@@ -1,35 +1,43 @@
 # Moptim
 
-Non-linear least-squares library (Gauss-Newton and Levenberg-Marquardt) on Eigen, built on SYCL. The linear
-system of every iteration (`J^T J`, `J^T r` and the cost) is assembled in SYCL kernels, one launch per
-evaluation, on the CPU (`native_cpu`) or an accelerator; the optimizers and the linear solve run on the calling
-thread. Parameters can be a plain vector or live on a manifold, and costs can use analytical or
+Non-linear least-squares library (Gauss-Newton and Levenberg-Marquardt) on Eigen, with an optional SYCL backend.
+The linear system of every iteration (`J^T J`, `J^T r` and the cost) is assembled by work-item functions that run
+either on the host (the calling thread, or a pool of host threads for large problems) or, in a build with SYCL, in
+SYCL kernels on the CPU (`native_cpu`) or an accelerator: one implementation, two launchers, chosen per
+`ExecutionContext` at run time. The optimizers and the linear solve run on the calling thread. Parameters can be a plain vector or live on a manifold, and costs can use analytical or
 finite-difference Jacobians, per-element weights or information matrices, and robust losses.
 
 ## Building
 
-moptim needs a SYCL compiler: DPC++ (`intel/llvm`) `clang++` with `-fsycl`. The configure step stops with an
-error for any other compiler; there is no non-SYCL build. The rest is Eigen 3 and, for the tests, GoogleTest
-(fetched at configure time).
+SYCL is opt-in (`MOPTIM_WITH_SYCL`, default `OFF`). Without it moptim is plain C++23 for any compiler (GCC, clang)
+and every context runs on the host backend. With it, moptim and everything that links it is compiled by DPC++
+(`intel/llvm`) `clang++` with `-fsycl`, and each context runs on the host or the SYCL backend. The rest is Eigen 3
+and, for the tests, GoogleTest (fetched at configure time).
 
 ```sh
-cmake --preset default      # DPC++ in /opt/sycl, Release, Ninja, SYCL target native_cpu, build/
+cmake --preset default      # host only, the image's GCC (/opt/toolchain/gcc.cmake), build/
+cmake --preset sycl-cpu     # DPC++ in /opt/sycl, SYCL target native_cpu, build_sycl_cpu/
 cmake --preset sycl         # native_cpu + nvptx64-nvidia-cuda + spir64, build_sycl/ (needs the CUDA and libspirv bitcode)
 cmake --build build && ctest --test-dir build
-# or, with the compiler anywhere else:
-cmake -S . -B <dir> -G Ninja -DCMAKE_CXX_COMPILER=<dpcpp>/bin/clang++ -DCMAKE_C_COMPILER=<dpcpp>/bin/clang
+# or, with DPC++ anywhere else:
+cmake -S . -B <dir> -G Ninja -DMOPTIM_WITH_SYCL=ON -DCMAKE_CXX_COMPILER=<dpcpp>/bin/clang++ -DCMAKE_C_COMPILER=<dpcpp>/bin/clang
 ```
+
+In a SYCL build `ctest` runs the suite twice, on the SYCL backend and again on the host backend (tests named
+`*.host`, `MOPTIM_BACKEND=host`), plus the SYCL-only tests (device kernels against the host, the WorkGroup kernel).
 
 | CMake variable | Default | Meaning |
 |---|---|---|
+| `MOPTIM_WITH_SYCL` | `OFF` | build the SYCL backend (needs DPC++); `WITH_SYCL`, its former name, sets the default. The variables below except the last two only exist with it |
 | `SYCL_TARGETS` | `native_cpu` | comma separated `-fsycl-targets` list |
 | `MOPTIM_NATIVE_CPU_ARCH` | empty | `-mcpu` value for the `native_cpu` device code, e.g. a core name on AArch64 or an x86-64 level (`x86-64-v3`) on x86 hosts, where it enables AVX in device code. It is applied at link time |
 | `MOPTIM_FP_CONTRACT` | `on` | value of `-ffp-contract` for moptim and its consumers. `on` fuses multiply-adds within one expression only, so the result does not depend on the inlining context; `fast` (4 to 19% faster on the analytical costs) let the backend fuse differently per kernel and broke the bitwise cost invariant with Eigen 5. Benchmark reference outputs from builds before this change differ in the last bits for that reason |
 | `USE_CLANG_TIDY` | `OFF` | clang-tidy cannot parse a `-fsycl` compilation; configuring with it prints a warning |
 | `FORMAT_CODE` | `OFF` | runs clang-format over all `.cc`/`.hh` on build |
 
-The `moptim` target passes its compiler settings on to everything that links it (`PUBLIC`):
-`-fsycl -fsycl-targets=...`, `-ffp-contract=...` and the Eigen settings below. The public headers are valid
+In a SYCL build the `moptim` target passes its compiler settings on to everything that links it (`PUBLIC`):
+`-fsycl -fsycl-targets=...`, `-ffp-contract=...`, `MOPTIM_HAS_SYCL=1` and the Eigen settings below. A host-only
+build passes nothing but the include path and Eigen. The public headers are valid
 C++20 (the library itself is C++23).
 
 **Eigen in the device pass.** A `-fsycl` compilation parses every translation unit twice, once for the host
@@ -51,14 +59,29 @@ rejects as a parameter type, so the device pass also gets `-U__ARM_FEATURE_FP16_
 
 ## Execution context
 
-Kernels are launched through an `ExecutionContext` (`moptim/ExecutionContext.hh`): an in-order SYCL queue and
-the knobs of a launch. `defaultContext()` is the process-wide instance (created on first use) and
+Work is launched through an `ExecutionContext` (`moptim/ExecutionContext.hh`): a backend and the knobs of a
+launch.
+
+- **Backend** (`backend()`): `Backend::Host` runs a launch of one work-group on the calling thread and a wider one
+  on a pool of host threads (created on first use; launches from several threads are serialized); `Backend::Sycl`
+  (only in a SYCL build) owns an in-order SYCL queue. `ExecutionContext(Backend::Host, threads, strategy)`,
+  `ExecutionContext(Backend::Sycl, ...)` (default selector) or `ExecutionContext(sycl::queue, ...)`. Both run
+  the same work-item functions on the same data layout (memory from `allocateShared()`: shared USM or plain host
+  memory), so every cost, `FusedCost` and `DeviceLevenbergMarquardt` works on either; results agree up to the
+  rounding of the two compilations (a SYCL device pass runs scalar Eigen). `defaultBackend()` is
+  `MOPTIM_BACKEND` (`host` or `sycl`) if set, else Sycl in a SYCL build and Host otherwise.
+- On the host a launch costs a function call and the work runs at the speed of the plain C++ build; on
+  `native_cpu` a SYCL launch costs about 25 microseconds, which dominates problems of a few thousand elements
+  (`bench_moptim lm_optimize/two_costs`, 1200 elements: about 50 us per optimize on the host, 600 us on SYCL).
+
+`defaultContext()` is the process-wide instance (created on first use, on `defaultBackend()`) and
 `setDefaultContext()` replaces it. Every cost constructor takes a trailing
 `std::shared_ptr<ExecutionContext> context = nullptr`; null means `defaultContext()`, and a cost keeps the one
 it was built with.
 
 - **`threads`**: the number of work-groups of a launch in the `Chunked` strategy, at most the number of
-  partitions of the problem; `0` means all compute units. It decides how the work is shared out and never the
+  partitions of the problem (on the host also at most one per two partitions, so a small cost stays on the
+  calling thread); `0` means all compute units (all hardware threads on the host). It decides how the work is shared out and never the
   result. On `native_cpu` a launch of one work-group runs on the calling thread; wider launches use the SYCL
   runtime's thread pool, whose threads exist whatever `threads` says. For literally one thread in the process,
   set `SYCL_NATIVE_CPU_HOST_THREADS=1` in the environment.

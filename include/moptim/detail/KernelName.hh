@@ -30,6 +30,7 @@ constexpr size_t constStringLength(const char* text) {
   return length;
 }
 
+#if MOPTIM_HAS_SYCL
 // Internal linkage: each translation unit that includes this header gets its own marker, whose unique
 // stable id carries that unit's prefix.
 namespace {
@@ -45,6 +46,10 @@ auto tuIdType(std::index_sequence<Is...>) -> TuIdChars<tuIdString()[Is]...>;
 
 /// A type that is different in every translation unit.
 using CurrentTuId = decltype(tuIdType(std::make_index_sequence<constStringLength(tuIdString())>{}));
+#else
+/// Without SYCL there are no kernel names to keep apart: one type for all translation units.
+using CurrentTuId = TuIdChars<>;
+#endif
 
 /// Name of the chunk kernel of a cost: evaluation kind, jacobian policy (which names the model), scalar.
 template <bool kLinearSystem, class Policy, class T, class TuId>

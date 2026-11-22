@@ -77,8 +77,7 @@ Data makeData(size_t n, const double* truth, unsigned seed) {
 }
 
 std::shared_ptr<ExecutionContext> makeContext(size_t threads, AssemblyStrategy strategy = AssemblyStrategy::Auto) {
-  return std::make_shared<ExecutionContext>(
-      sycl::queue{sycl::default_selector_v, sycl::property::queue::in_order()}, threads, strategy);
+  return std::make_shared<ExecutionContext>(defaultBackend(), threads, strategy);
 }
 
 bool sameBits(const std::vector<double>& a, const std::vector<double>& b) {
@@ -267,6 +266,9 @@ TEST(FusedCost, RejectsCostsOfDifferentContextsOrSpaces) {
 TEST(FusedCost, WorkGroupStrategyLaunchesTheCostsOneByOne) {
   const Data data = makeData(3000, kTruth, 23);
   const auto context = makeContext(0, AssemblyStrategy::WorkGroup);
+  if (!context->usesWorkGroupKernel()) {
+    GTEST_SKIP() << "the WorkGroup kernel needs the SYCL backend";
+  }
   Problem problem(data, 3000, context);
   const System expected = sumOfParts({problem.curve.get(), problem.central.get(), problem.prior.get()}, kX);
 

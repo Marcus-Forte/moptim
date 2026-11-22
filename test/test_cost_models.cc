@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "moptim/AnalyticalCost.hh"
+#include "moptim/Atomic.hh"
 #include "moptim/ExecutionContext.hh"
 #include "moptim/LossFunction.hh"
 #include "moptim/NumericalCostCentral.hh"
@@ -24,8 +25,7 @@ namespace {
 constexpr size_t kParams = 2;
 
 std::shared_ptr<ExecutionContext> makeContext(size_t threads) {
-  return std::make_shared<ExecutionContext>(
-      sycl::queue{sycl::default_selector_v, sycl::property::queue::in_order()}, threads);
+  return std::make_shared<ExecutionContext>(defaultBackend(), threads);
 }
 
 struct Data {
@@ -265,7 +265,7 @@ struct Counters {
 };
 
 void bump(int& counter) {
-  sycl::atomic_ref<int, sycl::memory_order::relaxed, sycl::memory_scope::device>(counter).fetch_add(1);
+  moptim::atomicFetchAdd(counter, 1);
 }
 
 struct CountingBase {

@@ -3,27 +3,41 @@
     "configurePresets": [
         {
             "name": "default",
-            "displayName": "DPC++, native_cpu",
-            "description": "moptim with the DPC++ clang and the host CPU as the only SYCL target (native_cpu)",
+            "displayName": "Host (no SYCL)",
+            "description": "moptim without SYCL, with the image's GCC: every context runs on the host backend",
+            "toolchainFile": "/opt/toolchain/gcc.cmake",
             "generator": "Ninja",
             "cacheVariables": {
-                "CMAKE_C_COMPILER": "/opt/sycl/bin/clang",
-                "CMAKE_CXX_COMPILER": "/opt/sycl/bin/clang++",
                 "CMAKE_BUILD_TYPE": "Release",
-                "SYCL_TARGETS": "native_cpu",
+                "MOPTIM_WITH_SYCL": "OFF",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
             },
             "binaryDir": "${sourceDir}/build"
         },
         {
             "name": "sycl",
-            "displayName": "DPC++, native_cpu + CUDA + SPIR-V",
-            "description": "moptim with the DPC++ clang for the host CPU, NVIDIA GPUs and spir64 devices; needs the CUDA and libspirv bitcode libraries of the toolchain",
-            "inherits": "default",
+            "displayName": "SYCL: native_cpu + CUDA + SPIR-V",
+            "description": "moptim with the DPC++ clang for the host CPU, NVIDIA GPUs and spir64 devices; needs the CUDA and libspirv bitcode libraries of the toolchain. Contexts run on the host or SYCL backend (MOPTIM_BACKEND)",
+            "generator": "Ninja",
             "cacheVariables": {
-                "SYCL_TARGETS": "native_cpu,nvptx64-nvidia-cuda,spir64"
+                "CMAKE_C_COMPILER": "/opt/sycl/bin/clang",
+                "CMAKE_CXX_COMPILER": "/opt/sycl/bin/clang++",
+                "CMAKE_BUILD_TYPE": "Release",
+                "MOPTIM_WITH_SYCL": "ON",
+                "SYCL_TARGETS": "native_cpu,nvptx64-nvidia-cuda,spir64",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
             },
             "binaryDir": "${sourceDir}/build_sycl"
+        },
+        {
+            "name": "sycl-cpu",
+            "inherits": "sycl",
+            "displayName": "SYCL: native_cpu",
+            "description": "SYCL for the host CPU only (the mdnf1992/cpp-dev image's toolchain)",
+            "cacheVariables": {
+                "SYCL_TARGETS": "native_cpu"
+            },
+            "binaryDir": "${sourceDir}/build_sycl_cpu"
         }
     ]
 }

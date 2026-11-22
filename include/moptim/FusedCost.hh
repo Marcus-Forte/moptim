@@ -205,8 +205,7 @@ class FusedCost final : public ICost<T> {
     }
     const std::tuple<typename Costs::FusedRef...> refs{std::get<Is>(costs_)->fusedRef()...};
     detail::submitNamed<detail::FusedKernelName<kLinearSystem, T, detail::CurrentTuId, typename Costs::FusedPolicy...>>(
-        *context_, width, [refs, launched](sycl::nd_item<1> item) {
-          const size_t worker = item.get_group_linear_id();
+        *context_, width, [refs, launched](size_t worker) {
           ((launched[Is] ? Costs::template runFused<kLinearSystem>(std::get<Is>(refs), worker) : void()), ...);
         });
   }
@@ -215,7 +214,7 @@ class FusedCost final : public ICost<T> {
   void settle() noexcept {
     pending_.kind = Kind::None;
     try {
-      context_->queue().wait();
+      detail::complete(*context_);
     } catch (...) {  // NOLINT: the error that got us here is the one that matters
     }
     std::apply(

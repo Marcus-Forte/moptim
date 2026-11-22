@@ -6,8 +6,10 @@
 //   build/test/bench_moptim --threads 4 --strategy chunked [filter]
 //   build/test/bench_moptim --speculative   # LM rows evaluate trial points with linear systems
 //
-// --threads N and --strategy auto|chunked|workgroup configure the default ExecutionContext before
-// anything runs. The analytical costs read them; the numerical ones run on the host and do not.
+// --backend host|sycl (default: MOPTIM_BACKEND, else sycl in a SYCL build), --threads N and
+// --strategy auto|chunked|workgroup configure the default ExecutionContext before anything runs; the
+// first line printed is the backend. One SYCL build thus benchmarks both backends, and a build without
+// SYCL the host one (compare them with test/compare_bench.py).
 //
 // Every row reports the best time per call over several repetitions. Rows that assemble a linear
 // system also print the cost and the sums of J^T J and J^T b, so two builds can be compared for
@@ -618,6 +620,7 @@ struct Options {
   bool configure_context = false;
   size_t threads = 0;
   AssemblyStrategy strategy = AssemblyStrategy::Auto;
+  Backend backend = defaultBackend();
   bool speculative = false;
 };
 
@@ -635,6 +638,12 @@ Options parseOptions(int argc, char** argv) {
       const unsigned long long threads = std::stoull(text, &used);
       if (used != text.size()) throw std::invalid_argument("bad --threads value: " + text);
       options.threads = static_cast<size_t>(threads);
+      options.configure_context = true;
+    } else if (arg == "--backend") {
+      const std::string text = value(i);
+      if (text == "host") options.backend = Backend::Host;
+      else if (text == "sycl" && syclAvailable()) options.backend = Backend::Sycl;
+      else throw std::invalid_argument("--backend must be host" + std::string(syclAvailable() ? " or sycl" : "") + ", not " + text);
       options.configure_context = true;
     } else if (arg == "--speculative") {
       options.speculative = true;
@@ -661,17 +670,16 @@ int main(int argc, char** argv) {
   try {
     options = parseOptions(argc, argv);
   } catch (const std::exception& error) {
-    std::fprintf(stderr, "%s\nusage: bench_moptim [--threads N] [--strategy auto|chunked|workgroup] [--speculative] [name-filter]\n",
+    std::fprintf(stderr, "%s\nusage: bench_moptim [--backend host|sycl] [--threads N] [--strategy auto|chunked|workgroup] [--speculative] [name-filter]\n",
                  error.what());
     return 2;
   }
   g_speculative = options.speculative;
   // Only touch the default context when asked: creating it initializes the SYCL runtime.
   if (options.configure_context) {
-    const std::shared_ptr<ExecutionContext> context = defaultContext();
-    context->setThreads(options.threads);
-    context->setStrategy(options.strategy);
+    setDefaultContext(std::make_shared<ExecutionContext>(options.backend, options.threads, options.strategy));
   }
+  std::printf("backend=%s\n", backendName(defaultContext()->backend()));
 
   const Report report(options.filter);
 

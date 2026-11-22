@@ -30,7 +30,10 @@ sycl::queue inOrderQueue() { return sycl::queue{sycl::default_selector_v, sycl::
 TEST(TestExecutionContext, DefaultContextExistsAndIsInOrder) {
   const std::shared_ptr<ExecutionContext> context = defaultContext();
   ASSERT_NE(context, nullptr);
-  EXPECT_TRUE(context->queue().is_in_order());
+  EXPECT_EQ(context->backend(), defaultBackend());
+  if (context->backend() == Backend::Sycl) {
+    EXPECT_TRUE(context->queue().is_in_order());
+  }
   EXPECT_EQ(context, defaultContext());
   EXPECT_EQ(context->threads(), 0u);
   EXPECT_EQ(context->strategy(), AssemblyStrategy::Auto);
@@ -101,21 +104,21 @@ TEST(TestExecutionContext, LaunchWidth) {
 
 TEST(TestExecutionContext, LaunchCounterCountsLaunches) {
   ExecutionContext context(inOrderQueue());
-  auto flag = detail::makeSharedArray<int>(context.queue(), 1);
+  auto flag = detail::makeSharedArray<int>(context, 1);
   int* out = flag.get();
   *out = 0;
   EXPECT_EQ(context.launches(), 0u);
 
-  detail::launch(context, 1, [=](sycl::nd_item<1>) { *out = 42; });
+  detail::launch(context, 1, [=](size_t) { *out = 42; });
   EXPECT_EQ(context.launches(), 1u);
   EXPECT_EQ(*out, 42);
 
-  detail::launch(context, 1, [=](sycl::nd_item<1>) { *out = 43; });
+  detail::launch(context, 1, [=](size_t) { *out = 43; });
   EXPECT_EQ(context.launches(), 2u);
   EXPECT_EQ(*out, 43);
 
   // Nothing to run: no launch.
-  detail::launch(context, 0, [=](sycl::nd_item<1>) { *out = -1; });
+  detail::launch(context, 0, [=](size_t) { *out = -1; });
   EXPECT_EQ(context.launches(), 2u);
   EXPECT_EQ(*out, 43);
 }
@@ -123,10 +126,10 @@ TEST(TestExecutionContext, LaunchCounterCountsLaunches) {
 TEST(TestExecutionContext, LaunchRunsEveryWorkItem) {
   ExecutionContext context(inOrderQueue());
   for (const size_t groups : {size_t{1}, size_t{2}, size_t{7}, size_t{64}}) {
-    auto slots = detail::makeSharedArray<size_t>(context.queue(), groups);
+    auto slots = detail::makeSharedArray<size_t>(context, groups);
     size_t* out = slots.get();
     std::fill(out, out + groups, size_t{0});
-    detail::launch(context, groups, [=](sycl::nd_item<1> item) { out[item.get_group_linear_id()] += 100 + item.get_group_linear_id(); });
+    detail::launch(context, groups, [=](size_t group) { out[group] += 100 + group; });
     for (size_t g = 0; g < groups; ++g) {
       EXPECT_EQ(out[g], 100 + g) << "groups " << groups << ", group " << g;
     }
@@ -134,12 +137,12 @@ TEST(TestExecutionContext, LaunchRunsEveryWorkItem) {
 }
 
 TEST(TestExecutionContext, UsmHelpersAlign) {
-  sycl::queue queue = inOrderQueue();
-  auto shared = detail::makeSharedArray<double>(queue, 5, 128);
+  ExecutionContext context(inOrderQueue());
+  auto shared = detail::makeSharedArray<double>(context, 5, 128);
   EXPECT_EQ(reinterpret_cast<std::uintptr_t>(shared.get()) % 128, 0u);
-  auto empty = detail::makeSharedArray<double>(queue, 0);
+  auto empty = detail::makeSharedArray<double>(context, 0);
   EXPECT_NE(empty.get(), nullptr);
-  auto device = detail::makeDeviceArray<float>(queue, 16);
+  auto device = detail::makeDeviceArray<float>(context, 16);
   EXPECT_EQ(reinterpret_cast<std::uintptr_t>(device.get()) % detail::kUsmAlignment, 0u);
 }
 
@@ -177,9 +180,9 @@ EigenLayout eigenLayoutOfThisPass() {
 
 TEST(TestExecutionContext, EigenSettingsOfHostAndDevicePass) {
   ExecutionContext context(inOrderQueue());
-  auto slot = detail::makeSharedArray<EigenLayout>(context.queue(), 1);
+  auto slot = detail::makeSharedArray<EigenLayout>(context, 1);
   EigenLayout* device_layout = slot.get();
-  detail::launch(context, 1, [=](sycl::nd_item<1>) { *device_layout = eigenLayoutOfThisPass(); });
+  detail::launch(context, 1, [=](size_t) { *device_layout = eigenLayoutOfThisPass(); });
   const EigenLayout host = eigenLayoutOfThisPass();
   const EigenLayout device = *device_layout;
 

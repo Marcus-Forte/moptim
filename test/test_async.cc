@@ -68,8 +68,7 @@ Data makeData(size_t n, const double* truth, unsigned seed) {
 }
 
 std::shared_ptr<ExecutionContext> makeContext(size_t threads) {
-  return std::make_shared<ExecutionContext>(
-      sycl::queue{sycl::default_selector_v, sycl::property::queue::in_order()}, threads);
+  return std::make_shared<ExecutionContext>(defaultBackend(), threads);
 }
 
 template <class T>

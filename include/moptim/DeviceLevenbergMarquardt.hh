@@ -126,6 +126,9 @@ bool choleskySolve(const T* A, const T* b, T* x, T* L, size_t n) {
 /**
  * @brief Levenberg-Marquardt that runs a whole optimize() in one kernel launch, for small problems.
  *
+ * On a host context the same loop runs on the calling thread (no launch at all), so the class is the
+ * small-problem optimizer of both backends.
+ *
  * LevenbergMarquardt orchestrates an iteration on the host and launches the costs' kernels, about one
  * launch per iteration with speculative linear systems and a FusedCost. For a problem of a few hundred
  * to a few thousand elements in a few dimensions the launches are most of the time. This optimizer
@@ -172,13 +175,10 @@ class DeviceLevenbergMarquardt {
           }
         },
         costs_);
-    workspace_ = sycl::malloc_shared<Workspace>(1, context_->queue());
-    if (workspace_ == nullptr) {
-      throw std::bad_alloc();
-    }
+    workspace_ = static_cast<Workspace*>(context_->allocateShared(sizeof(Workspace), alignof(Workspace)));
   }
 
-  ~DeviceLevenbergMarquardt() { sycl::free(workspace_, context_->queue()); }
+  ~DeviceLevenbergMarquardt() { context_->deallocate(workspace_); }
 
   DeviceLevenbergMarquardt(const DeviceLevenbergMarquardt&) = delete;
   DeviceLevenbergMarquardt& operator=(const DeviceLevenbergMarquardt&) = delete;
@@ -222,12 +222,9 @@ class DeviceLevenbergMarquardt {
       ws->x[i] = x[i];
     }
     const size_t max_iterations = max_iterations_;
-    LaunchAccess::count(*context_);
-    context_->queue()
-        .template single_task<detail::DeviceLMKernelName<T, Manifold, detail::CurrentTuId,
-                                                         typename Costs::FusedPolicy...>>(
-            [refs, ws, max_iterations] { run(refs, ws, max_iterations, std::index_sequence<Is...>{}); })
-        .wait_and_throw();
+    // One work-group: on the host backend the loop runs on the calling thread.
+    detail::launchNamed<detail::DeviceLMKernelName<T, Manifold, detail::CurrentTuId, typename Costs::FusedPolicy...>>(
+        *context_, 1, [refs, ws, max_iterations](size_t) { run(refs, ws, max_iterations, std::index_sequence<Is...>{}); });
     for (size_t i = 0; i < kAmbient; ++i) {
       x[i] = ws->x[i];
     }

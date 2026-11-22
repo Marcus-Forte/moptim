@@ -56,12 +56,12 @@ void checkLoss(const LossFunction<T>& loss, uint64_t max_ulp_of_rho, const char*
 
   const std::vector<T> values = sampleValues<T>(T{1.5});
   const size_t n = values.size();
-  auto s = detail::makeSharedArray<T>(context.queue(), n);
-  auto out = detail::makeSharedArray<T>(context.queue(), 3 * n);
+  auto s = detail::makeSharedArray<T>(context, n);
+  auto out = detail::makeSharedArray<T>(context, 3 * n);
   std::copy(values.begin(), values.end(), s.get());
   const T* s_ptr = s.get();
   T* out_ptr = out.get();
-  detail::launch(context, 1, [=](sycl::nd_item<1>) {
+  detail::launch(context, 1, [=](size_t) {
     for (size_t i = 0; i < n; ++i) {
       detail::evaluateLoss(descriptor, s_ptr[i], out_ptr + 3 * i);
     }

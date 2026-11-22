@@ -34,10 +34,10 @@ void checkShape(ExecutionContext& context, std::mt19937& rng, Eigen::Index rows,
   const Eigen::Index stride = rows + 3;
   const size_t h_size = static_cast<size_t>(cols * cols);
 
-  auto jacobian = detail::makeSharedArray<T>(context.queue(), static_cast<size_t>(stride * cols));
-  auto residuals = detail::makeSharedArray<T>(context.queue(), static_cast<size_t>(rows));
-  auto hessian = detail::makeSharedArray<T>(context.queue(), h_size);
-  auto gradient = detail::makeSharedArray<T>(context.queue(), static_cast<size_t>(cols));
+  auto jacobian = detail::makeSharedArray<T>(context, static_cast<size_t>(stride * cols));
+  auto residuals = detail::makeSharedArray<T>(context, static_cast<size_t>(rows));
+  auto hessian = detail::makeSharedArray<T>(context, h_size);
+  auto gradient = detail::makeSharedArray<T>(context, static_cast<size_t>(cols));
   for (Eigen::Index i = 0; i < stride * cols; ++i) jacobian.get()[i] = entry(rng);
   for (Eigen::Index i = 0; i < rows; ++i) residuals.get()[i] = entry(rng);
 
@@ -55,7 +55,7 @@ void checkShape(ExecutionContext& context, std::mt19937& rng, Eigen::Index rows,
   std::copy(g_start.begin(), g_start.end(), gradient.get());
   T* h_out = hessian.get();
   T* g_out = gradient.get();
-  detail::launch(context, 1, [=](sycl::nd_item<1>) {
+  detail::launch(context, 1, [=](size_t) {
     detail::accumulateNormalEquationsRaw<T>(j, stride, r, rows, cols, h_out, cols, g_out);
   });
 
@@ -104,12 +104,12 @@ TEST(TestDeviceNormalEquations, SquaredNormMatchesAcrossPasses) {
   ExecutionContext context(sycl::queue{sycl::default_selector_v, sycl::property::queue::in_order()});
   std::mt19937 rng(5);
   std::uniform_real_distribution<double> entry(-1.0, 1.0);
-  auto values = detail::makeSharedArray<double>(context.queue(), 100);
-  auto out = detail::makeSharedArray<double>(context.queue(), 100);
+  auto values = detail::makeSharedArray<double>(context, 100);
+  auto out = detail::makeSharedArray<double>(context, 100);
   for (int i = 0; i < 100; ++i) values.get()[i] = entry(rng);
   const double* v = values.get();
   double* o = out.get();
-  detail::launch(context, 1, [=](sycl::nd_item<1>) {
+  detail::launch(context, 1, [=](size_t) {
     for (size_t n = 0; n < 100; ++n) o[n] = detail::squaredNorm(v, n);
   });
   for (size_t n = 0; n < 100; ++n) {

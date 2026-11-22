@@ -19,7 +19,9 @@
 // SYCL math functions (see lossSqrt in LossFunction.hh).
 #include <algorithm>
 #include <cstddef>
+#if MOPTIM_HAS_SYCL
 #include <sycl/sycl.hpp>
+#endif
 
 #include "moptim/detail/ChunkKernel.hh"
 
@@ -186,6 +188,7 @@ template <class T>
   }
 }
 
+#if MOPTIM_HAS_SYCL
 /**
  * The function every work-item of a work-group launch runs. `models` is the array of
  * `args.model_count` models, called through const references (the cost only uses this kernel for models
@@ -245,5 +248,7 @@ void runWorkGroupItem(const KernelArgs<T>& args, const Model* models, sycl::nd_i
     workGroupFinalSums(args, t, kLinearSystem);
   }
 }
+
+#endif  // MOPTIM_HAS_SYCL
 
 }  // namespace moptim::detail

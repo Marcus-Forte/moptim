@@ -21,6 +21,7 @@
 #include "moptim/detail/KernelName.hh"
 #include "moptim/detail/Partitioning.hh"
 #include "moptim/detail/Usm.hh"
+#include "moptim/Atomic.hh"
 #include "moptim/detail/WorkGroupKernel.hh"
 
 namespace moptim {
@@ -39,10 +40,14 @@ namespace detail {
 /// Not counted as a launch of the context. Throws std::logic_error on a mismatch.
 template <class Model>
 void checkModelLayout(ExecutionContext& context) {
+#if MOPTIM_HAS_SYCL
+  if (context.backend() != Backend::Sycl) {
+    return;  // the host backend has one pass
+  }
   static std::once_flag checked;
   std::call_once(checked, [&context] {
     sycl::queue& queue = context.queue();
-    const UsmPtr<size_t> reported = makeSharedArray<size_t>(queue, 2);
+    const UsmPtr<size_t> reported = makeSharedArray<size_t>(context, 2);
     size_t* out = reported.get();
     queue.single_task<ModelLayoutKernelName<Model, CurrentTuId>>([out] {
       out[0] = sizeof(Model);
@@ -56,6 +61,9 @@ void checkModelLayout(ExecutionContext& context) {
                              std::to_string(alignof(Model)) + ")");
     }
   });
+#else
+  (void)context;
+#endif
 }
 
 }  // namespace detail
@@ -184,7 +192,7 @@ class ChunkedCost : public ICost<T> {
     information_factors_.reset();
     weights_.reset();
     if (!weights.empty()) {
-      weights_ = detail::makeSharedArray<T>(context_->queue(), weights.size());
+      weights_ = detail::makeSharedArray<T>(*context_, weights.size());
       std::copy(weights.begin(), weights.end(), weights_.get());
     }
   }
@@ -206,7 +214,7 @@ class ChunkedCost : public ICost<T> {
       return;
     }
     const size_t entries = observation_dim_ * observation_dim_;
-    information_factors_ = detail::makeSharedArray<T>(context_->queue(), entries * information.size());
+    information_factors_ = detail::makeSharedArray<T>(*context_, entries * information.size());
     for (size_t e = 0; e < information.size(); ++e) {
       assert(static_cast<size_t>(information[e].rows()) == observation_dim_ &&
              static_cast<size_t>(information[e].cols()) == observation_dim_);
@@ -242,7 +250,7 @@ class ChunkedCost : public ICost<T> {
     }
     slice_layout_ = layout;
     if (partials_ && partitioning_.num_partitions > partials_capacity_) {
-      partials_ = detail::makeSharedArray<T>(context_->queue(), partitioning_.num_partitions * partial_stride_);
+      partials_ = detail::makeSharedArray<T>(*context_, partitioning_.num_partitions * partial_stride_);
       partials_capacity_ = partitioning_.num_partitions;
     }
     input_ = input;
@@ -317,9 +325,8 @@ class ChunkedCost : public ICost<T> {
   }
 
   detail::UsmPtr<T> copyToDevice(const T* host, size_t count) {
-    sycl::queue& queue = context_->queue();
-    detail::UsmPtr<T> device = detail::makeDeviceArray<T>(queue, count);
-    queue.memcpy(device.get(), host, count * sizeof(T)).wait();
+    detail::UsmPtr<T> device = detail::makeDeviceArray<T>(*context_, count);
+    context_->copyToDevice(device.get(), host, count * sizeof(T));
     return device;
   }
 
@@ -349,13 +356,12 @@ class ChunkedCost : public ICost<T> {
   }
 
   void ensureGroupBuffers(size_t groups) {
-    sycl::queue& queue = context_->queue();
     if (!group_counter_) {
-      group_counter_ = detail::makeSharedArray<unsigned int>(queue, detail::kCacheLine / sizeof(unsigned int));
-      group_result_ = detail::makeSharedArray<T>(queue, partial_stride_);
+      group_counter_ = detail::makeSharedArray<unsigned int>(*context_, detail::kCacheLine / sizeof(unsigned int));
+      group_result_ = detail::makeSharedArray<T>(*context_, partial_stride_);
     }
     if (groups > group_partials_capacity_) {
-      group_partials_ = detail::makeSharedArray<T>(queue, groups * partial_stride_);
+      group_partials_ = detail::makeSharedArray<T>(*context_, groups * partial_stride_);
       group_partials_capacity_ = groups;
     }
   }
@@ -363,21 +369,20 @@ class ChunkedCost : public ICost<T> {
   /// Allocates what a launch of `width` work-items needs and was not allocated yet: everything on the
   /// first call, more scratch slices if the width grew.
   void ensureState(size_t width) {
-    sycl::queue& queue = context_->queue();
     if (models_ == nullptr) {
       detail::checkModelLayout<Model>(*context_);
       buildModels();
 
-      x_ = detail::makeSharedArray<T>(queue, param_dim_);
-      points_ = detail::makeSharedArray<T>(queue, Policy::kPointsPerParam * active_param_dim_ * param_dim_);
-      counter_ = detail::makeSharedArray<size_t>(queue, detail::kCacheLine / sizeof(size_t));  // a cache line of its own
-      partials_ = detail::makeSharedArray<T>(queue, partitioning_.num_partitions * partial_stride_);
+      x_ = detail::makeSharedArray<T>(*context_, param_dim_);
+      points_ = detail::makeSharedArray<T>(*context_, Policy::kPointsPerParam * active_param_dim_ * param_dim_);
+      counter_ = detail::makeSharedArray<size_t>(*context_, detail::kCacheLine / sizeof(size_t));  // a cache line of its own
+      partials_ = detail::makeSharedArray<T>(*context_, partitioning_.num_partitions * partial_stride_);
       partials_capacity_ = partitioning_.num_partitions;
-      args_ = detail::makeSharedArray<detail::KernelArgs<T>>(queue, 1);
+      args_ = detail::makeSharedArray<detail::KernelArgs<T>>(*context_, 1);
       ::new (static_cast<void*>(args_.get())) detail::KernelArgs<T>();
     }
     if (width > scratch_slices_) {
-      scratch_ = detail::makeSharedArray<unsigned char>(queue, width * slice_layout_.stride,
+      scratch_ = detail::makeSharedArray<unsigned char>(*context_, width * slice_layout_.stride,
                                                         detail::sliceAlignment(alignof(Model)));
       scratch_slices_ = width;
     }
@@ -386,7 +391,7 @@ class ChunkedCost : public ICost<T> {
   /// Copy-constructs the models into USM (the given one is moved into the first slot). Throws what a
   /// constructor throws, after destroying the ones already built.
   void buildModels() {
-    model_storage_ = detail::makeSharedArray<unsigned char>(context_->queue(), model_count_ * sizeof(Model),
+    model_storage_ = detail::makeSharedArray<unsigned char>(*context_, model_count_ * sizeof(Model),
                                                             detail::sliceAlignment(alignof(Model)));
     constructModels(reinterpret_cast<Model*>(model_storage_.get()));
   }
@@ -527,10 +532,9 @@ class ChunkedCost : public ICost<T> {
     const detail::KernelArgs<T>* args = args_.get();
     Model* models = models_;
     detail::submitNamed<detail::ChunkKernelName<kLinearSystem, Policy, T, detail::CurrentTuId>>(
-        *context_, width, [args, models](sycl::nd_item<1> item) {
-      sycl::atomic_ref<size_t, sycl::memory_order::relaxed, sycl::memory_scope::device> counter(*args->counter);
-      detail::runWorkItem<Policy, Model, T, kLinearSystem>(*args, models, item.get_group_linear_id(),
-                                                           [&counter] { return counter.fetch_add(size_t{1}); });
+        *context_, width, [args, models](size_t group) {
+      detail::runWorkItem<Policy, Model, T, kLinearSystem>(*args, models, group,
+                                                           [args] { return atomicFetchAdd(*args->counter, size_t{1}); });
     });
   }
 
@@ -586,9 +590,9 @@ class ChunkedCost : public ICost<T> {
         return;
       }
     }
-    sycl::atomic_ref<size_t, sycl::memory_order::relaxed, sycl::memory_scope::device> counter(*ref.args->counter);
+    size_t* counter = ref.args->counter;
     detail::runWorkItem<Policy, Model, T, kLinearSystem>(*ref.args, ref.models, worker,
-                                                         [&counter] { return counter.fetch_add(size_t{1}); });
+                                                         [counter] { return atomicFetchAdd(*counter, size_t{1}); });
   }
 
   // ─── Evaluation inside a kernel (DeviceLevenbergMarquardt) ─────────────────────────────────────
@@ -698,6 +702,9 @@ class ChunkedCost : public ICost<T> {
   /// single partial.
   template <bool kLinearSystem>
   void launchWorkGroup() {
+#if !MOPTIM_HAS_SYCL
+    throw std::logic_error("moptim: the WorkGroup kernel needs a build with MOPTIM_WITH_SYCL");
+#else
     if constexpr (!Policy::kConstCallable) {
       throw std::logic_error("moptim: the WorkGroup kernel needs a model whose functions are const");
     } else {
@@ -725,6 +732,7 @@ class ChunkedCost : public ICost<T> {
           detail::runWorkGroupItem<Policy, T, Model, kLinearSystem>(*args, models, item, local, flag);
         });
     }
+#endif
   }
 
   /// The evaluation that was submitted and not yet completed by wait(), and where its results go.
