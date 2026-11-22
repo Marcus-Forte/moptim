@@ -118,8 +118,10 @@ struct NumericalJacobian {
  *
  * Every evaluation point has its own copy of the model, with its state set to the point before each
  * launch: `1 + P_active` models for the forward scheme and `1 + 2 P_active` for the central one, all
- * copy-constructed from the model given, once, on the first evaluation (see ChunkedCost). Copies must
- * not share state that `setState()` or `residual()` write to. Everything else (kernel, partitions,
+ * copy-constructed from the model given, once, on the first evaluation that needs them (see
+ * ChunkedCost). On the host backend a cost whose elements fit in one chunk, with a const-callable
+ * model, needs none: its one model goes from point to point. Copies must not share state that
+ * `setState()` or `residual()` write to. Everything else (kernel, partitions,
  * noise model, determinism) is ChunkedCost's; the model's `residual` runs in a kernel (IModel.hh).
  *
  * On a manifold the evaluation points are `x [+] (+h e_p)` and `x [+] (-h e_p)` for each active
