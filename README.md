@@ -424,6 +424,25 @@ bit for bit. `setData()` removes the per-element noise model (`setWeights()` / `
 the new elements. The arrays are read at each evaluation (or copied by `setData()` on a device that cannot read host
 memory), so they must stay valid while the cost uses them. A `FusedCost` sees its costs' new data and models.
 
+### The whole solve in one launch: `DeviceLevenbergMarquardt`
+
+Even fused and speculative, Levenberg-Marquardt launches once per iteration, and the host does the damping, the
+solve and the step in between. `DeviceLevenbergMarquardt<T, Manifold, Costs...>`
+(`moptim/DeviceLevenbergMarquardt.hh`) runs the iterations themselves in a kernel, on one work-item: each cost's
+partitions in order with the chunked work-item code, the costs summed in order, a damped Cholesky solve, the step,
+the trial point's linear system and the acceptance test, following `LevenbergMarquardt` with speculative linear
+systems step for step (same damping, trials, rho, convergence tests and status). `optimize(x)` is one launch. It
+ends where `LevenbergMarquardt` does up to rounding (the device pass runs scalar Eigen in the models and its own
+Cholesky), with the same iterations and status in the tests. It is opt-in and for small problems, where launches and
+not arithmetic dominate; it uses one work-item, so it does not scale with threads, and `LevenbergMarquardt` stays
+the reference and the choice for large problems. Requirements: the parameter space is a compile-time
+`DeviceManifold` (`kAmbientDim`, `kTangentDim` up to 64, a static device-callable `plus`; `EuclideanSpace<T, N>` for
+plain vectors) with the same `plus` as the manifold the costs were built on; the costs are `ChunkedCost`-based, share
+one `ExecutionContext`, and their models' `setState()` is device code too (it runs in the kernel); there is no
+observer. In mslam's scan registration (about 1000 point-to-plane elements and an IMU factor, 3 iterations per
+round) it takes the solve from four launches per round to one, and the replay of `living_room_garden` from 13428
+to 3357 launches.
+
 ## Asynchronous evaluation
 
 `ICost` has `submitLinearSystem(x, JTJ, JTb, &cost)`, `submitCost(x, &cost)` and `wait()` next to the synchronous

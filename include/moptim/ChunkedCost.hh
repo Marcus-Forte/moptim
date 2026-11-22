@@ -28,6 +28,9 @@ namespace moptim {
 template <class T, class... Costs>
 class FusedCost;
 
+template <class T, class Manifold, class... Costs>
+class DeviceLevenbergMarquardt;
+
 namespace detail {
 
 /// Once per model type: checks in a kernel that `sizeof` and `alignof` of `Model` are the same in
@@ -588,6 +591,98 @@ class ChunkedCost : public ICost<T> {
                                                          [&counter] { return counter.fetch_add(size_t{1}); });
   }
 
+  // ─── Evaluation inside a kernel (DeviceLevenbergMarquardt) ─────────────────────────────────────
+  template <class, class, class...>
+  friend class DeviceLevenbergMarquardt;
+
+  /// What an evaluation of this cost at an arbitrary `x` from inside a kernel needs.
+  struct LoopRef {
+    detail::KernelArgs<T>* args = nullptr;  ///< Its `x` and `points` are `x` and `points` below.
+    Model* models = nullptr;
+    size_t model_count = 0;
+    T* x = nullptr;       ///< param_dim entries.
+    T* points = nullptr;  ///< Evaluation points of a numerical policy.
+    T* partials = nullptr;
+    size_t num_elements = 0;
+    size_t param_dim = 0;
+    size_t tangent_dim = 0;
+    size_t active_param_dim = 0;
+    size_t partial_stride = 0;
+    size_t num_partitions = 0;
+    T step = T{0};  ///< Finite-difference step (numerical policies).
+  };
+
+  /// Allocates what one work-item needs and writes the kernel arguments; the returned reference stays
+  /// valid until the cost's data, model or noise model change.
+  LoopRef prepareLoop() {
+    wait();
+    LoopRef ref;
+    ref.num_elements = num_elements_;
+    ref.param_dim = param_dim_;
+    ref.tangent_dim = tangent_dim_;
+    ref.active_param_dim = active_param_dim_;
+    ref.partial_stride = partial_stride_;
+    ref.num_partitions = partitioning_.num_partitions;
+    if (num_elements_ == 0) {
+      return ref;
+    }
+    ensureState(1);
+    *args_ = makeArgs();
+    ref.args = args_.get();
+    ref.models = models_;
+    ref.model_count = model_count_;
+    ref.x = x_.get();
+    ref.points = points_.get();
+    ref.partials = partials_.get();
+    if constexpr (Policy::kPointsPerParam > 0) {
+      ref.step = Policy::step();
+    }
+    return ref;
+  }
+
+  /// Device code: the linear system (or the cost alone) of this cost at `x`, by one work-item that runs
+  /// the partitions in order, into `JTJ` (`tangent_dim` square), `JTb` and `cost`. The model states (and
+  /// a numerical policy's evaluation points, stepped with `Manifold::plus`) are set here, so the model's
+  /// `setState()` must be device-callable.
+  template <class Manifold, bool kLinearSystem>
+  static void loopEvaluate(const LoopRef& ref, const T* x, T* JTJ, T* JTb, T* cost) {
+    if (ref.num_elements == 0) {
+      if constexpr (kLinearSystem) {
+        for (size_t i = 0; i < ref.tangent_dim * ref.tangent_dim; ++i) {
+          JTJ[i] = T{0};
+        }
+        for (size_t i = 0; i < ref.tangent_dim; ++i) {
+          JTb[i] = T{0};
+        }
+      }
+      *cost = T{0};
+      return;
+    }
+    for (size_t i = 0; i < ref.param_dim; ++i) {
+      ref.x[i] = x[i];
+    }
+    ref.models[0].setState(ref.x);
+    if constexpr (kLinearSystem && Policy::kPointsPerParam > 0) {
+      constexpr size_t kPerParam = Policy::kPointsPerParam;
+      T delta[Manifold::kTangentDim];
+      for (size_t i = 0; i < Manifold::kTangentDim; ++i) {
+        delta[i] = T{0};
+      }
+      for (size_t q = 0; q < kPerParam * ref.active_param_dim; ++q) {
+        const size_t param = q / kPerParam;
+        delta[param] = q % kPerParam == 0 ? ref.step : -ref.step;
+        T* point = ref.points + q * ref.param_dim;
+        Manifold::plus(ref.x, delta, point);
+        delta[param] = T{0};
+        ref.models[q + 1].setState(point);
+      }
+    }
+    size_t next = 0;
+    detail::runWorkItem<Policy, Model, T, kLinearSystem>(*ref.args, ref.models, 0, [&next] { return next++; });
+    reducePartials(ref.partials, ref.num_partitions, ref.partial_stride, ref.active_param_dim, ref.tangent_dim,
+                   kLinearSystem, JTJ, JTb, cost);
+  }
+
   /// Completes the pending fused evaluation once the FusedCost waited for its kernel: adds the partials.
   void finishFused() {
     if (pending_.kind == Pending::Kind::None) {
@@ -645,40 +740,48 @@ class ChunkedCost : public ICost<T> {
 
   /// Adds the partial results of a completed evaluation, in partition order, into its outputs.
   void reduce(const Pending& pending) {
+    reducePartials(pending.partials, pending.count, partial_stride_, active_param_dim_, tangent_dim_,
+                   pending.kind == Pending::Kind::LinearSystem, pending.JTJ, pending.JTb, pending.cost);
+  }
+
+  /// The reduction of `count` partial slots of `stride` entries, in slot order: the cost, and for a linear
+  /// system JTb and both triangles of JTJ (`tangent_dim` square, zero outside the leading `params` block).
+  /// Device-callable: DeviceLevenbergMarquardt reduces in its kernel with the same arithmetic.
+  static void reducePartials(const T* partials, size_t count, size_t stride, size_t params, size_t tangent_dim,
+                             bool linear_system, T* JTJ, T* JTb, T* cost_out) {
     T cost{0};
-    if (pending.kind == Pending::Kind::Cost) {
-      for (size_t partition = 0; partition < pending.count; ++partition) {
-        cost += pending.partials[partition * partial_stride_];
+    if (!linear_system) {
+      for (size_t partition = 0; partition < count; ++partition) {
+        cost += partials[partition * stride];
       }
-      *pending.cost = cost;
+      *cost_out = cost;
       return;
     }
-
-    T* JTJ = pending.JTJ;
-    T* JTb = pending.JTb;
-    std::fill_n(JTJ, tangent_dim_ * tangent_dim_, T{0});
-    std::fill_n(JTb, tangent_dim_, T{0});
-    // Only the leading active_param_dim_ block is populated; the trailing rows/columns (tangent
-    // dimensions this cost does not depend on) stay zero. The partials hold the lower triangle.
-    const size_t params = active_param_dim_;
-    for (size_t partition = 0; partition < pending.count; ++partition) {
-      const T* partial = pending.partials + partition * partial_stride_;
+    for (size_t i = 0; i < tangent_dim * tangent_dim; ++i) {
+      JTJ[i] = T{0};
+    }
+    for (size_t i = 0; i < tangent_dim; ++i) {
+      JTb[i] = T{0};
+    }
+    // Only the leading `params` block is populated; the trailing rows/columns (tangent dimensions this
+    // cost does not depend on) stay zero. The partials hold the lower triangle.
+    for (size_t partition = 0; partition < count; ++partition) {
+      const T* partial = partials + partition * stride;
       cost += partial[0];
       for (size_t a = 0; a < params; ++a) {
         JTb[a] += partial[1 + a];
         for (size_t b = a; b < params; ++b) {
-          JTJ[b + a * tangent_dim_] += partial[1 + params + b + a * params];
+          JTJ[b + a * tangent_dim] += partial[1 + params + b + a * params];
         }
       }
     }
     for (size_t a = 0; a < params; ++a) {
       for (size_t b = a + 1; b < params; ++b) {
-        JTJ[a + b * tangent_dim_] = JTJ[b + a * tangent_dim_];
+        JTJ[a + b * tangent_dim] = JTJ[b + a * tangent_dim];
       }
     }
-    *pending.cost = cost;
+    *cost_out = cost;
   }
-
 
   std::shared_ptr<ExecutionContext> context_;
   Pending pending_;
