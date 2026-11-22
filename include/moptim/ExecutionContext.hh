@@ -220,6 +220,14 @@ void submitNamed(ExecutionContext& context, size_t work_groups, Kernel kernel) {
   runKernelOnHost(context, work_groups, kernel);
 }
 
+/// Runs `kernel()` on the calling thread as one launch of a host context (counted as one): for a
+/// launch whose body is host code, such as a walk that calls a model's host-only `setState()`.
+template <class Kernel>
+void runOnCallingThread(ExecutionContext& context, Kernel&& kernel) {
+  LaunchAccess::count(context);
+  kernel();
+}
+
 /// Waits for everything submitted on the context and rethrows asynchronous errors (nothing to wait for
 /// on the host: its launches are done when they return).
 inline void complete(ExecutionContext& context) {

@@ -300,6 +300,41 @@ void runPartitions(const KernelArgs<T>& args, ModelPtr models, T* residuals, T* 
 }
 
 /**
+ * The evaluation-point models of a numerical policy as one model moved from point to point, for a
+ * single work-item that visits each point once (all the elements in one chunk): `models[i]` sets the
+ * model's state to point `i` (0 is `x`, `i > 0` is row `i - 1` of `points`) when it is not there
+ * already. Host code only, since `setState()` runs inside the walk.
+ */
+template <class Model, class T>
+struct SteppedModels {
+  Model* model;
+  const T* x;
+  const T* points;
+  size_t param_dim;
+  size_t* current;  ///< The point the model's state is at, shared by the copies of this handle.
+
+  Model& operator[](size_t point) const {
+    if (*current != point) {
+      model->setState(point == 0 ? x : points + (point - 1) * param_dim);
+      *current = point;
+    }
+    return *model;
+  }
+  Model& operator*() const { return (*this)[0]; }
+};
+
+/// The work-item function over models used in place: `models` is a model pointer or SteppedModels.
+template <class Policy, bool kLinearSystem, class T, class ModelPtr, class Claim>
+void runWorkItemInPlace(const KernelArgs<T>& args, ModelPtr models, size_t worker, Claim& claim) {
+  unsigned char* slice = args.scratch + worker * args.slice.stride;
+  T* residuals = reinterpret_cast<T*>(slice + args.slice.residuals);
+  T* scales = reinterpret_cast<T*>(slice + args.slice.scales);
+  T* jacobian = reinterpret_cast<T*>(slice + args.slice.jacobian);
+  T* aux = reinterpret_cast<T*>(slice + args.slice.aux);
+  runPartitions<Policy, kLinearSystem>(args, models, residuals, scales, jacobian, aux, claim);
+}
+
+/**
  * The function every work-item of a launch runs. `claim()` returns the next unclaimed partition
  * (a value >= the number of partitions means there is none left); `worker` selects the scratch slice.
  *
@@ -312,28 +347,22 @@ void runPartitions(const KernelArgs<T>& args, ModelPtr models, T* residuals, T* 
  */
 template <class Policy, class Model, class T, bool kLinearSystem, class Claim>
 [[gnu::noinline]] void runWorkItem(const KernelArgs<T>& args, Model* models, size_t worker, Claim claim) {
-  unsigned char* slice = args.scratch + worker * args.slice.stride;
-  T* residuals = reinterpret_cast<T*>(slice + args.slice.residuals);
-  T* scales = reinterpret_cast<T*>(slice + args.slice.scales);
-  T* jacobian = reinterpret_cast<T*>(slice + args.slice.jacobian);
-  T* aux = reinterpret_cast<T*>(slice + args.slice.aux);
-
   constexpr ModelAccess kAccess = modelAccess<Policy, Model>();
   if constexpr (kAccess == ModelAccess::Shared) {
     const Model* shared = models;
-    runPartitions<Policy, kLinearSystem>(args, shared, residuals, scales, jacobian, aux, claim);
+    runWorkItemInPlace<Policy, kLinearSystem>(args, shared, worker, claim);
   } else if constexpr (kAccess == ModelAccess::PerWorkItemCopy) {
     const size_t used = kLinearSystem ? args.model_count : size_t{1};
-    Model* local = reinterpret_cast<Model*>(slice + args.slice.model);
+    Model* local = reinterpret_cast<Model*>(args.scratch + worker * args.slice.stride + args.slice.model);
     for (size_t i = 0; i < used; ++i) {
       ::new (static_cast<void*>(local + i)) Model(static_cast<const Model&>(models[i]));
     }
-    runPartitions<Policy, kLinearSystem>(args, local, residuals, scales, jacobian, aux, claim);
+    runWorkItemInPlace<Policy, kLinearSystem>(args, local, worker, claim);
     for (size_t i = 0; i < used; ++i) {
       local[i].~Model();
     }
   } else {
-    runPartitions<Policy, kLinearSystem>(args, models, residuals, scales, jacobian, aux, claim);
+    runWorkItemInPlace<Policy, kLinearSystem>(args, models, worker, claim);
   }
 }
 

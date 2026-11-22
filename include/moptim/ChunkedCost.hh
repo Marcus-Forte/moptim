@@ -89,7 +89,10 @@ void checkModelLayout(ExecutionContext& context) {
  * differences: the cost then keeps `1 + kPointsPerParam * active_param_dim` models, one per evaluation
  * point (point 0 is `x`), all copied from the one it was given. This class owns everything else: the optional noise model (scalar weights or
  * information matrices), the optional robust kernel, the model in USM and the buffers of the launch.
- * It allocates them on first use and reuses them afterwards.
+ * It allocates them on first use and reuses them afterwards. On the host backend, a numerical cost
+ * whose elements fit in one chunk and whose model is const-callable makes no copies: each evaluation
+ * point is visited once, so the one model is moved from point to point (its state set on the way)
+ * and the results are those of the copies, bit for bit.
  *
  * Only the built-in losses (LossFunction::descriptor() other than Custom) can run in a kernel.
  * submitCost() and submitLinearSystem() start the launch without waiting; wait() completes it and
@@ -388,35 +391,56 @@ class ChunkedCost : public ICost<T> {
     }
   }
 
-  /// Copy-constructs the models into USM (the given one is moved into the first slot). Throws what a
-  /// constructor throws, after destroying the ones already built.
+  /// Moves the given model into USM: storage for all model_count_ models, or for the first alone when
+  /// the cost runs stepped() (completeModels() builds the others).
   void buildModels() {
-    model_storage_ = detail::makeSharedArray<unsigned char>(*context_, model_count_ * sizeof(Model),
+    model_slots_ = stepped() ? 1 : model_count_;
+    model_storage_ = detail::makeSharedArray<unsigned char>(*context_, model_slots_ * sizeof(Model),
                                                             detail::sliceAlignment(alignof(Model)));
     constructModels(reinterpret_cast<Model*>(model_storage_.get()));
   }
 
-  /// Constructs the models in `models` (model_count_ slots of model_storage_) from pending_model_.
+  /// Moves pending_model_ into slot 0 of `models`.
   void constructModels(Model* models) {
-    try {
-      if constexpr (Policy::kPointsPerParam > 0) {
-        for (; models_built_ + 1 < model_count_; ++models_built_) {
-          ::new (static_cast<void*>(models + models_built_ + 1)) Model(*pending_model_);
-        }
-      }
-      ::new (static_cast<void*>(models)) Model(std::move(*pending_model_));
-    } catch (...) {
-      for (size_t i = 0; i < models_built_; ++i) {
-        models[i + 1].~Model();
-      }
-      models_built_ = 0;
-      model_storage_.reset();
-      throw;
-    }
-    // Slot 0 is built last, so the others were counted without it.
-    models_built_ = Policy::kPointsPerParam > 0 ? model_count_ : 1;
+    ::new (static_cast<void*>(models)) Model(std::move(*pending_model_));
+    models_built_ = 1;
     models_ = models;
     pending_model_.reset();
+  }
+
+  /// Copy-constructs the evaluation-point models of a numerical policy from slot 0, those not built
+  /// yet. Their states are set before every launch, so the state slot 0 had does not matter. A
+  /// constructor that throws leaves the ones built so far, and the next call goes on from there.
+  void completeModels() {
+    if constexpr (Policy::kPointsPerParam > 0) {
+      if (models_built_ == model_count_) {
+        return;
+      }
+      if (model_slots_ < model_count_) {
+        // Storage for one model (a stepped() cost now used by a FusedCost or a device loop): move it.
+        auto storage = detail::makeSharedArray<unsigned char>(*context_, model_count_ * sizeof(Model),
+                                                              detail::sliceAlignment(alignof(Model)));
+        Model* models = reinterpret_cast<Model*>(storage.get());
+        ::new (static_cast<void*>(models)) Model(std::move(models_[0]));
+        models_[0].~Model();
+        models_ = models;
+        model_storage_ = std::move(storage);
+        model_slots_ = model_count_;
+      }
+      for (; models_built_ < model_count_; ++models_built_) {
+        ::new (static_cast<void*>(models_ + models_built_)) Model(static_cast<const Model&>(models_[0]));
+      }
+    }
+  }
+
+  /// Whether this cost's own launches run the stepped path (runInline()): the host backend, a
+  /// numerical policy, a const-callable model and every element in one chunk.
+  bool stepped() const {
+    if constexpr (Policy::kPointsPerParam > 0 && Policy::kConstCallable) {
+      return context_->backend() == Backend::Host && partitioning_.num_chunks == 1;
+    } else {
+      return false;
+    }
   }
 
   void destroyModels() noexcept {
@@ -494,19 +518,43 @@ class ChunkedCost : public ICost<T> {
   /// Everything an evaluation does on the host before its launch: buffers for `width` work-items, the
   /// model states at `x` (and at the evaluation points of a numerical linear system), the kernel
   /// arguments.
+  /// `stepped`: the launch is a stepped runInline(), which needs no evaluation-point models.
   template <bool kLinearSystem>
-  void prepare(const T* x, size_t width) {
+  void prepare(const T* x, size_t width, bool stepped = false) {
     ensureState(width);
+    if (!stepped) {
+      completeModels();
+    }
 
     std::copy_n(x, param_dim_, x_.get());
     models_[0].setState(x_.get());
     if constexpr (kLinearSystem && Policy::kPointsPerParam > 0) {
       fillPoints(x_.get());
-      for (size_t i = 1; i < model_count_; ++i) {
-        models_[i].setState(points_.get() + (i - 1) * param_dim_);
+      if (!stepped) {
+        for (size_t i = 1; i < model_count_; ++i) {
+          models_[i].setState(points_.get() + (i - 1) * param_dim_);
+        }
       }
     }
     *args_ = makeArgs();
+  }
+
+  /// A host launch of one work-item, on the calling thread with a plain claim counter. `stepped`: the
+  /// work-item function runs over the one model of a stepped() cost, which goes from evaluation point
+  /// to evaluation point (prepare() set its state to `x`).
+  template <bool kLinearSystem>
+  void runInline(bool stepped) {
+    size_t next = 0;
+    auto claim = [&next] { return next++; };
+    detail::runOnCallingThread(*context_, [&] {
+      if (stepped) {
+        size_t current = 0;
+        const detail::SteppedModels<Model, T> models{models_, x_.get(), points_.get(), param_dim_, &current};
+        detail::runWorkItemInPlace<Policy, kLinearSystem>(*args_, models, 0, claim);
+      } else {
+        detail::runWorkItem<Policy, Model, T, kLinearSystem>(*args_, models_, 0, claim);
+      }
+    });
   }
 
   /// The chunked kernel's partials and claim counter, reset for a new launch.
@@ -520,14 +568,19 @@ class ChunkedCost : public ICost<T> {
   template <bool kLinearSystem>
   void launch(const T* x) {
     const bool work_group = usesWorkGroup();
+    const bool host_stepped = !work_group && stepped();
     const size_t width = work_group ? 0 : chunkedWidth();
-    prepare<kLinearSystem>(x, width);
+    prepare<kLinearSystem>(x, width, host_stepped);
 
     if (work_group) {
       launchWorkGroup<kLinearSystem>();
       return;
     }
     resetChunkedPartials();
+    if (host_stepped || (width == 1 && context_->backend() == Backend::Host)) {
+      runInline<kLinearSystem>(host_stepped);
+      return;
+    }
 
     const detail::KernelArgs<T>* args = args_.get();
     Model* models = models_;
@@ -631,6 +684,7 @@ class ChunkedCost : public ICost<T> {
       return ref;
     }
     ensureState(1);
+    completeModels();
     *args_ = makeArgs();
     ref.args = args_.get();
     ref.models = models_;
@@ -797,6 +851,7 @@ class ChunkedCost : public ICost<T> {
   const size_t model_count_;            ///< 1 + kPointsPerParam * active_param_dim.
   Model* models_ = nullptr;             ///< In USM (model_storage_), constructed lazily, destroyed by ~ChunkedCost().
   size_t models_built_ = 0;
+  size_t model_slots_ = 0;              ///< Models model_storage_ has room for.
 
   const T* input_;  ///< The caller's array, or the device copy.
   const T* observations_;
