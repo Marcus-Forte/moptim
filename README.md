@@ -398,6 +398,32 @@ differs from its `computeCost()`. For observers, `onLinearSystem` still fires on
 used: an accepted trial's system is reported at the start of the iteration that uses it, and the systems of
 rejected trials are not reported.
 
+### Fusing costs: one launch per evaluation
+
+The launch price is per launch, not per cost, so a problem made of several costs pays it once per cost and
+evaluation. `FusedCost<T, Costs...>` (`moptim/FusedCost.hh`, or `makeFusedCost<T>(a, b, ...)`) is an `ICost` made
+of `ChunkedCost`-based costs (`AnalyticalCost`, `NumericalCost*`) that runs their work in one kernel: every
+work-item works through the partitions of the first cost, then of the second, and so on. Each cost keeps its own
+partitions, partials, scratch and model, so its results are those of its own launch, and the fused cost adds them
+in the given order. Added to an optimizer instead of its parts it gives the same `x`, iterations and final cost bit
+for bit, with one launch per evaluation instead of one per cost; the linear-system cost still equals
+`computeCost()`, so speculative linear systems work on it. The costs must share their `ExecutionContext` and
+parameter space (the constructor throws `std::invalid_argument` otherwise), must not be added to the optimizer as
+well, and stay usable on their own. When the context selects the WorkGroup kernel, the costs are launched one by
+one (same results). A scan registration with a point-to-plane cost and a one-element IMU factor goes from two
+launches per evaluation to one; with speculative linear systems a Levenberg-Marquardt iteration is then one launch.
+
+### Reusing a cost: `setData()` and `setModel()`
+
+An iterative caller that re-associates its data every round (ICP: new correspondences, a model built for the pose of
+the round) used to build new costs each round: buffers in USM, the models (one per evaluation point for a numerical
+cost), a workspace in the optimizer. `ChunkedCost::setData(input, observations, num_elements)` replaces the elements
+(same dimensions) and `setModel(model)` the model, keeping everything else; buffers only grow when the new data
+needs more partitions or scratch than before. The results are those of a cost built with the new data and model,
+bit for bit. `setData()` removes the per-element noise model (`setWeights()` / `setInformation()`): set it again for
+the new elements. The arrays are read at each evaluation (or copied by `setData()` on a device that cannot read host
+memory), so they must stay valid while the cost uses them. A `FusedCost` sees its costs' new data and models.
+
 ## Asynchronous evaluation
 
 `ICost` has `submitLinearSystem(x, JTJ, JTb, &cost)`, `submitCost(x, &cost)` and `wait()` next to the synchronous

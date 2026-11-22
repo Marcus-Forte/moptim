@@ -24,6 +24,10 @@
 #include "moptim/detail/WorkGroupKernel.hh"
 
 namespace moptim {
+
+template <class T, class... Costs>
+class FusedCost;
+
 namespace detail {
 
 /// Once per model type: checks in a kernel that `sizeof` and `alignof` of `Model` are the same in
@@ -141,39 +145,7 @@ class ChunkedCost : public ICost<T> {
     const Pending pending = pending_;
     pending_.kind = Pending::Kind::None;  // even if the wait throws: there is nothing more to wait for
     detail::complete(*context_);
-
-    T cost{0};
-    if (pending.kind == Pending::Kind::Cost) {
-      for (size_t partition = 0; partition < pending.count; ++partition) {
-        cost += pending.partials[partition * partial_stride_];
-      }
-      *pending.cost = cost;
-      return;
-    }
-
-    T* JTJ = pending.JTJ;
-    T* JTb = pending.JTb;
-    std::fill_n(JTJ, tangent_dim_ * tangent_dim_, T{0});
-    std::fill_n(JTb, tangent_dim_, T{0});
-    // Only the leading active_param_dim_ block is populated; the trailing rows/columns (tangent
-    // dimensions this cost does not depend on) stay zero. The partials hold the lower triangle.
-    const size_t params = active_param_dim_;
-    for (size_t partition = 0; partition < pending.count; ++partition) {
-      const T* partial = pending.partials + partition * partial_stride_;
-      cost += partial[0];
-      for (size_t a = 0; a < params; ++a) {
-        JTb[a] += partial[1 + a];
-        for (size_t b = a; b < params; ++b) {
-          JTJ[b + a * tangent_dim_] += partial[1 + params + b + a * params];
-        }
-      }
-    }
-    for (size_t a = 0; a < params; ++a) {
-      for (size_t b = a + 1; b < params; ++b) {
-        JTJ[a + b * tangent_dim_] = JTJ[b + a * tangent_dim_];
-      }
-    }
-    *pending.cost = cost;
+    reduce(pending);
   }
 
   /**
@@ -240,6 +212,65 @@ class ChunkedCost : public ICost<T> {
     }
   }
 
+  /**
+   * @brief Replaces the elements: `num_elements` of them, read from `input` and `observations`
+   * (same dimensions as before), for the next evaluations.
+   *
+   * The cost keeps its model, its loss and its buffers: they are reused, and only grown when the new
+   * data needs more partitions or scratch than any earlier evaluation did. An iterative caller that
+   * re-associates its data every round (ICP correspondences) updates one cost this way instead of
+   * building a new one each round. Results are the ones a cost built with this data gives, bit for bit.
+   *
+   * The per-element noise model (setWeights(), setInformation()) belongs to the old elements and is
+   * removed; set it again for the new ones. The arrays are read as they are at each evaluation (or
+   * copied now on a device that cannot read host memory), so they must stay valid while the cost uses
+   * them. A pending evaluation is completed first.
+   */
+  void setData(const T* input, const T* observations, size_t num_elements) {
+    wait();
+    weights_.reset();
+    information_factors_.reset();
+    num_elements_ = num_elements;
+    partitioning_ = detail::makePartitioning(num_elements_, observation_dim_, active_param_dim_, sizeof(T));
+    const detail::SliceLayout layout = makeSlice(partitioning_);
+    if (layout.stride > slice_layout_.stride) {
+      scratch_.reset();
+      scratch_slices_ = 0;  // ensureState() reallocates the slices at the new stride
+    }
+    slice_layout_ = layout;
+    if (partials_ && partitioning_.num_partitions > partials_capacity_) {
+      partials_ = detail::makeSharedArray<T>(context_->queue(), partitioning_.num_partitions * partial_stride_);
+      partials_capacity_ = partitioning_.num_partitions;
+    }
+    input_ = input;
+    observations_ = observations;
+    if (num_elements_ > 0 && !context_->hostAccessible()) {
+      input_copy_ = copyToDevice(input, num_elements_ * input_dim_);
+      observations_copy_ = copyToDevice(observations, num_elements_ * observation_dim_);
+      input_ = input_copy_.get();
+      observations_ = observations_copy_.get();
+    }
+  }
+
+  /**
+   * @brief Replaces the model for the next evaluations, as if the cost had been built with `model`.
+   *
+   * The models live in USM and are rebuilt in place from `model` (all the evaluation-point copies of
+   * a numerical cost too), without reallocating. A pending evaluation is completed first.
+   */
+  void setModel(Model model) {
+    wait();
+    if (models_ == nullptr) {
+      pending_model_.emplace(std::move(model));
+      return;
+    }
+    Model* storage = models_;
+    destroyModels();
+    models_built_ = 0;
+    pending_model_.emplace(std::move(model));
+    constructModels(storage);
+  }
+
   const std::shared_ptr<ExecutionContext>& context() const { return context_; }
 
  protected:
@@ -254,10 +285,7 @@ class ChunkedCost : public ICost<T> {
         observations_(observations),
         partitioning_(detail::makePartitioning(num_elements_, observation_dim_, active_param_dim_, sizeof(T))),
         partial_stride_(detail::partialStride(sizeof(T), active_param_dim_)),
-        slice_layout_(detail::makeSliceLayout(
-            sizeof(T), partitioning_.chunk_elements * observation_dim_, active_param_dim_,
-            Policy::auxValues(partitioning_.chunk_elements * observation_dim_, active_param_dim_, observation_dim_),
-            kAccess == detail::ModelAccess::PerWorkItemCopy ? model_count_ * sizeof(Model) : 0, alignof(Model))) {
+        slice_layout_(makeSlice(partitioning_)) {
     // A device that cannot read the caller's memory gets its own copy of the data, once.
     if (num_elements_ > 0 && !context_->hostAccessible()) {
       input_copy_ = copyToDevice(input, num_elements_ * input_dim_);
@@ -276,6 +304,14 @@ class ChunkedCost : public ICost<T> {
 
  private:
   static constexpr detail::ModelAccess kAccess = detail::modelAccess<Policy, Model>();
+
+  /// Layout of a work-item's scratch slice for chunks of `partitioning`.
+  detail::SliceLayout makeSlice(const detail::Partitioning& partitioning) const {
+    return detail::makeSliceLayout(
+        sizeof(T), partitioning.chunk_elements * observation_dim_, active_param_dim_,
+        Policy::auxValues(partitioning.chunk_elements * observation_dim_, active_param_dim_, observation_dim_),
+        kAccess == detail::ModelAccess::PerWorkItemCopy ? model_count_ * sizeof(Model) : 0, alignof(Model));
+  }
 
   detail::UsmPtr<T> copyToDevice(const T* host, size_t count) {
     sycl::queue& queue = context_->queue();
@@ -333,6 +369,7 @@ class ChunkedCost : public ICost<T> {
       points_ = detail::makeSharedArray<T>(queue, Policy::kPointsPerParam * active_param_dim_ * param_dim_);
       counter_ = detail::makeSharedArray<size_t>(queue, detail::kCacheLine / sizeof(size_t));  // a cache line of its own
       partials_ = detail::makeSharedArray<T>(queue, partitioning_.num_partitions * partial_stride_);
+      partials_capacity_ = partitioning_.num_partitions;
       args_ = detail::makeSharedArray<detail::KernelArgs<T>>(queue, 1);
       ::new (static_cast<void*>(args_.get())) detail::KernelArgs<T>();
     }
@@ -348,7 +385,11 @@ class ChunkedCost : public ICost<T> {
   void buildModels() {
     model_storage_ = detail::makeSharedArray<unsigned char>(context_->queue(), model_count_ * sizeof(Model),
                                                             detail::sliceAlignment(alignof(Model)));
-    Model* models = reinterpret_cast<Model*>(model_storage_.get());
+    constructModels(reinterpret_cast<Model*>(model_storage_.get()));
+  }
+
+  /// Constructs the models in `models` (model_count_ slots of model_storage_) from pending_model_.
+  void constructModels(Model* models) {
     try {
       if constexpr (Policy::kPointsPerParam > 0) {
         for (; models_built_ + 1 < model_count_; ++models_built_) {
@@ -437,14 +478,16 @@ class ChunkedCost : public ICost<T> {
     return args;
   }
 
-  /// Sets the model's state to `x` and submits the one launch of an evaluation (wait() completes it).
+  /// Number of work-items a chunked launch of this cost uses on its own.
+  size_t chunkedWidth() const {
+    return kAccess == detail::ModelAccess::Exclusive ? 1 : context_->launchWidth(partitioning_.num_partitions);
+  }
+
+  /// Everything an evaluation does on the host before its launch: buffers for `width` work-items, the
+  /// model states at `x` (and at the evaluation points of a numerical linear system), the kernel
+  /// arguments.
   template <bool kLinearSystem>
-  void launch(const T* x) {
-    const bool work_group = usesWorkGroup();
-    const size_t width =
-        work_group ? 0
-                   : (kAccess == detail::ModelAccess::Exclusive ? 1
-                                                                : context_->launchWidth(partitioning_.num_partitions));
+  void prepare(const T* x, size_t width) {
     ensureState(width);
 
     std::copy_n(x, param_dim_, x_.get());
@@ -456,14 +499,27 @@ class ChunkedCost : public ICost<T> {
       }
     }
     *args_ = makeArgs();
+  }
+
+  /// The chunked kernel's partials and claim counter, reset for a new launch.
+  void resetChunkedPartials() {
+    reduce_from_ = partials_.get();
+    reduce_count_ = partitioning_.num_partitions;
+    *counter_ = 0;
+  }
+
+  /// Sets the model's state to `x` and submits the one launch of an evaluation (wait() completes it).
+  template <bool kLinearSystem>
+  void launch(const T* x) {
+    const bool work_group = usesWorkGroup();
+    const size_t width = work_group ? 0 : chunkedWidth();
+    prepare<kLinearSystem>(x, width);
 
     if (work_group) {
       launchWorkGroup<kLinearSystem>();
       return;
     }
-    reduce_from_ = partials_.get();
-    reduce_count_ = partitioning_.num_partitions;
-    *counter_ = 0;
+    resetChunkedPartials();
 
     const detail::KernelArgs<T>* args = args_.get();
     Model* models = models_;
@@ -473,6 +529,73 @@ class ChunkedCost : public ICost<T> {
       detail::runWorkItem<Policy, Model, T, kLinearSystem>(*args, models, item.get_group_linear_id(),
                                                            [&counter] { return counter.fetch_add(size_t{1}); });
     });
+  }
+
+  // ─── Fused launches (FusedCost) ───────────────────────────────────────────────────────────────
+  // A FusedCost runs the chunked work-item function of several costs in one kernel: each cost keeps
+  // its own partitions, partials, claim counter and scratch, so its results are the ones its own launch
+  // gives, bit for bit.
+  template <class, class...>
+  friend class FusedCost;
+
+  /// Names the fused kernel (the policy names the model; the cost types themselves are constrained
+  /// templates, which a SYCL kernel name cannot mention).
+  using FusedPolicy = Policy;
+
+  /// What the fused kernel needs of this cost on the device.
+  struct FusedRef {
+    const detail::KernelArgs<T>* args = nullptr;
+    Model* models = nullptr;
+  };
+
+  /// Whether this cost can run in a fused chunked kernel (not when it uses the WorkGroup kernel).
+  bool fusable() const { return !usesWorkGroup(); }
+
+  /// Prepares an evaluation that a FusedCost launches on `width` work-items (at least chunkedWidth()),
+  /// and records it as pending with its outputs (`JTJ`/`JTb` unused for a cost-only evaluation). Returns
+  /// false, with the outputs written, when there is nothing to launch (no elements).
+  template <bool kLinearSystem>
+  bool prepareFused(const T* x, size_t width, T* JTJ, T* JTb, T* cost) {
+    wait();
+    if (num_elements_ == 0) {
+      if constexpr (kLinearSystem) {
+        std::fill_n(JTJ, tangent_dim_ * tangent_dim_, T{0});
+        std::fill_n(JTb, tangent_dim_, T{0});
+      }
+      *cost = T{0};
+      return false;
+    }
+    prepare<kLinearSystem>(x, std::max(width, chunkedWidth()));
+    resetChunkedPartials();
+    pending_ = Pending{kLinearSystem ? Pending::Kind::LinearSystem : Pending::Kind::Cost, JTJ, JTb, cost,
+                       reduce_from_, reduce_count_};
+    return true;
+  }
+
+  FusedRef fusedRef() const { return FusedRef{args_.get(), models_}; }
+
+  /// The work of this cost in a fused kernel, for work-item `worker` (device code). A model that only
+  /// one work-item may use runs on work-item 0 alone.
+  template <bool kLinearSystem>
+  static void runFused(const FusedRef& ref, size_t worker) {
+    if constexpr (kAccess == detail::ModelAccess::Exclusive) {
+      if (worker != 0) {
+        return;
+      }
+    }
+    sycl::atomic_ref<size_t, sycl::memory_order::relaxed, sycl::memory_scope::device> counter(*ref.args->counter);
+    detail::runWorkItem<Policy, Model, T, kLinearSystem>(*ref.args, ref.models, worker,
+                                                         [&counter] { return counter.fetch_add(size_t{1}); });
+  }
+
+  /// Completes the pending fused evaluation once the FusedCost waited for its kernel: adds the partials.
+  void finishFused() {
+    if (pending_.kind == Pending::Kind::None) {
+      return;
+    }
+    const Pending pending = pending_;
+    pending_.kind = Pending::Kind::None;
+    reduce(pending);
   }
 
   /// One element per work-item, one group per `workGroupLength()` elements; the last group to finish
@@ -520,6 +643,43 @@ class ChunkedCost : public ICost<T> {
     size_t count = 0;             ///< ...and how many there are (one per partition, or the group sum).
   };
 
+  /// Adds the partial results of a completed evaluation, in partition order, into its outputs.
+  void reduce(const Pending& pending) {
+    T cost{0};
+    if (pending.kind == Pending::Kind::Cost) {
+      for (size_t partition = 0; partition < pending.count; ++partition) {
+        cost += pending.partials[partition * partial_stride_];
+      }
+      *pending.cost = cost;
+      return;
+    }
+
+    T* JTJ = pending.JTJ;
+    T* JTb = pending.JTb;
+    std::fill_n(JTJ, tangent_dim_ * tangent_dim_, T{0});
+    std::fill_n(JTb, tangent_dim_, T{0});
+    // Only the leading active_param_dim_ block is populated; the trailing rows/columns (tangent
+    // dimensions this cost does not depend on) stay zero. The partials hold the lower triangle.
+    const size_t params = active_param_dim_;
+    for (size_t partition = 0; partition < pending.count; ++partition) {
+      const T* partial = pending.partials + partition * partial_stride_;
+      cost += partial[0];
+      for (size_t a = 0; a < params; ++a) {
+        JTb[a] += partial[1 + a];
+        for (size_t b = a; b < params; ++b) {
+          JTJ[b + a * tangent_dim_] += partial[1 + params + b + a * params];
+        }
+      }
+    }
+    for (size_t a = 0; a < params; ++a) {
+      for (size_t b = a + 1; b < params; ++b) {
+        JTJ[a + b * tangent_dim_] = JTJ[b + a * tangent_dim_];
+      }
+    }
+    *pending.cost = cost;
+  }
+
+
   std::shared_ptr<ExecutionContext> context_;
   Pending pending_;
   std::optional<Model> pending_model_;  ///< Until the first evaluation moves it into USM.
@@ -532,9 +692,10 @@ class ChunkedCost : public ICost<T> {
   detail::UsmPtr<T> input_copy_;
   detail::UsmPtr<T> observations_copy_;
 
-  const detail::Partitioning partitioning_;
+  detail::Partitioning partitioning_;  ///< Changes with setData().
   const size_t partial_stride_;
-  const detail::SliceLayout slice_layout_;
+  detail::SliceLayout slice_layout_;   ///< Changes with setData().
+  size_t partials_capacity_ = 0;       ///< Partition slots allocated in partials_.
 
   std::shared_ptr<LossFunction<T>> loss_;
   detail::UsmPtr<T> weights_;               ///< One per element, or null.

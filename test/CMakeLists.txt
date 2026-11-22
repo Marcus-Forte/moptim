@@ -46,6 +46,7 @@ add_executable(test_moptim
   test_tu_models_b.cc
   test_async.cc
   test_workgroup.cc
+  test_fused_cost.cc
 )
 add_subdirectory(nist)
 target_link_libraries(test_moptim moptim test_helper)

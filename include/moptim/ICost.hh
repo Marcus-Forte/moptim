@@ -105,6 +105,8 @@ class ICost {
   size_t numElements() const { return num_elements_; }
   /// The manifold the parameters live on, null for Euclidean parameters.
   const IManifold<T>* manifold() const { return manifold_.get(); }
+  /// The same manifold, shared (e.g. to build another cost or a FusedCost on the same space).
+  const std::shared_ptr<const IManifold<T>>& sharedManifold() const { return manifold_; }
 
  protected:
   /// Where the parameters live: `manifold` is null for Euclidean parameters.
@@ -138,7 +140,8 @@ class ICost {
   const size_t observation_dim_;
   const size_t param_dim_;
   const size_t tangent_dim_;
-  const size_t num_elements_;
+  /// Not const: a cost whose data can be replaced (ChunkedCost::setData()) changes it.
+  size_t num_elements_;
   /// Number of leading tangent dimensions the cost actually depends on. Resolved from the
   /// constructor's active_param_dim (0 -> tangent_dim_), never exceeds tangent_dim_.
   const size_t active_param_dim_;

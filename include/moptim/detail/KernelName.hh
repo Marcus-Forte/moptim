@@ -54,6 +54,11 @@ struct ChunkKernelName;
 template <bool kLinearSystem, class Policy, class T, class TuId>
 struct WorkGroupKernelName;
 
+/// Name of the one kernel of a FusedCost: evaluation kind, scalar, and the jacobian policies of its
+/// costs (which name their models).
+template <bool kLinearSystem, class T, class TuId, class... Policies>
+struct FusedKernelName;
+
 /// Name of the layout check of a model.
 template <class Model, class TuId>
 struct ModelLayoutKernelName;
