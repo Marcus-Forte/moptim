@@ -9,10 +9,7 @@
     "mounts": [
         // One volume per build directory. NEVER mount one volume on two targets: that aliases
         // the build directories and corrupts both.
-        "source=${localWorkspaceFolderBasename}-build-${devcontainerId},target=${containerWorkspaceFolder}/build,type=volume",
-        "source=${localWorkspaceFolderBasename}-build_sycl-${devcontainerId},target=${containerWorkspaceFolder}/build_sycl,type=volume",
-        "source=${localWorkspaceFolderBasename}-build_sycl_cpu-${devcontainerId},target=${containerWorkspaceFolder}/build_sycl_cpu,type=volume",
-        "source=opencode-sessions,target=/root/.local/share/opencode,type=volume"
+        "source=${localWorkspaceFolderBasename}-build-${devcontainerId},target=${containerWorkspaceFolder}/build,type=volume"
     ],
     "customizations": {
         "vscode": {
