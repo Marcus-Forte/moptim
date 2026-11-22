@@ -1,26 +1,33 @@
 {
     "name": "moptim",
-    "image": "mdnf1992/sycl-dev", // mdnf1992/sycl-dev for SYCL support
+    "image": "mdnf1992/cpp-dev",
+    // GPU usage: use "mdnf1992/cpp-dev:cuda" and uncomment "--gpus", "all" in runArgs below.
+    "runArgs": [
+        // "--gpus", "all",
+        // "--cap-add=SYS_ADMIN"
+    ],
+    "mounts": [
+        // One volume per build directory. NEVER mount one volume on two targets: that aliases
+        // the build directories and corrupts both.
+        "source=${localWorkspaceFolderBasename}-build-${devcontainerId},target=${containerWorkspaceFolder}/build,type=volume",
+        "source=${localWorkspaceFolderBasename}-build_sycl-${devcontainerId},target=${containerWorkspaceFolder}/build_sycl,type=volume",
+        "source=${localWorkspaceFolderBasename}-build_sycl_cpu-${devcontainerId},target=${containerWorkspaceFolder}/build_sycl_cpu,type=volume",
+        "source=opencode-sessions,target=/root/.local/share/opencode,type=volume"
+    ],
     "customizations": {
         "vscode": {
             "extensions": [
-                "ms-vscode.cpptools-extension-pack",
+                "ms-vscode.cmake-tools",
                 "llvm-vs-code-extensions.vscode-clangd",
+                "ms-vscode.cpptools",
                 "cschlosser.doxdocgen",
                 "jebbs.plantuml"
             ],
             "settings": {
-                "clangd.arguments": [ 
-                     "-header-insertion=never"
-                ]
+                "clangd.arguments": ["-header-insertion=never"],
+                "cmake.useCMakePresets": "always",
+                "C_Cpp.intelliSenseEngine": "disabled"
             }
         }
-    },
-    "mounts": [
-        "source=moptim-build-${devcontainerId},target=${containerWorkspaceFolder}/build,type=volume",
-        "source=moptim-build-${devcontainerId},target=${containerWorkspaceFolder}/build_sycl,type=volume",
-        "source=moptim-build-${devcontainerId},target=${containerWorkspaceFolder}/build_sycl_cpu,type=volume",
-		"source=opencode-sessions,target=/root/.local/share/opencode,type=volume"
-    ]
-    // "runArgs": ["--gpus", "all", "--cap-add=SYS_ADMIN"] // uncomment for GPU usage
+    }
 }

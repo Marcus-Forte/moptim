@@ -1,3 +1,4 @@
+CompilationDatabase: build
 CompileFlags:
   Add: [-I/opt/sycl/include/]
   Remove: [-fsycl-targets=*]

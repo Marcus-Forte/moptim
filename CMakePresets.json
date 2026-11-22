@@ -10,7 +10,8 @@
                 "CMAKE_C_COMPILER": "/opt/sycl/bin/clang",
                 "CMAKE_CXX_COMPILER": "/opt/sycl/bin/clang++",
                 "CMAKE_BUILD_TYPE": "Release",
-                "SYCL_TARGETS": "native_cpu"
+                "SYCL_TARGETS": "native_cpu",
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
             },
             "binaryDir": "${sourceDir}/build"
         },
