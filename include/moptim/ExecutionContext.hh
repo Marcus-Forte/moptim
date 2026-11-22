@@ -25,7 +25,7 @@ enum class AssemblyStrategy { Auto, Chunked, WorkGroup };
 
 /**
  * @brief Where a context runs the costs' work.
- *  - `Host`: on the calling thread, or on a pool of host threads for large launches. Always available.
+ *  - `Host`: sequentially on the calling thread (the reference path; no host threads). Always available.
  *  - `Sycl`: in SYCL kernels on a device. Only in a build with MOPTIM_WITH_SYCL.
  *
  * Both run the same work-item functions (detail/ChunkKernel.hh), so a cost, a FusedCost or a
@@ -50,29 +50,25 @@ Backend defaultBackend();
 /// "host" or "sycl".
 const char* backendName(Backend backend);
 
-namespace detail {
-class HostPool;
-}
-
 /**
  * @brief The backend the costs run on, and the knobs that decide how wide a launch is.
  *
  * - A SYCL context owns an in-order queue, so a cost can enqueue its kernels back to back.
- * - A host context runs a launch of one work-group on the calling thread and a wider one on a pool of
- *   host threads (created on first use), and returns when it is done.
- * - `threads` bounds the number of work-groups of one launch (`0` = all compute units of the
- *   device, or all hardware threads on the host). It only changes how the work is shared out, never the
+ * - A host context runs every work-group of a launch in order on the calling thread and returns when it
+ *   is done. moptim has no host threads: parallelism comes only from the SYCL backend.
+ * - `threads` bounds the number of work-groups of one launch on a SYCL device (`0` = all compute units
+ *   of the device). It is ignored on the host, which always runs one work-group. It only changes how the work is shared out, never the
  *   result: partial sums are combined in an order that does not depend on it (see ChunkedCost.hh).
  * - `launches()` counts the launches issued through `detail::submitNamed()`, so a test or a
  *   benchmark can check how many launches an operation takes, on either backend.
  *
  * Setters are not synchronized with launches: configure the context before using it from several
- * threads. Launches from several threads on one context are serialized. Not copyable; share it
+ * threads. Not copyable; share it
  * through `std::shared_ptr`.
  */
 class ExecutionContext {
  public:
-  /// defaultBackend(), all threads.
+  /// defaultBackend(), all compute units.
   ExecutionContext();
   /// @p backend (Sycl: `sycl::default_selector_v`, in-order queue). Throws std::invalid_argument for
   /// Sycl in a build without SYCL.
@@ -90,14 +86,13 @@ class ExecutionContext {
 
   Backend backend() const { return backend_; }
 
-  /// 0 means all compute units.
+  /// Work-groups per launch on a SYCL device (0 means all compute units); ignored on the host.
   size_t threads() const { return threads_; }
   void setThreads(size_t threads) { threads_ = threads; }
 
   /// Number of work-groups to launch for `partitions` independent pieces of work, at least 1 when
-  /// `partitions > 0`, 0 otherwise: `min(threads or compute units, partitions)` on a SYCL device; on the
-  /// host also at most one work-group per two partitions, so that a small cost runs on the calling
-  /// thread instead of paying a thread hand-off.
+  /// `partitions > 0`, 0 otherwise: `min(threads or compute units, partitions)` on a SYCL device; always 1
+  /// on the host.
   size_t launchWidth(size_t partitions) const;
 
   /// The device can dereference host allocations (`usm_system_allocations`; always on the host), so
@@ -141,9 +136,8 @@ class ExecutionContext {
   void copyToDevice(void* destination, const void* source, size_t bytes);
 
   // ─── Host launches ────────────────────────────────────────────────────────────────────────────
-  /// Host backend: runs `function(data, g)` for every work-group g in [0, groups), on the calling thread
-  /// when `groups` is 1 or the context has one thread, otherwise on the pool, and returns when all are
-  /// done. Rethrows the first exception a work-group threw.
+  /// Host backend: runs `function(data, g)` for every work-group g in [0, groups) in order on the
+  /// calling thread. An exception of a work-group propagates and ends the launch.
   void runOnHost(size_t groups, void (*function)(void*, size_t), void* data);
 
  private:
@@ -165,7 +159,6 @@ class ExecutionContext {
   bool host_accessible_ = true;
   bool is_cpu_ = true;
   std::atomic<uint64_t> launches_{0};
-  std::unique_ptr<detail::HostPool> pool_;
 };
 
 /// The process-wide context used by costs that were not given one, on defaultBackend(). Created on

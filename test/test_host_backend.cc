@@ -1,4 +1,4 @@
-// The host backend of ExecutionContext: launches on the calling thread or the host pool.
+// The host backend of ExecutionContext: launches run in order on the calling thread.
 #include <gtest/gtest.h>
 
 #include <atomic>
@@ -7,6 +7,7 @@
 #include <cstring>
 #include <memory>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 #include "moptim/Atomic.hh"
@@ -43,7 +44,7 @@ struct CountedExpModel {
 bool sameBits(const void* a, const void* b, size_t bytes) { return std::memcmp(a, b, bytes) == 0; }
 }  // namespace
 
-TEST(HostBackend, EveryWorkGroupRunsOnceAtAnyThreadCount) {
+TEST(HostBackend, EveryWorkGroupRunsOnceInOrderWhateverTheThreadsSetting) {
   for (const size_t threads : {size_t{1}, size_t{2}, size_t{3}, size_t{0}}) {
     SCOPED_TRACE(testing::Message() << "threads=" << threads);
     ExecutionContext context(Backend::Host, threads);
@@ -68,15 +69,30 @@ TEST(HostBackend, EveryWorkGroupRunsOnceAtAnyThreadCount) {
   }
 }
 
-TEST(HostBackend, SmallLaunchesStayOnTheCallingThread) {
+// The host has no threads: `threads` is ignored, one work-group does all the partitions.
+TEST(HostBackend, LaunchWidthIsAlwaysOne) {
   ExecutionContext context(Backend::Host, 8);
   EXPECT_EQ(context.launchWidth(0), 0u);
-  EXPECT_EQ(context.launchWidth(1), 1u);
-  EXPECT_EQ(context.launchWidth(2), 1u);  // a cost of about a thousand point-to-plane elements
-  EXPECT_EQ(context.launchWidth(3), 2u);
-  EXPECT_EQ(context.launchWidth(1000), 8u);
+  for (const size_t partitions : {size_t{1}, size_t{2}, size_t{3}, size_t{1000}}) {
+    EXPECT_EQ(context.launchWidth(partitions), 1u);
+  }
   context.setThreads(1);
   EXPECT_EQ(context.launchWidth(1000), 1u);
+}
+
+TEST(HostBackend, LaunchesRunInOrderOnTheCallingThread) {
+  ExecutionContext context(Backend::Host, 4);
+  const auto caller = std::this_thread::get_id();
+  std::vector<size_t> order;
+  auto record = [&](size_t group) {
+    EXPECT_EQ(std::this_thread::get_id(), caller);
+    order.push_back(group);
+  };
+  detail::runKernelOnHost(context, 9, record);
+  ASSERT_EQ(order.size(), 9u);
+  for (size_t g = 0; g < order.size(); ++g) {
+    EXPECT_EQ(order[g], g);
+  }
 }
 
 TEST(HostBackend, AnExceptionOfAWorkGroupReachesTheCaller) {
@@ -87,7 +103,7 @@ TEST(HostBackend, AnExceptionOfAWorkGroupReachesTheCaller) {
     }
   };
   EXPECT_THROW(detail::runKernelOnHost(context, 16, throwing), std::runtime_error);
-  // The pool is still usable.
+  // The context is still usable.
   std::atomic<int> total{0};
   auto counting = [&total](size_t) { total.fetch_add(1); };
   detail::runKernelOnHost(context, 16, counting);

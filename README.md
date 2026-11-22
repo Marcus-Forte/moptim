@@ -2,7 +2,7 @@
 
 Non-linear least-squares library (Gauss-Newton and Levenberg-Marquardt) on Eigen, with an optional SYCL backend.
 The linear system of every iteration (`J^T J`, `J^T r` and the cost) is assembled by work-item functions that run
-either on the host (the calling thread, or a pool of host threads for large problems) or, in a build with SYCL, in
+either on the host (sequentially on the calling thread: the reference path, with no host threads) or, in a build with SYCL, in
 SYCL kernels on the CPU (`native_cpu`) or an accelerator: one implementation, two launchers, chosen per
 `ExecutionContext` at run time. The optimizers and the linear solve run on the calling thread. Parameters can be a plain vector or live on a manifold, and costs can use analytical or
 finite-difference Jacobians, per-element weights or information matrices, and robust losses.
@@ -62,8 +62,8 @@ rejects as a parameter type, so the device pass also gets `-U__ARM_FEATURE_FP16_
 Work is launched through an `ExecutionContext` (`moptim/ExecutionContext.hh`): a backend and the knobs of a
 launch.
 
-- **Backend** (`backend()`): `Backend::Host` runs a launch of one work-group on the calling thread and a wider one
-  on a pool of host threads (created on first use; launches from several threads are serialized); `Backend::Sycl`
+- **Backend** (`backend()`): `Backend::Host` runs every work-group of a launch in order on the calling thread (the
+  sequential reference path: moptim has no host threads, parallelism comes only from the SYCL backend); `Backend::Sycl`
   (only in a SYCL build) owns an in-order SYCL queue. `ExecutionContext(Backend::Host, threads, strategy)`,
   `ExecutionContext(Backend::Sycl, ...)` (default selector) or `ExecutionContext(sycl::queue, ...)`. Both run
   the same work-item functions on the same data layout (memory from `allocateShared()`: shared USM or plain host
@@ -79,10 +79,9 @@ launch.
 `std::shared_ptr<ExecutionContext> context = nullptr`; null means `defaultContext()`, and a cost keeps the one
 it was built with.
 
-- **`threads`**: the number of work-groups of a launch in the `Chunked` strategy, at most the number of
-  partitions of the problem (on the host also at most one per two partitions, so a small cost stays on the
-  calling thread); `0` means all compute units (all hardware threads on the host). It decides how the work is shared out and never the
-  result. On `native_cpu` a launch of one work-group runs on the calling thread; wider launches use the SYCL
+- **`threads`** (SYCL backend only; ignored on the host, where a launch is one work-group): the number of
+  work-groups of a launch in the `Chunked` strategy, at most the number of partitions of the problem; `0` means
+  all compute units. It decides how the work is shared out and never the result. On `native_cpu` a launch of one work-group runs on the calling thread; wider launches use the SYCL
   runtime's thread pool, whose threads exist whatever `threads` says. For literally one thread in the process,
   set `SYCL_NATIVE_CPU_HOST_THREADS=1` in the environment.
 - **`AssemblyStrategy`** (`strategy()`, `setStrategy()`): `Chunked`, `WorkGroup` or `Auto` (default), which uses
@@ -564,7 +563,7 @@ build/test/bench_moptim forward              # only the rows whose name contains
 build/test/bench_moptim --threads 4 --strategy chunked --speculative lm_optimize
 ```
 
-- `--threads N` and `--strategy auto|chunked|workgroup` configure the default `ExecutionContext` first
+- `--threads N` (SYCL backend only) and `--strategy auto|chunked|workgroup` configure the default `ExecutionContext` first
   (`--threads 1` is a single work-group; `--strategy workgroup` is informational on `native_cpu`).
 - `--speculative` turns on speculative linear systems for every Levenberg-Marquardt row.
 - Each row is the best time over several repetitions. Linear-system rows print the cost and the sums of `JTJ` and

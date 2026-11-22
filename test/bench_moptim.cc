@@ -6,7 +6,7 @@
 //   build/test/bench_moptim --threads 4 --strategy chunked [filter]
 //   build/test/bench_moptim --speculative   # LM rows evaluate trial points with linear systems
 //
-// --backend host|sycl (default: MOPTIM_BACKEND, else sycl in a SYCL build), --threads N and
+// --backend host|sycl (default: MOPTIM_BACKEND, else sycl in a SYCL build), --threads N (SYCL only: ignored on the host) and
 // --strategy auto|chunked|workgroup configure the default ExecutionContext before anything runs; the
 // first line printed is the backend. One SYCL build thus benchmarks both backends, and a build without
 // SYCL the host one (compare them with test/compare_bench.py).
@@ -670,7 +670,7 @@ int main(int argc, char** argv) {
   try {
     options = parseOptions(argc, argv);
   } catch (const std::exception& error) {
-    std::fprintf(stderr, "%s\nusage: bench_moptim [--backend host|sycl] [--threads N] [--strategy auto|chunked|workgroup] [--speculative] [name-filter]\n",
+    std::fprintf(stderr, "%s\nusage: bench_moptim [--backend host|sycl] [--threads N (SYCL only)] [--strategy auto|chunked|workgroup] [--speculative] [name-filter]\n",
                  error.what());
     return 2;
   }

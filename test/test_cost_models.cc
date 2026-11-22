@@ -310,6 +310,8 @@ TEST(CostModels, EveryConstructedModelIsDestroyedOnce) {
   const Data data = makeData(kManyElements);
   Counters counters;
   const auto context = makeContext(3);
+  // Work-groups of a launch: the threads setting on a SYCL device, always one on the host.
+  const int work_groups = context->backend() == Backend::Host ? 1 : 3;
   {
     AnalyticalCost<MutableCountingModel, double> cost(data.input.data(), data.observations.data(), kManyElements, 1,
                                                       1, kParams, MutableCountingModel(&counters), 0, context);
@@ -320,8 +322,8 @@ TEST(CostModels, EveryConstructedModelIsDestroyedOnce) {
 
     cost.computeLinearSystem(x, jtj, jtb, value);
     const int after_one = counters.copied;
-    // Three work-groups, each copying the model once per launch.
-    EXPECT_EQ(after_one, 3);
+    // Each work-group copies the model once per launch.
+    EXPECT_EQ(after_one, work_groups);
     EXPECT_EQ(counters.destroyed, counters.constructed - 1) << "all the copies of the launch are gone, the model lives";
 
     cost.computeCost(x);
@@ -534,13 +536,15 @@ TEST(NumericalCostModels, ModelHoldingAReferenceToHostData) {
 template <template <class, class> class CostT, size_t kPointsPerParam>
 void checkModelCounts() {
   constexpr size_t kModels = 1 + kPointsPerParam * kParams;
-  constexpr int kWorkItems = 3;
+  const auto context = makeContext(3);
+  // Work-groups of a launch: the threads setting on a SYCL device, always one on the host.
+  const int kWorkItems = context->backend() == Backend::Host ? 1 : 3;
   const Data data = makeData(kManyElements);
   Counters counters;
   const auto alive = [&] { return counters.constructed - counters.destroyed; };
   {
     CostT<MutableCountingModel, double> cost(data.input.data(), data.observations.data(), kManyElements, 1, 1,
-                                             kParams, MutableCountingModel(&counters), 0, makeContext(kWorkItems));
+                                             kParams, MutableCountingModel(&counters), 0, context);
     EXPECT_EQ(alive(), 1) << "nothing is built before the first evaluation";
     const double x[kParams] = {0.7, -0.3};
     double jtj[kParams * kParams];
