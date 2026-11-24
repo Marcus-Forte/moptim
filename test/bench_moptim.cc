@@ -3,13 +3,13 @@
 // Not part of the unit-test suite. Build the `bench_moptim` target and run it by hand:
 //   build/test/bench_moptim            # everything
 //   build/test/bench_moptim forward    # only benchmarks whose name contains "forward"
-//   build/test/bench_moptim --threads 4 --strategy chunked [filter]
+//   build/test/bench_moptim --threads 4 [filter]
 //   build/test/bench_moptim --speculative   # LM rows evaluate trial points with linear systems
 //
-// --backend host|sycl (default: MOPTIM_BACKEND, else sycl in a SYCL build), --threads N (SYCL only: ignored on the host) and
-// --strategy auto|chunked|workgroup configure the default ExecutionContext before anything runs; the
-// first line printed is the backend. One SYCL build thus benchmarks both backends, and a build without
-// SYCL the host one (compare them with test/compare_bench.py).
+// --threads N sets the threads of the default ExecutionContext (0, the default, is all hardware
+// threads; 1 runs every launch inline). The first line printed is `threads=<resolved> tbb=<on|off>`.
+// Costs, linear systems and LM results are the same bits at every thread count; compare two runs with
+// test/compare_bench.py.
 //
 // Every row reports the best time per call over several repetitions. Rows that assemble a linear
 // system also print the cost and the sums of J^T J and J^T b, so two builds can be compared for
@@ -617,10 +617,7 @@ void benchManifold(const Report& report) {
 
 struct Options {
   std::string filter;
-  bool configure_context = false;
   size_t threads = 0;
-  AssemblyStrategy strategy = AssemblyStrategy::Auto;
-  Backend backend = defaultBackend();
   bool speculative = false;
 };
 
@@ -638,22 +635,8 @@ Options parseOptions(int argc, char** argv) {
       const unsigned long long threads = std::stoull(text, &used);
       if (used != text.size()) throw std::invalid_argument("bad --threads value: " + text);
       options.threads = static_cast<size_t>(threads);
-      options.configure_context = true;
-    } else if (arg == "--backend") {
-      const std::string text = value(i);
-      if (text == "host") options.backend = Backend::Host;
-      else if (text == "sycl" && syclAvailable()) options.backend = Backend::Sycl;
-      else throw std::invalid_argument("--backend must be host" + std::string(syclAvailable() ? " or sycl" : "") + ", not " + text);
-      options.configure_context = true;
     } else if (arg == "--speculative") {
       options.speculative = true;
-    } else if (arg == "--strategy") {
-      const std::string text = value(i);
-      if (text == "auto") options.strategy = AssemblyStrategy::Auto;
-      else if (text == "chunked") options.strategy = AssemblyStrategy::Chunked;
-      else if (text == "workgroup") options.strategy = AssemblyStrategy::WorkGroup;
-      else throw std::invalid_argument("--strategy must be auto, chunked or workgroup, not " + text);
-      options.configure_context = true;
     } else if (arg.rfind("--", 0) == 0) {
       throw std::invalid_argument("unknown option " + arg);
     } else {
@@ -670,16 +653,13 @@ int main(int argc, char** argv) {
   try {
     options = parseOptions(argc, argv);
   } catch (const std::exception& error) {
-    std::fprintf(stderr, "%s\nusage: bench_moptim [--backend host|sycl] [--threads N (SYCL only)] [--strategy auto|chunked|workgroup] [--speculative] [name-filter]\n",
-                 error.what());
+    std::fprintf(stderr, "%s\nusage: bench_moptim [--threads N] [--speculative] [name-filter]\n", error.what());
     return 2;
   }
   g_speculative = options.speculative;
-  // Only touch the default context when asked: creating it initializes the SYCL runtime.
-  if (options.configure_context) {
-    setDefaultContext(std::make_shared<ExecutionContext>(options.backend, options.threads, options.strategy));
-  }
-  std::printf("backend=%s\n", backendName(defaultContext()->backend()));
+  setDefaultContext(std::make_shared<ExecutionContext>(options.threads));
+  std::printf("threads=%zu tbb=%s\n", defaultContext()->resolvedThreads(),
+              ExecutionContext::parallelAvailable() ? "on" : "off");
 
   const Report report(options.filter);
 

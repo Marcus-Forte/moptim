@@ -30,7 +30,6 @@ struct PlaneModel {
   }
   void jacobian(const T*, const T* in, const T*, T* jac) {
     const T full[4]{in[0], in[1], in[0] * in[1], T{1}};
-    // Plain loop: DPC++ with libstdc++ 16 rejects std::copy in kernels (false positive, see README "Models").
     for (size_t i = 0; i < active; ++i) jac[i] = full[i];
   }
 };

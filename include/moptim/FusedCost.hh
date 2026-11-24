@@ -11,31 +11,27 @@
 
 #include "moptim/ExecutionContext.hh"
 #include "moptim/ICost.hh"
-#include "moptim/detail/KernelName.hh"
 
 namespace moptim {
 
 /**
  * @brief Several costs of one problem evaluated in one kernel launch.
  *
- * Every evaluation of a cost is a launch, and a launch has a fixed price (about 10 to 25 microseconds
- * on native_cpu) that small problems pay many times over: a scan registration with a point-to-plane
- * cost and an IMU factor launches twice per evaluation. A FusedCost holds such costs and runs their
- * work in a single kernel: each work-item works through the partitions of the first cost, then of the
- * second, and so on. Each cost keeps its own partitions, partial sums, scratch and model, so its
+ * Every evaluation of a cost is a launch, and a launch has a fixed price (a function call inline, a
+ * task-arena hand-off when it runs on several threads) that small problems pay many times over: a scan
+ * registration with a point-to-plane cost and an IMU factor launches twice per evaluation. A FusedCost
+ * holds such costs and runs their work in a single launch: each work-item works through the partitions
+ * of the first cost, then of the second, and so on. Each cost keeps its own partitions, partial sums, scratch and model, so its
  * linear system and cost are bit-identical to its own launch's, and the FusedCost adds them in the
  * order the costs were given. Added to an optimizer in place of its parts, it gives the same `x`, the
  * same iterations and the same final cost, bit for bit, with one launch per evaluation instead of one
  * per cost.
  *
  * `Costs` are ChunkedCost types (AnalyticalCost, NumericalCost*), all built on the same
- * ExecutionContext (the same queue) and the same parameter space (the same manifold object, or plain
+ * ExecutionContext and the same parameter space (the same manifold object, or plain
  * dimensions of the same size). The sub-costs stay usable on their own (the FusedCost shares them),
  * but must not be added to the optimizer as well, and must not be evaluated while the FusedCost has an
  * evaluation pending.
- *
- * When the context selects the WorkGroup kernel (accelerators) the sub-costs are launched one by one,
- * with the same results; fusion is for the chunked kernel.
  */
 template <class T, class... Costs>
 class FusedCost final : public ICost<T> {
@@ -89,20 +85,15 @@ class FusedCost final : public ICost<T> {
 
   void submitLinearSystem(const T* x, T* JTJ, T* JTb, T* cost) override { submit<true>(x, JTJ, JTb, cost); }
 
-  /// Completes the outstanding evaluation: waits for the kernel (or the separate launches), lets each
-  /// cost add its partials, then sums the costs' results in their order.
+  /// Completes the outstanding evaluation: lets each cost add its partials, then sums the costs'
+  /// results in their order.
   void wait() override {
     if (pending_.kind == Kind::None) {
       return;
     }
     const Pending pending = pending_;
     pending_.kind = Kind::None;
-    if (pending.fused) {
-      detail::complete(*context_);
-      std::apply([](auto&... cost) { (cost->finishFused(), ...); }, costs_);
-    } else {
-      std::apply([](auto&... cost) { (cost->wait(), ...); }, costs_);
-    }
+    std::apply([](auto&... cost) { (cost->finishFused(), ...); }, costs_);
 
     const size_t n = this->tangent_dim_;
     T total = workspaces_[0].cost;
@@ -140,7 +131,6 @@ class FusedCost final : public ICost<T> {
   enum class Kind { None, Cost, LinearSystem };
   struct Pending {
     Kind kind = Kind::None;
-    bool fused = false;  ///< One fused kernel, or each cost launched on its own.
     T* JTJ = nullptr;
     T* JTb = nullptr;
     T* cost = nullptr;
@@ -170,13 +160,8 @@ class FusedCost final : public ICost<T> {
   template <bool kLinearSystem>
   void submit(const T* x, T* JTJ, T* JTb, T* cost) {
     wait();
-    const bool fusable = std::apply([](const auto&... c) { return (c->fusable() && ...); }, costs_);
-    pending_ = Pending{kLinearSystem ? Kind::LinearSystem : Kind::Cost, fusable, JTJ, JTb, cost};
+    pending_ = Pending{kLinearSystem ? Kind::LinearSystem : Kind::Cost, JTJ, JTb, cost};
     try {
-      if (!fusable) {
-        submitSeparately<kLinearSystem>(x, std::index_sequence_for<Costs...>{});
-        return;
-      }
       submitFused<kLinearSystem>(x, std::index_sequence_for<Costs...>{});
     } catch (...) {
       settle();
@@ -185,38 +170,22 @@ class FusedCost final : public ICost<T> {
   }
 
   template <bool kLinearSystem, size_t... Is>
-  void submitSeparately(const T* x, std::index_sequence<Is...>) {
-    if constexpr (kLinearSystem) {
-      (std::get<Is>(costs_)->submitLinearSystem(x, workspaces_[Is].hessian.data(), workspaces_[Is].gradient.data(),
-                                                &workspaces_[Is].cost),
-       ...);
-    } else {
-      (std::get<Is>(costs_)->submitCost(x, &workspaces_[Is].cost), ...);
-    }
-  }
-
-  template <bool kLinearSystem, size_t... Is>
   void submitFused(const T* x, std::index_sequence<Is...>) {
-    const size_t width = std::max({std::get<Is>(costs_)->chunkedWidth()...});
+    const size_t width = std::max({std::get<Is>(costs_)->template chunkedWidth<kLinearSystem>()...});
     const std::array<bool, kCount> launched = {std::get<Is>(costs_)->template prepareFused<kLinearSystem>(
         x, width, workspaces_[Is].hessian.data(), workspaces_[Is].gradient.data(), &workspaces_[Is].cost)...};
     if (!(launched[Is] || ...)) {
       return;  // no elements anywhere: the outputs are written, nothing to wait for
     }
     const std::tuple<typename Costs::FusedRef...> refs{std::get<Is>(costs_)->fusedRef()...};
-    detail::submitNamed<detail::FusedKernelName<kLinearSystem, T, detail::CurrentTuId, typename Costs::FusedPolicy...>>(
-        *context_, width, [refs, launched](size_t worker) {
-          ((launched[Is] ? Costs::template runFused<kLinearSystem>(std::get<Is>(refs), worker) : void()), ...);
-        });
+    detail::submit(*context_, width, [refs, launched](size_t worker) {
+      ((launched[Is] ? Costs::template runFused<kLinearSystem>(std::get<Is>(refs), worker) : void()), ...);
+    });
   }
 
-  /// After a failed submit: waits for whatever was started, so no buffer is in use any more.
+  /// After a failed submit: completes whatever was prepared, so no cost is left with a pending evaluation.
   void settle() noexcept {
     pending_.kind = Kind::None;
-    try {
-      detail::complete(*context_);
-    } catch (...) {  // NOLINT: the error that got us here is the one that matters
-    }
     std::apply(
         [](auto&... cost) {
           ((

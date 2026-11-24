@@ -29,24 +29,6 @@ struct AnalyticalJacobian {
     return params * observation_dim;
   }
 
-  /// WorkGroup kernel: values of local memory per element (the element's transposed jacobian).
-  static constexpr size_t auxPerElement(size_t observation_dim, size_t params) { return params * observation_dim; }
-
-  /// WorkGroup kernel: writes the jacobian rows of one element. `jacobian` is the element's first row of
-  /// column 0; column `p` is `jacobian_stride` values further on each. `aux` has auxPerElement() values.
-  template <class ModelPtr>
-  static void evaluateElementJacobian(ModelPtr models, const KernelArgs<T>& args, size_t element,
-                                      const T* /*residual*/, T* aux, T* jacobian, size_t jacobian_stride) {
-    const size_t params = args.params;
-    const size_t dim = args.observation_dim;
-    models[0].jacobian(args.x, args.input + element * args.input_dim, args.observations + element * dim, aux);
-    for (size_t p = 0; p < params; ++p) {
-      for (size_t i = 0; i < dim; ++i) {
-        jacobian[p * jacobian_stride + i] = aux[p + params * i];
-      }
-    }
-  }
-
   /// Writes the jacobian rows of elements [first, first + count): column `p` of the chunk (column
   /// stride `jacobian_stride`) holds the derivatives with respect to step entry `p`.
   ///
@@ -63,8 +45,11 @@ struct AnalyticalJacobian {
     const size_t dim = args.observation_dim;
 
     for (size_t e = 0; e < count; ++e) {
-      [[clang::always_inline]] model.jacobian(args.x, args.input + (first + e) * args.input_dim,
-                                              args.observations + (first + e) * dim, transposed);
+#if defined(__clang__)  // GCC ignores the attribute and warns about it
+      [[clang::always_inline]]
+#endif
+      model.jacobian(args.x, args.input + (first + e) * args.input_dim, args.observations + (first + e) * dim,
+                     transposed);
 
       // The model writes the element's transposed jacobian; the chunk stores one column per parameter.
       for (size_t p = 0; p < params; ++p) {
@@ -87,9 +72,9 @@ struct AnalyticalJacobian {
  * jacobian with respect to `x`. With a manifold it is the jacobian with respect to the tangent
  * vector of `x [+] delta`, so a pose is differentiated in the convention of the manifold's `plus`.
  *
- * Residuals and jacobian are evaluated in a kernel, in one launch per call on the queue of the
- * ExecutionContext (the process-wide default when none is given); IModel.hh lists what a model may
- * do there.
+ * Residuals and jacobian are evaluated in one launch per call of the
+ * ExecutionContext (the process-wide default when none is given), possibly on several threads;
+ * IModel.hh lists what a model may and may not do.
  */
 template <class Model, class T>
   requires AnalyticalModel<Model, T>

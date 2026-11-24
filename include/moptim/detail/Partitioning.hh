@@ -2,7 +2,7 @@
 
 // How the elements of a cost are split into chunks and the chunks into partitions. Everything here
 // is a function of the problem alone (number of elements, observation and active parameter
-// dimensions, size of the scalar), never of the number of threads or of the device: the partial sums
+// dimensions, size of the scalar), never of the number of threads: the partial sums
 // of a linear system are formed per partition and added in partition order, so the result is the same
 // whatever number of work-items computed the partitions.
 #include <algorithm>

@@ -1,10 +1,11 @@
-// How AnalyticalCost treats the model it evaluates in a kernel: const and non-const member functions,
-// move-only models, fixed-size Eigen members, references to host data, the lifetime of the copies, and
-// the launches an evaluation costs.
+// How AnalyticalCost treats the model it evaluates in a launch (possibly on several threads): const and
+// non-const member functions, move-only models, fixed-size Eigen members, references to host data, the
+// lifetime of the copies, and the launches an evaluation costs.
 #include <gtest/gtest.h>
 
 #include <Eigen/Dense>
 #include <cstddef>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <random>
@@ -12,7 +13,6 @@
 #include <vector>
 
 #include "moptim/AnalyticalCost.hh"
-#include "moptim/Atomic.hh"
 #include "moptim/ExecutionContext.hh"
 #include "moptim/LossFunction.hh"
 #include "moptim/NumericalCostCentral.hh"
@@ -25,7 +25,7 @@ namespace {
 constexpr size_t kParams = 2;
 
 std::shared_ptr<ExecutionContext> makeContext(size_t threads) {
-  return std::make_shared<ExecutionContext>(defaultBackend(), threads);
+  return std::make_shared<ExecutionContext>(threads);
 }
 
 struct Data {
@@ -77,8 +77,9 @@ void expectMatchesLine(Cost& cost, const Data& data, double a, double tolerance 
   EXPECT_NEAR(cost.computeCost(x), ref.cost, tolerance * (1.0 + ref.cost));
 }
 
-// Enough elements for several partitions (a chunk is a few hundred elements here, a partition 4 chunks).
-constexpr size_t kManyElements = 30000;
+// Enough elements for many partitions (a chunk is a few hundred elements here, a partition 4 chunks): 15, so
+// that even a cost-only launch (wide from 12 partitions) is wide with three threads.
+constexpr size_t kManyElements = 40000;
 
 // ─── Non-const member functions ──────────────────────────────────────────────────────────────────
 
@@ -184,8 +185,7 @@ namespace {
 
 // ─── Fixed-size Eigen members ────────────────────────────────────────────────────────────────────
 
-// 4x4 and 4-vector members set from x on the host and read in the kernel: their layout must be the
-// same in both passes.
+// 4x4 and 4-vector members set from x on the host and read by the work-items.
 struct EigenMembersModel {
   Eigen::Matrix4d transform = Eigen::Matrix4d::Identity();
   Eigen::Vector4d offset = Eigen::Vector4d::Zero();
@@ -264,8 +264,9 @@ struct Counters {
   int destroyed = 0;
 };
 
+// The copies of a launch are made by several threads at once.
 void bump(int& counter) {
-  moptim::atomicFetchAdd(counter, 1);
+  std::atomic_ref<int>(counter).fetch_add(1, std::memory_order_relaxed);
 }
 
 struct CountingBase {
@@ -310,8 +311,9 @@ TEST(CostModels, EveryConstructedModelIsDestroyedOnce) {
   const Data data = makeData(kManyElements);
   Counters counters;
   const auto context = makeContext(3);
-  // Work-groups of a launch: the threads setting on a SYCL device, always one on the host.
-  const int work_groups = context->backend() == Backend::Host ? 1 : 3;
+  // Work-items of the launch: kManyElements has many partitions, so three threads give three work-items
+  // (one without oneTBB).
+  const int work_groups = ExecutionContext::parallelAvailable() ? 3 : 1;
   {
     AnalyticalCost<MutableCountingModel, double> cost(data.input.data(), data.observations.data(), kManyElements, 1,
                                                       1, kParams, MutableCountingModel(&counters), 0, context);
@@ -322,7 +324,7 @@ TEST(CostModels, EveryConstructedModelIsDestroyedOnce) {
 
     cost.computeLinearSystem(x, jtj, jtb, value);
     const int after_one = counters.copied;
-    // Each work-group copies the model once per launch.
+    // Each work-item copies the model once per launch.
     EXPECT_EQ(after_one, work_groups);
     EXPECT_EQ(counters.destroyed, counters.constructed - 1) << "all the copies of the launch are gone, the model lives";
 
@@ -470,28 +472,6 @@ TEST(CostModels, LossScaleChangesTakeEffect) {
   EXPECT_EQ(cost, narrow);
 }
 
-TEST(CostModels, Strategy) {
-  const Data data = makeData(100);
-  const double x[kParams] = {0.7, -0.3};
-  double jtj[kParams * kParams];
-  double jtb[kParams];
-  double value = 0.0;
-
-  const auto context = makeContext(0);
-  AnalyticalCost<LineModel, double> cost(data.input.data(), data.observations.data(), 100, 1, 1, kParams,
-                                         LineModel{}, 0, context);
-  context->setStrategy(AssemblyStrategy::Chunked);
-  const double chunked = cost.computeCost(x);
-  context->setStrategy(AssemblyStrategy::Auto);
-  EXPECT_EQ(cost.computeCost(x), chunked);
-
-  // WorkGroup is implemented: the same cost up to the order of the sums.
-  context->setStrategy(AssemblyStrategy::WorkGroup);
-  EXPECT_NEAR(cost.computeCost(x), chunked, 1e-12 * chunked);
-  EXPECT_NO_THROW(cost.computeLinearSystem(x, jtj, jtb, value));
-  EXPECT_NEAR(value, chunked, 1e-12 * chunked);
-}
-
 // ─── Numerical costs: one model per evaluation point ─────────────────────────────────────────────
 
 namespace {
@@ -537,8 +517,8 @@ template <template <class, class> class CostT, size_t kPointsPerParam>
 void checkModelCounts() {
   constexpr size_t kModels = 1 + kPointsPerParam * kParams;
   const auto context = makeContext(3);
-  // Work-groups of a launch: the threads setting on a SYCL device, always one on the host.
-  const int kWorkItems = context->backend() == Backend::Host ? 1 : 3;
+  // Work-items of a launch: three threads give three work-items for this many partitions (one without oneTBB).
+  const int kWorkItems = ExecutionContext::parallelAvailable() ? 3 : 1;
   const Data data = makeData(kManyElements);
   Counters counters;
   const auto alive = [&] { return counters.constructed - counters.destroyed; };
@@ -624,14 +604,9 @@ TEST(NumericalCostModels, NoElementsNoLaunch) {
   for (const double entry : jtj) EXPECT_EQ(entry, 0.0);
 }
 
-TEST(NumericalCostModels, CustomLossIsRejectedAndWorkGroupStrategyWorks) {
+TEST(NumericalCostModels, CustomLossIsRejected) {
   const Data data = makeData(10);
-  const auto context = makeContext(1);
   NumericalCostCentral<LineModel, double> cost(data.input.data(), data.observations.data(), 10, 1, 1, kParams,
-                                               LineModel{}, 0, context);
+                                               LineModel{}, 0, makeContext(1));
   EXPECT_THROW(cost.setLossFunction(std::make_shared<CustomLoss>()), std::invalid_argument);
-  const double x[kParams] = {0.7, -0.3};
-  const double chunked = cost.computeCost(x);
-  context->setStrategy(AssemblyStrategy::WorkGroup);
-  EXPECT_NEAR(cost.computeCost(x), chunked, 1e-12 * chunked);
 }

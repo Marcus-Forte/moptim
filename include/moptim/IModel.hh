@@ -23,32 +23,23 @@ namespace moptim {
 //   write to. Only `residual` is called on them, in a kernel (see below).
 //
 // Where a model runs
-//   The costs evaluate the model in a SYCL kernel, so `residual` (and `jacobian`) are device
-//   code and must obey the rules of a kernel:
-//     - no virtual calls, exceptions, RTTI or heap allocation. That includes dynamic-size Eigen
-//       temporaries (fixed-size Eigen objects are fine; they run scalar in the device pass);
-//     - no calls to functions defined in another translation unit, unless they are declared
-//       SYCL_EXTERNAL;
-//     - libm functions (std::sin, std::exp, ...) work on the native_cpu device, where they resolve
-//       against the host libm at link time, but the DPC++ linker prints an "Undefined function"
-//       warning for each. Other devices have no such function: prefer sycl:: math (or code guarded by
-//       __SYCL_DEVICE_ONLY__, as LossFunction.hh does).
-//   `setState` is the exception: it runs on the host, once before every evaluation, and may do
+//   `residual` and `jacobian` run inside a launch of the ExecutionContext: inline on the calling thread
+//   for a small cost, otherwise on several threads of a oneTBB arena at once. A model must therefore be
+//   thread-safe in the sense below, and `residual`/`jacobian` must not throw (an exception of a worker
+//   does reach the caller of the evaluation, but the partial sums of that launch are lost).
+//   `setState` is the exception: it runs on the calling thread, once before every evaluation, and may do
 //   anything (it is where an Eigen rotation or a transform is computed from `x`).
 //
-//   The model object lives in USM, constructed by moving the model passed to the cost into it, and is
-//   destroyed with the cost. It is never memcpy'd. Whatever the model points to or references (a
-//   lookup table, an external matrix) must be reachable from the device: on a device with
-//   `usm_system_allocations` (native_cpu has it) any host memory is, on others it has to be USM.
+//   The model object is stored by the cost (constructed by moving the model passed to it) and destroyed
+//   with the cost. It is never memcpy'd. Whatever it points to or references (a lookup table, an
+//   external matrix) must stay valid, and be safe to read from several threads.
 //
 //   If `residual` and `jacobian` can be called on a `const` model they are called on the one model
-//   from every work-item, so they must not write to it (no `mutable` state). Otherwise each work-item
-//   copy-constructs the model and uses its own copy, which the copy constructor and destructor then run
-//   in device code too (same rules; they are called once per work-item per evaluation). A model that
-//   is neither const-callable nor copy-constructible is evaluated by a single work-item.
-//   `sizeof` and `alignof` of the model must be the same on the host and the device pass
-//   (EIGEN_MAX_STATIC_ALIGN_BYTES=16 on both takes care of fixed-size Eigen members); the cost checks it
-//   once per model type and throws if they differ.
+//   from every work-item (thread), so they must not write to it (no `mutable` state). Otherwise each
+//   work-item copy-constructs the model and uses its own copy, which the copy constructor and destructor
+//   then run on that thread too (once per work-item per evaluation); a copy constructor must be safe to
+//   run concurrently on the same source. A model that is neither const-callable nor copy-constructible
+//   is evaluated by a single work-item, on one thread.
 //
 // AnalyticalModel<M, T>
 //   Required by AnalyticalCost.

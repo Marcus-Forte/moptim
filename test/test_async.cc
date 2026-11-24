@@ -68,7 +68,7 @@ Data makeData(size_t n, const double* truth, unsigned seed) {
 }
 
 std::shared_ptr<ExecutionContext> makeContext(size_t threads) {
-  return std::make_shared<ExecutionContext>(defaultBackend(), threads);
+  return std::make_shared<ExecutionContext>(threads);
 }
 
 template <class T>
@@ -383,7 +383,6 @@ TEST(SpeculativeLM, RejectedTrialsGiveTheSameBits) {
     const std::vector<double> start{offset(rng), offset(rng)};
     OptRun runs[2];
     Recorder recorders[2];
-    uint64_t launches[2];
     for (const bool speculative : {false, true}) {
       LevenbergMarquardt<double> solver(2);
       solver.addCost(std::make_shared<AnalyticalCost<ExpModel, double>>(t.data(), y.data(), 300, 1, 1, 2,
@@ -391,9 +390,7 @@ TEST(SpeculativeLM, RejectedTrialsGiveTheSameBits) {
       solver.setMaxIterations(25);
       solver.setSpeculativeLinearSystems(speculative);
       solver.setObserver(&recorders[speculative]);
-      const uint64_t before = context->launches();
       runs[speculative] = runOptimizer(solver, start);
-      launches[speculative] = context->launches() - before;
     }
     EXPECT_TRUE(sameRun(runs[0], runs[1])) << "start " << trial;
     EXPECT_EQ(recorders[0].systems.size(), recorders[1].systems.size());
@@ -404,8 +401,7 @@ TEST(SpeculativeLM, RejectedTrialsGiveTheSameBits) {
 }
 
 namespace {
-// Pulls the translation of an SE(3) pose (entries 9..11 of x) to a measured value. A kernel cannot be
-// named after a function-local type, so it lives here.
+// Pulls the translation of an SE(3) pose (entries 9..11 of x) to a measured value.
 struct Prior {
   void setState(const double*) {}
   void residual(const double* x, const double*, const double* obs, double* res) const {

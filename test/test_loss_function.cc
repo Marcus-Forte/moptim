@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <cmath>
+
 #include "moptim/LossFunction.hh"
 
 using namespace moptim;
@@ -88,4 +90,34 @@ TEST(LossFunction, LossesDownweightLargeResiduals) {
   EXPECT_GT(gmc_small[1], gmc_mid[1]);
   EXPECT_GT(gmc_mid[1], gmc_large[1]);
   EXPECT_LT(gmc_large[1], 1e-6);
+}
+
+TEST(TestLossDescriptor, ScaleChangesAreReflected) {
+  HuberLoss<double> huber(1.0);
+  huber.setScale(3.0);
+  EXPECT_EQ(huber.descriptor().kind, LossKind::Huber);
+  EXPECT_EQ(huber.descriptor().p0, 3.0);
+  EXPECT_EQ(huber.descriptor().p1, 9.0);
+
+  CauchyLoss<double> cauchy(1.0);
+  cauchy.setScale(2.0);
+  EXPECT_EQ(cauchy.descriptor().kind, LossKind::Cauchy);
+  EXPECT_EQ(cauchy.descriptor().p0, 4.0);
+
+  GemanMcClureLoss<float> geman(1.0f);
+  geman.setScale(0.25f);
+  EXPECT_EQ(geman.descriptor().kind, LossKind::GemanMcClure);
+  EXPECT_EQ(geman.descriptor().p0, 0.25f);
+
+  EXPECT_EQ(TrivialLoss<double>{}.descriptor().kind, LossKind::Trivial);
+}
+
+TEST(TestLossDescriptor, CustomLossIsCustom) {
+  struct Squared : LossFunction<double> {
+    void evaluate(double s, double out[3]) const override { out[0] = out[1] = out[2] = s; }
+  };
+  EXPECT_EQ(Squared{}.descriptor().kind, LossKind::Custom);
+  double out[3];
+  detail::evaluateLoss(Squared{}.descriptor(), 1.0, out);
+  EXPECT_TRUE(std::isnan(out[0]));
 }

@@ -43,7 +43,7 @@ struct CurveModel {
 };
 
 // A prior on the first two parameters (one element, like an IMU factor): non-const residual, so the
-// chunked kernel gives each work-item its own copy.
+// work-items each get their own copy.
 struct PriorModel {
   void setState(const double* x) { offset_ = 0.25 * x[3]; }
   void residual(const double* x, const double* in, const double* /*obs*/, double* res) {
@@ -76,8 +76,8 @@ Data makeData(size_t n, const double* truth, unsigned seed) {
   return data;
 }
 
-std::shared_ptr<ExecutionContext> makeContext(size_t threads, AssemblyStrategy strategy = AssemblyStrategy::Auto) {
-  return std::make_shared<ExecutionContext>(defaultBackend(), threads, strategy);
+std::shared_ptr<ExecutionContext> makeContext(size_t threads) {
+  return std::make_shared<ExecutionContext>(threads);
 }
 
 bool sameBits(const std::vector<double>& a, const std::vector<double>& b) {
@@ -263,26 +263,6 @@ TEST(FusedCost, RejectsCostsOfDifferentContextsOrSpaces) {
   EXPECT_THROW((FusedCost<double, Curve, Curve>(a, nullptr)), std::invalid_argument);
 }
 
-TEST(FusedCost, WorkGroupStrategyLaunchesTheCostsOneByOne) {
-  const Data data = makeData(3000, kTruth, 23);
-  const auto context = makeContext(0, AssemblyStrategy::WorkGroup);
-  if (!context->usesWorkGroupKernel()) {
-    GTEST_SKIP() << "the WorkGroup kernel needs the SYCL backend";
-  }
-  Problem problem(data, 3000, context);
-  const System expected = sumOfParts({problem.curve.get(), problem.central.get(), problem.prior.get()}, kX);
-
-  const auto fused = makeFusedCost<double>(problem.curve, problem.central, problem.prior);
-  System got;
-  const uint64_t before = context->launches();
-  fused->computeLinearSystem(kX, got.jtj.data(), got.jtb.data(), got.cost);
-  // The prior's model is not const-callable, so it takes the chunked kernel even here: all three
-  // are separate launches.
-  EXPECT_EQ(context->launches() - before, 3u);
-  EXPECT_TRUE(sameBits(got.jtj, expected.jtj));
-  EXPECT_TRUE(sameBits(got.cost, expected.cost));
-}
-
 TEST(FusedCost, WorksOnAManifold) {
   // Point-to-plane on SE(3) plus point-to-point, both analytical, on the same manifold object.
   std::mt19937 rng(29);
@@ -404,7 +384,7 @@ TEST(ReusableCost, SetModelEqualsAFreshCost) {
   const auto context = makeContext(0);
   using Central = NumericalCostCentral<OffsetCurveModel, double>;
   Central reused(data.input.data(), data.observations.data(), 2500, 2, 2, kParams, OffsetCurveModel{0.0}, 0, context);
-  // Before the first evaluation (the model is not in USM yet) and after it.
+  // Before the first evaluation (the model is not built yet) and after it.
   reused.setModel(OffsetCurveModel{0.2});
   const System first = evaluate(reused, kX);
   reused.setModel(OffsetCurveModel{-0.3});

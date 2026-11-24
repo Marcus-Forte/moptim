@@ -98,23 +98,15 @@ std::shared_ptr<LossFunction<T>> makeLoss(LossKind kind) {
 const LossKind kLosses[] = {LossKind::Trivial, LossKind::Huber, LossKind::Cauchy, LossKind::GemanMcClure};
 const Noise kNoises[] = {Noise::None, Noise::Weights, Noise::Information};
 
-// 0 stands for "all compute units".
+// 0 stands for "all hardware threads".
 const size_t kThreadCounts[] = {1, 2, 3, 5, 0};
 
-/// One context per thread count, on the default backend (on SYCL, on one shared queue).
+/// One context per thread count. With oneTBB the larger ones run the partitions of a large cost on
+/// several threads, so comparing them bitwise with the one-thread result is the point of this file.
 std::vector<std::shared_ptr<ExecutionContext>> makeContexts() {
   std::vector<std::shared_ptr<ExecutionContext>> contexts;
-#if MOPTIM_HAS_SYCL
-  if (defaultBackend() == Backend::Sycl) {
-    const sycl::queue queue{sycl::default_selector_v, sycl::property::queue::in_order()};
-    for (const size_t threads : kThreadCounts) {
-      contexts.push_back(std::make_shared<ExecutionContext>(queue, threads));
-    }
-    return contexts;
-  }
-#endif
   for (const size_t threads : kThreadCounts) {
-    contexts.push_back(std::make_shared<ExecutionContext>(Backend::Host, threads));
+    contexts.push_back(std::make_shared<ExecutionContext>(threads));
   }
   return contexts;
 }

@@ -3,17 +3,13 @@
 #include <cmath>
 #include <limits>
 
-#ifdef __SYCL_DEVICE_ONLY__
-#include <sycl/sycl.hpp>
-#endif
-
 namespace moptim {
 
 /// The built-in robust kernels, plus `Custom` for any other LossFunction subclass.
 enum class LossKind { Trivial, Huber, Cauchy, GemanMcClure, Custom };
 
 /**
- * @brief Plain-data description of a built-in loss, so that a device kernel can evaluate it
+ * @brief Plain-data description of a built-in loss, so that the cost's work-items can evaluate it
  * without a virtual call (see detail::evaluateLoss()).
  *
  * | kind         | p0         | p1        |
@@ -33,19 +29,6 @@ struct LossDescriptor {
 
 namespace detail {
 
-// In a kernel std::sqrt and std::log are calls to libm that the DPC++ device linker cannot resolve (it
-// warns "Undefined function" for every executable that has one), so the device pass uses the SYCL
-// math functions. The host pass keeps std::, whose results the device ones are tested against.
-#ifdef __SYCL_DEVICE_ONLY__
-template <class T>
-T lossSqrt(T v) {
-  return sycl::sqrt(v);
-}
-template <class T>
-T lossLog(T v) {
-  return sycl::log(v);
-}
-#else
 template <class T>
 T lossSqrt(T v) {
   return std::sqrt(v);
@@ -54,7 +37,6 @@ template <class T>
 T lossLog(T v) {
   return std::log(v);
 }
-#endif
 
 /// The formula of one built-in loss, selected at compile time. The built-ins' evaluate() call it
 /// directly (no switch on a descriptor in the hot loops of the costs); evaluateLoss() dispatches to it.
@@ -97,9 +79,8 @@ inline void evaluateKnownLoss(T p0, T p1, T squared_norm, T out[3]) {
 
 /**
  * Evaluates the loss `descriptor` describes at `squared_norm`: `out[0] = rho(s)`, `out[1] = rho'(s)`,
- * `out[2] = rho''(s)`. Callable from device code (no virtuals, exceptions or allocation); the built-in
- * losses' `evaluate()` run the same formulas (evaluateKnownLoss), so host and device share the
- * arithmetic.
+ * `out[2] = rho''(s)`. No virtuals, exceptions or allocation; the built-in
+ * losses' `evaluate()` run the same formulas (evaluateKnownLoss), so both share the arithmetic.
  *
  * A `Custom` descriptor has no formula: all three outputs are NaN.
  */
@@ -147,7 +128,8 @@ class LossFunction {
   virtual ~LossFunction() = default;
   virtual void evaluate(T squared_norm, T out[3]) const = 0;
 
-  /// Plain-data form of this loss for device kernels. `Custom` (the default) cannot run on a device.
+  /// Plain-data form of this loss, read by the costs at every evaluation. `Custom` (the default) is not
+  /// evaluated by the costs.
   virtual LossDescriptor<T> descriptor() const { return {}; }
 };
 

@@ -1,6 +1,6 @@
 // Two translation units (this and test_tu_models_b.cc) each declare their own `Model` in an anonymous
-// namespace, with different residuals, and both end up in test_moptim. Their kernels must not be
-// confused with each other.
+// namespace, with different residuals, and both end up in test_moptim. Their costs (and the
+// instantiations of the templates they share) must not be confused with each other.
 #include "tu_models_common.hh"
 
 namespace {

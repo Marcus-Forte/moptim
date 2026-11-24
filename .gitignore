@@ -1,4 +1,2 @@
 .cache/
-build/
-build_sycl/
-build_sycl_cpu/
+build*/

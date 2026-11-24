@@ -1,8 +1,7 @@
 #pragma once
 
-// Device-callable normal-equation kernels: no Eigen, no exceptions, no virtuals, raw pointers with
-// explicit strides, so the same code runs in a SYCL kernel and on the host (see src/NormalEquations.cc
-// for the Eigen entry point and test_device_normal_equations.cc for the host/device comparison).
+// Normal-equation kernels: no Eigen, no exceptions, no virtuals, raw pointers with explicit strides
+// (see src/NormalEquations.cc for the Eigen entry point).
 //
 // Everything is `H += J^T J` (lower triangle only) and `g += J^T r`, with J column-major.
 #include <cstddef>
@@ -34,9 +33,6 @@ struct Simd<float> {
 // measured faster than the dot products up to 16 columns with both GCC and Clang; the limit is
 // lower to bound the compile time and code size of the instantiations. The 16-register values are
 // a conservative guess that has not been measured.
-// These follow the macros of the pass being compiled, which on native_cpu are those of the host.
-// A kernel for another target (nvptx, spir64) would pick the limit of its own pass, so host and
-// device would no longer round alike for the column counts between the two limits.
 #if defined(__aarch64__) || defined(__AVX512F__)
 constexpr int kSimdRegisters = 32;
 constexpr int kMaxFusedCols = 12;
@@ -217,7 +213,7 @@ void accumulateByDotProducts(const T* jacobian, Index stride, const T* residuals
  * `H += J^T J` (lower triangle of the `cols` x `cols` matrix H, column stride `hessian_stride`) and
  * `g += J^T r` for the column-major `rows` x `cols` jacobian with column stride `stride`. The fused
  * kernel handles up to kMaxFusedCols columns; more columns take dot products, whose rounding differs
- * from the Eigen dot products this fallback used before the SYCL rewrite.
+ * from the Eigen dot products this fallback used before the fused kernels.
  */
 template <class T>
 void accumulateNormalEquationsRaw(const T* jacobian, Index stride, const T* residuals, Index rows, Index cols,

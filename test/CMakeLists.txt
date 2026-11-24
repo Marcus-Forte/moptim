@@ -43,29 +43,11 @@ add_executable(test_moptim
   test_tu_models_b.cc
   test_async.cc
   test_fused_cost.cc
-  test_device_lm.cc
   test_host_backend.cc
 )
-# Tests of SYCL itself: kernels on the default device against the host, the WorkGroup kernel.
-if(MOPTIM_WITH_SYCL)
-  target_sources(test_moptim PRIVATE
-    test_execution_context.cc
-    test_device_loss.cc
-    test_device_normal_equations.cc
-    test_workgroup.cc)
-endif()
 add_subdirectory(nist)
 target_link_libraries(test_moptim moptim test_helper)
 gtest_discover_tests(test_moptim)
-if(MOPTIM_WITH_SYCL)
-  # The same suite again on the host backend of the SYCL build (MOPTIM_BACKEND=host), so both backends
-  # are tested by one ctest run. The SYCL-only suites skip or only exercise the device there.
-  gtest_discover_tests(test_moptim TEST_SUFFIX .host PROPERTIES ENVIRONMENT MOPTIM_BACKEND=host)
-
-  # Opt-in micro-benchmark of kernel launch latency and multi-core scaling of the default device.
-  add_executable(bench_launch bench_launch.cc)
-  target_link_libraries(bench_launch moptim)
-endif()
 
 # Benchmarks of the cost classes and optimizers. Built with the tests, run by hand.
 add_executable(bench_moptim
