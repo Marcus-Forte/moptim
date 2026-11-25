@@ -1,4 +1,4 @@
-// FusedCost: several costs in one launch. Every comparison with the costs run on their own is bitwise.
+// FusedCost: several costs in one dispatch. Every comparison with the costs run on their own is bitwise.
 #include <gtest/gtest.h>
 
 #include <Eigen/Dense>
@@ -43,7 +43,7 @@ struct CurveModel {
 };
 
 // A prior on the first two parameters (one element, like an IMU factor): non-const residual, so the
-// work-items each get their own copy.
+// workers each get their own copy.
 struct PriorModel {
   void setState(const double* x) { offset_ = 0.25 * x[3]; }
   void residual(const double* x, const double* in, const double* /*obs*/, double* res) {

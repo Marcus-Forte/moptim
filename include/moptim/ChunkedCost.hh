@@ -26,34 +26,35 @@ template <class T, class... Costs>
 class FusedCost;
 
 /**
- * @brief Cost that streams its elements through cache-sized chunks, in one launch.
+ * @brief Cost that streams its elements through cache-sized chunks, in one pass over the elements.
  *
  * The residuals and jacobian rows of a chunk of elements are evaluated into small buffers that stay
  * in the L1 data cache and are folded into J^T J, J^T b and the cost right away. The full jacobian
  * (num_elements * observation_dim rows) is never stored, so memory use and construction time do not
  * grow with the number of elements.
  *
- * Every evaluation (computeCost() and computeLinearSystem()) is one launch of the cost's
- * ExecutionContext, even for a handful of elements; with no elements there is no launch. The
- * chunks are grouped into partitions whose size depends only on the problem (detail/Partitioning.hh);
- * the work-items of the launch (run on oneTBB when the context allows several threads and the cost has
- * enough partitions, else inline on the calling thread) claim partitions, each writes one partial sum
- * per partition, and the partials are added in partition order. The result is therefore bit-identical
- * whatever number of threads the context allows, and a cost that fits in one partition reproduces a
+ * Every evaluation (computeCost() and computeLinearSystem()) is one evaluation dispatched through the
+ * cost's ExecutionContext (counted by `launches()`), even for a handful of elements; with no elements
+ * nothing is dispatched. The chunks are grouped into partitions whose size depends only on the problem
+ * (detail/Partitioning.hh); the workers of the evaluation (one per thread, on oneTBB when the context
+ * allows several threads and the cost has enough partitions, else one inline on the calling thread) claim
+ * partitions, each writes one partial sum per partition, and the partials are added in partition order.
+ * The result is therefore bit-identical whatever number of threads the context allows, and a cost that
+ * fits in one partition reproduces a
  * sequential walk over its chunks exactly.
  *
  * `Policy` says how the jacobian rows of a chunk are obtained (AnalyticalJacobian in AnalyticalCost.hh,
  * NumericalJacobian in NumericalCost.hh). A policy with `kPointsPerParam` > 0 differentiates by finite
  * differences: the cost then keeps `1 + kPointsPerParam * active_param_dim` models, one per evaluation
  * point (point 0 is `x`), all copied from the one it was given. This class owns everything else: the optional noise model (scalar weights or
- * information matrices), the optional robust kernel, the model and the buffers of the launch.
+ * information matrices), the optional robust loss, the model and the buffers of an evaluation.
  * It allocates them on first use and reuses them afterwards. A numerical cost
  * whose elements fit in one chunk and whose model is const-callable makes no copies: each evaluation
  * point is visited once, so the one model is moved from point to point (its state set on the way)
  * and the results are those of the copies, bit for bit.
  *
  * Only the built-in losses (LossFunction::descriptor() other than Custom) are evaluated.
- * submitCost() and submitLinearSystem() start the launch without waiting; wait() completes it and
+ * submitCost() and submitLinearSystem() start an evaluation without waiting for it; wait() completes it and
  * writes the results. Not thread-safe: one evaluation at a time per cost.
  */
 template <class Model, class T, class Policy>
@@ -84,7 +85,7 @@ class ChunkedCost : public ICost<T> {
     wait();
   }
 
-  /// Starts the launch of a cost-only evaluation and returns; wait() writes `cost`. A pending
+  /// Starts a cost-only evaluation and returns; wait() writes `cost`. A pending
   /// evaluation is completed first.
   void submitCost(const T* x, T* cost) final {
     wait();
@@ -108,7 +109,7 @@ class ChunkedCost : public ICost<T> {
     pending_ = Pending{Pending::Kind::LinearSystem, JTJ, JTb, cost, reduce_from_, reduce_count_};
   }
 
-  /// Completes the outstanding evaluation: waits for the launch and adds the partial results, in
+  /// Completes the outstanding evaluation: waits for the partitions to finish and adds the partial results, in
   /// partition order, into the outputs given to submit*().
   void wait() final {
     if (pending_.kind == Pending::Kind::None) {
@@ -120,15 +121,15 @@ class ChunkedCost : public ICost<T> {
   }
 
   /**
-   * @brief Attach a robust kernel (M-estimator) applied to each element's
+   * @brief Attach a robust loss (M-estimator) applied to each element's
    * (optionally whitened) squared residual norm. Passing nullptr (default)
    * disables it, falling back to plain least-squares. Shared ownership
-   * allows the same kernel to be reused/adapted (e.g. online scale updates,
+   * allows the same loss to be reused/adapted (e.g. online scale updates,
    * a la KISS-ICP) across multiple costs: its descriptor() is read at every
    * evaluation, so setScale() takes effect on the next one.
    *
    * @throws std::invalid_argument if the loss is a custom one (descriptor() of kind Custom): the
-   *   kernel evaluates the built-in losses only.
+   *   cost evaluates the built-in losses only.
    */
   void setLossFunction(std::shared_ptr<LossFunction<T>> loss) {
     wait();
@@ -261,7 +262,7 @@ class ChunkedCost : public ICost<T> {
  private:
   static constexpr detail::ModelAccess kAccess = detail::modelAccess<Policy, Model>();
 
-  /// Layout of a work-item's scratch slice for chunks of `partitioning`.
+  /// Layout of one worker's scratch slice for chunks of `partitioning`.
   detail::SliceLayout makeSlice(const detail::Partitioning& partitioning) const {
     return detail::makeSliceLayout(
         sizeof(T), partitioning.chunk_elements * observation_dim_, active_param_dim_,
@@ -269,7 +270,7 @@ class ChunkedCost : public ICost<T> {
         kAccess == detail::ModelAccess::PerWorkItemCopy ? model_count_ * sizeof(Model) : 0, alignof(Model));
   }
 
-  /// Allocates what a launch of `width` work-items needs and was not allocated yet: everything on the
+  /// Allocates what an evaluation by `width` workers needs and was not allocated yet: everything on the
   /// first call, more scratch slices if the width grew.
   void ensureState(size_t width) {
     if (models_ == nullptr) {
@@ -308,7 +309,7 @@ class ChunkedCost : public ICost<T> {
   }
 
   /// Copy-constructs the evaluation-point models of a numerical policy from slot 0, those not built
-  /// yet. Their states are set before every launch, so the state slot 0 had does not matter. A
+  /// yet. Their states are set before every evaluation, so the state slot 0 had does not matter. A
   /// constructor that throws leaves the ones built so far, and the next call goes on from there.
   void completeModels() {
     if constexpr (Policy::kPointsPerParam > 0) {
@@ -332,7 +333,7 @@ class ChunkedCost : public ICost<T> {
     }
   }
 
-  /// Whether this cost's own launches run the stepped path (runInline()): a numerical policy, a
+  /// Whether this cost's own evaluations run the stepped path (runInline()): a numerical policy, a
   /// const-callable model and every element in one chunk.
   bool stepped() const {
     if constexpr (Policy::kPointsPerParam > 0 && Policy::kConstCallable) {
@@ -377,7 +378,7 @@ class ChunkedCost : public ICost<T> {
     }
   }
 
-  /// Everything the kernel reads, as of this evaluation: the loss descriptor is read now so that a
+  /// Everything the chunk loop reads, as of this evaluation: the loss descriptor is read now so that a
   /// scale changed between two evaluations is seen.
   detail::KernelArgs<T> makeArgs() const {
     detail::KernelArgs<T> args;
@@ -409,7 +410,7 @@ class ChunkedCost : public ICost<T> {
     return args;
   }
 
-  /// Number of work-items a launch of this cost uses on its own.
+  /// Number of workers an evaluation of this cost uses on its own.
   template <bool kLinearSystem>
   size_t chunkedWidth() const {
     return kAccess == detail::ModelAccess::Exclusive
@@ -418,10 +419,10 @@ class ChunkedCost : public ICost<T> {
                                        kLinearSystem ? LaunchWork::LinearSystem : LaunchWork::CostOnly);
   }
 
-  /// Everything an evaluation does on the host before its launch: buffers for `width` work-items, the
-  /// model states at `x` (and at the evaluation points of a numerical linear system), the kernel
-  /// arguments.
-  /// `stepped`: the launch is a stepped runInline(), which needs no evaluation-point models.
+  /// Everything an evaluation does on the calling thread before the partitions are processed: buffers for
+  /// `width` workers, the model states at `x` (and at the evaluation points of a numerical linear system),
+  /// the `KernelArgs` (the plain-data description of the evaluation).
+  /// `stepped`: the evaluation is a stepped runInline(), which needs no evaluation-point models.
   template <bool kLinearSystem>
   void prepare(const T* x, size_t width, bool stepped = false) {
     ensureState(width);
@@ -442,8 +443,8 @@ class ChunkedCost : public ICost<T> {
     *args_ = makeArgs();
   }
 
-  /// A launch of one work-item, on the calling thread with a plain claim counter. `stepped`: the
-  /// work-item function runs over the one model of a stepped() cost, which goes from evaluation point
+  /// An evaluation by one worker, on the calling thread with a plain claim counter. `stepped`: the
+  /// worker function runs over the one model of a stepped() cost, which goes from evaluation point
   /// to evaluation point (prepare() set its state to `x`).
   template <bool kLinearSystem>
   void runInline(bool stepped) {
@@ -460,15 +461,15 @@ class ChunkedCost : public ICost<T> {
     });
   }
 
-  /// The chunked kernel's partials and claim counter, reset for a new launch.
+  /// The partials and the claim counter, reset for a new evaluation.
   void resetChunkedPartials() {
     reduce_from_ = partials_.get();
     reduce_count_ = partitioning_.num_partitions;
     *counter_ = 0;
   }
 
-  /// Sets the model's state to `x` and runs the one launch of an evaluation (wait() adds up its partials).
-  /// One work-item runs inline on the calling thread; several run on the context's oneTBB arena and
+  /// Sets the model's state to `x` and processes the partitions of an evaluation (wait() adds up its
+  /// partials). One worker runs inline on the calling thread; several run on the context's oneTBB arena and
   /// claim the partitions through the counter. Either way the same slots are written.
   template <bool kLinearSystem>
   void launch(const T* x) {
@@ -491,22 +492,22 @@ class ChunkedCost : public ICost<T> {
     });
   }
 
-  // ─── Fused launches (FusedCost) ───────────────────────────────────────────────────────────────
-  // A FusedCost runs the work-item function of several costs in one launch: each cost keeps
-  // its own partitions, partials, claim counter and scratch, so its results are the ones its own launch
+  // ─── Fused evaluations (FusedCost) ───────────────────────────────────────────────────────────────
+  // A FusedCost runs the worker function of several costs in one evaluation: each cost keeps
+  // its own partitions, partials, claim counter and scratch, so its results are the ones its own evaluation
   // gives, bit for bit.
   template <class, class...>
   friend class FusedCost;
 
-  /// What the fused launch needs of this cost.
+  /// What the fused evaluation needs of this cost.
   struct FusedRef {
     const detail::KernelArgs<T>* args = nullptr;
     Model* models = nullptr;
   };
 
-  /// Prepares an evaluation that a FusedCost launches on `width` work-items (at least chunkedWidth()),
+  /// Prepares an evaluation that a FusedCost dispatches on `width` workers (at least chunkedWidth()),
   /// and records it as pending with its outputs (`JTJ`/`JTb` unused for a cost-only evaluation). Returns
-  /// false, with the outputs written, when there is nothing to launch (no elements).
+  /// false, with the outputs written, when there is nothing to evaluate (no elements).
   template <bool kLinearSystem>
   bool prepareFused(const T* x, size_t width, T* JTJ, T* JTb, T* cost) {
     wait();
@@ -527,8 +528,8 @@ class ChunkedCost : public ICost<T> {
 
   FusedRef fusedRef() const { return FusedRef{args_.get(), models_}; }
 
-  /// The work of this cost in a fused launch, for work-item `worker`. A model that only
-  /// one work-item may use runs on work-item 0 alone.
+  /// The work of this cost in a fused evaluation, for worker `worker`. A model that only
+  /// one worker may use runs on worker 0 alone.
   template <bool kLinearSystem>
   static void runFused(const FusedRef& ref, size_t worker) {
     if constexpr (kAccess == detail::ModelAccess::Exclusive) {
@@ -542,7 +543,7 @@ class ChunkedCost : public ICost<T> {
     });
   }
 
-  /// Completes the pending fused evaluation after its launch returned: adds the partials.
+  /// Completes the pending fused evaluation after its partitions are done: adds the partials.
   void finishFused() {
     if (pending_.kind == Pending::Kind::None) {
       return;
@@ -627,7 +628,7 @@ class ChunkedCost : public ICost<T> {
   detail::AlignedPtr<T> weights_;               ///< One per element, or null.
   detail::AlignedPtr<T> information_factors_;   ///< observation_dim^2 per element (lower Cholesky factor), or null.
 
-  // Buffers of the launches, allocated on first use.
+  // Buffers of the evaluations, allocated on first use.
   detail::AlignedPtr<unsigned char> model_storage_;
   detail::AlignedPtr<T> x_;
   detail::AlignedPtr<T> points_;  ///< kPointsPerParam * active_param_dim rows of param_dim entries.

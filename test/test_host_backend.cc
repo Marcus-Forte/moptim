@@ -1,4 +1,4 @@
-// ExecutionContext: how wide a launch is, where its work-items run (inline, or on the oneTBB arena),
+// ExecutionContext: how many threads an evaluation uses, where its workers run (inline, or on the oneTBB arena),
 // that an exception of a worker reaches the caller, and that the thread count never changes a result.
 // The assertions about several threads are skipped in a build without oneTBB.
 #include <gtest/gtest.h>
@@ -48,8 +48,8 @@ struct CountedExpModel {
   }
 };
 
-/// A line r = obs - (x0 u + x1) whose residual is not const: every work-item copies it, so the copies of
-/// an evaluation are the work-items it ran on. Optionally throws, to see an exception leave a worker.
+/// A line r = obs - (x0 u + x1) whose residual is not const: every worker copies it, so the copies of
+/// an evaluation are the workers it ran on. Optionally throws, to see an exception leave a worker.
 struct CopyCountingLine {
   static inline std::atomic<int> copies{0};
   static inline std::atomic<bool> fail{false};
@@ -135,8 +135,8 @@ TEST(ExecutionContextTest, ThreadsAndResolvedThreads) {
   EXPECT_EQ(defaultContext()->threads(), 0u);
 }
 
-// Inline below a minimum number of partitions (6 for a linear system, 12 for a cost-only launch: below that
-// waking the workers costs more than it saves), then at most one work-item per two partitions.
+// Inline below a minimum number of partitions (6 for a linear system, 12 for a cost-only evaluation: below that
+// waking the workers costs more than it saves), then at most one worker per two partitions.
 TEST(ExecutionContextTest, LaunchWidth) {
   ExecutionContext context(8);
   EXPECT_EQ(context.launchWidth(0), 0u);
@@ -184,7 +184,7 @@ TEST(ExecutionContextTest, WorkGroupsRunOnSeveralThreads) {
   ExecutionContext context(4);
   std::mutex mutex;
   std::set<std::thread::id> seen;
-  // Each work-group waits (bounded) until another thread showed up, so that a launch that ran
+  // Each task waits (bounded) until another thread showed up, so that an evaluation that ran
   // everything on one thread is noticed without the test depending on the scheduler's speed.
   const auto record = [&](size_t) {
     {
@@ -245,8 +245,8 @@ TEST(ExecutionContextTest, AnExceptionOfAModelInAWorkerReachesTheCaller) {
   EXPECT_TRUE(sameBits(&expected, &value, sizeof(double)));
 }
 
-// The work-items of an evaluation: many partitions get several when the context has threads, a cost below
-// the minimum stays on one (a linear system from 6 partitions, a cost-only launch from 12), and one thread
+// The workers of an evaluation: many partitions get several when the context has threads, a cost below
+// the minimum stays on one (a linear system from 6 partitions, a cost-only evaluation from 12), and one thread
 // means one.
 TEST(ExecutionContextTest, CostsGetTheLaunchWidthOfTheirPartitions) {
   const double x[2] = {0.5, 0.25};
@@ -293,7 +293,7 @@ TEST(ExecutionContextTest, CostsGetTheLaunchWidthOfTheirPartitions) {
   EXPECT_EQ(work_items(elements_for(8), 8, false), 1);
 }
 
-// Every evaluation is one launch, whatever its width, and a FusedCost is one launch too.
+// Every evaluation is one dispatch (one `launches()` count), whatever its width, and a FusedCost is one too.
 TEST(ExecutionContextTest, OneLaunchPerEvaluationAtAnyWidth) {
   const size_t n = elementsForPartitions(12);
   const Line line = makeLine(n);

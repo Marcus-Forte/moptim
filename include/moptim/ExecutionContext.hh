@@ -7,8 +7,8 @@
 
 namespace moptim {
 
-/// What a launch evaluates: a linear system, or the cost alone (about 15 times less work per partition, so
-/// it takes more partitions to pay for going wide).
+/// What an evaluation computes: a linear system, or the cost alone (about 15 times less work per partition,
+/// so it takes more partitions to pay for using several threads).
 enum class LaunchWork { LinearSystem, CostOnly };
 
 namespace detail {
@@ -17,66 +17,67 @@ class HostExecutor;
 }  // namespace detail
 
 /**
- * @brief How wide the launches of the costs are, and where they run.
+ * @brief How many threads the costs may use, and where they run.
  *
- * - A launch splits the work of a cost into work-items, each claiming whole partitions (see
- *   ChunkedCost.hh). One work-item (a small cost, or `threads == 1`) runs inline on the calling thread; several
- *   run on a oneTBB `task_arena` owned by the context, with the calling thread taking part, and the
- *   launch returns when all of them are done. An exception of a work-item reaches the caller.
- * - `threads` is the arena's maximum concurrency, which is also the most work-items of one launch
+ * - An evaluation of a cost splits its work into partitions (see ChunkedCost.hh) and hands them to one
+ *   worker per thread; a worker claims whole partitions. A small cost, or `threads == 1`, is evaluated by
+ *   one worker inline on the calling thread; a large one by several workers on a oneTBB `task_arena` owned
+ *   by the context, with the calling thread taking part. The evaluation returns when all partitions are
+ *   done. An exception thrown on a worker reaches the caller.
+ * - `threads` is the arena's maximum concurrency, which is also the most workers of one evaluation
  *   (`0` = all hardware threads, `tbb::info::default_concurrency()`). It only changes how the work is
  *   shared out, never the result: partitions and the order of the reduction depend on the problem alone
  *   (see ChunkedCost.hh), so every thread count gives the same bits.
- * - Without oneTBB (`parallelAvailable()` is false) every launch runs inline, whatever `threads` says.
- * - `launches()` counts the launches, so a test or a benchmark can check how many launches an
- *   operation takes.
+ * - Without oneTBB (`parallelAvailable()` is false) every evaluation runs inline, whatever `threads` says.
+ * - `launches()` counts the evaluations dispatched through the context (a cost evaluated on several
+ *   threads still counts as one), so a test or a benchmark can check how many an operation takes.
  *
  * The arena is created in the constructor and re-created by setThreads() (never lazily, so there is no
- * race on first use). Setters are not synchronized with launches: configure the context before using it
+ * race on first use). Setters are not synchronized with evaluations: configure the context before using it
  * from several threads. Not copyable; share it through `std::shared_ptr`.
  */
 class ExecutionContext {
  public:
   /// All hardware threads (`threads() == 0`).
   ExecutionContext();
-  /// At most @p threads work-items per launch (0 = all hardware threads).
+  /// At most @p threads workers per evaluation (0 = all hardware threads).
   explicit ExecutionContext(size_t threads);
   ~ExecutionContext();
 
   ExecutionContext(const ExecutionContext&) = delete;
   ExecutionContext& operator=(const ExecutionContext&) = delete;
 
-  /// Whether this moptim was built with oneTBB (MOPTIM_WITH_TBB and TBB found): launches of large costs
-  /// can then run on several threads.
+  /// Whether this moptim was built with oneTBB (MOPTIM_WITH_TBB and TBB found): large costs can then be
+  /// evaluated on several threads.
   static bool parallelAvailable();
 
   /// The requested number of threads; 0 means all hardware threads.
   size_t threads() const { return threads_; }
-  /// Changes the thread count and re-creates the arena. Not safe during a launch.
+  /// Changes the thread count and re-creates the arena. Not safe during an evaluation.
   void setThreads(size_t threads);
   /// threads() with 0 resolved to the number of hardware threads; 1 without oneTBB.
   size_t resolvedThreads() const;
 
-  /// Number of work-items to launch for `partitions` independent pieces of work: 0 for none, 1 (inline on
-  /// the calling thread) below a minimum number of partitions, otherwise
+  /// Number of workers (threads) to use for `partitions` independent pieces of work: 0 for none, 1 (inline
+  /// on the calling thread) below a minimum number of partitions, otherwise
   /// `min(resolvedThreads(), ceil(partitions / 2))`. Waking the arena's workers costs several
-  /// microseconds, which a small launch does not earn back: the minimum is
+  /// microseconds, which a small cost does not earn back: the minimum is
   /// kMinPartitionsToGoWide (6) for a linear system and kMinPartitionsToGoWideCostOnly (12) for a cost-only
-  /// launch, measured where threads 0 stops being slower than threads 1. Always 1 without oneTBB. The width
-  /// never changes a result.
+  /// evaluation, measured where threads 0 stops being slower than threads 1. Always 1 without oneTBB. The
+  /// width never changes a result.
   size_t launchWidth(size_t partitions, LaunchWork work = LaunchWork::LinearSystem) const;
 
-  /// Partitions a launch needs before it goes wide (see launchWidth()).
+  /// Partitions an evaluation needs before it uses several threads (see launchWidth()).
   static constexpr size_t kMinPartitionsToGoWide = 6;
   static constexpr size_t kMinPartitionsToGoWideCostOnly = 12;
 
-  /// Launches issued so far.
+  /// Evaluations dispatched through this context so far (one per evaluation, whatever its thread count).
   uint64_t launches() const { return launches_.load(std::memory_order_relaxed); }
 
-  /// Runs `function(data, g)` for every work-group g in [0, groups) and returns when all are done. One
-  /// work-group runs inline on the calling thread, as does everything without oneTBB (in order);
-  /// otherwise the work-groups run concurrently on the arena. Rethrows an exception a work-group threw
-  /// (the first one; the work-groups not yet started are skipped).
+  /// Runs `function(data, g)` for every task g in [0, groups) and returns when all are done. One task
+  /// runs inline on the calling thread, as does everything without oneTBB (in order); otherwise the tasks
+  /// run concurrently on the arena. Rethrows an exception a task threw (the first one; the tasks not yet
+  /// started are skipped).
   void runOnHost(size_t groups, void (*function)(void*, size_t), void* data);
 
  private:
@@ -104,7 +105,7 @@ struct LaunchAccess {
 
 namespace detail {
 
-/// Runs `kernel(group)` for every work-group of a launch (type-erased for runOnHost()).
+/// Runs `kernel(task)` for every task of an evaluation (type-erased for runOnHost()).
 template <class Kernel>
 void runKernelOnHost(ExecutionContext& context, size_t groups, Kernel& kernel) {
   context.runOnHost(
@@ -112,9 +113,10 @@ void runKernelOnHost(ExecutionContext& context, size_t groups, Kernel& kernel) {
 }
 
 /**
- * Runs `kernel` (a callable taking the work-group index, `size_t`) on `work_groups` work-groups and
- * returns when they are all done. Counted as one launch. Does nothing for `work_groups == 0`. The
- * work-groups of one launch may run concurrently, so `kernel` must be safe to call from several threads.
+ * Runs `kernel` (a callable taking the task index, `size_t`) for `work_groups` tasks, one per worker, and
+ * returns when they are all done. Counted as one evaluation by `launches()`. Does nothing for
+ * `work_groups == 0`. The tasks of one evaluation may run concurrently, so `kernel` must be safe to call
+ * from several threads.
  */
 template <class Kernel>
 void submit(ExecutionContext& context, size_t work_groups, Kernel kernel) {
@@ -125,8 +127,8 @@ void submit(ExecutionContext& context, size_t work_groups, Kernel kernel) {
   runKernelOnHost(context, work_groups, kernel);
 }
 
-/// Runs `kernel()` on the calling thread as one launch (counted as one): for a launch whose body must
-/// not be split, such as a walk that calls a model's `setState()`.
+/// Runs `kernel()` on the calling thread as one evaluation (counted as one): for work that must not be
+/// split across threads, such as a walk that calls a model's `setState()`.
 template <class Kernel>
 void runOnCallingThread(ExecutionContext& context, Kernel&& kernel) {
   LaunchAccess::count(context);

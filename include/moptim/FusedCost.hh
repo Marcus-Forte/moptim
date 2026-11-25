@@ -15,16 +15,17 @@
 namespace moptim {
 
 /**
- * @brief Several costs of one problem evaluated in one kernel launch.
+ * @brief Several costs of one problem evaluated together, in one dispatch.
  *
- * Every evaluation of a cost is a launch, and a launch has a fixed price (a function call inline, a
- * task-arena hand-off when it runs on several threads) that small problems pay many times over: a scan
- * registration with a point-to-plane cost and an IMU factor launches twice per evaluation. A FusedCost
- * holds such costs and runs their work in a single launch: each work-item works through the partitions
- * of the first cost, then of the second, and so on. Each cost keeps its own partitions, partial sums, scratch and model, so its
- * linear system and cost are bit-identical to its own launch's, and the FusedCost adds them in the
+ * Every evaluation of a cost is dispatched through the ExecutionContext, which has a fixed price (a
+ * function call inline, a task-arena hand-off when it runs on several threads) that small problems pay many
+ * times over: a scan registration with a point-to-plane cost and an IMU factor dispatches twice per
+ * evaluation. A FusedCost holds such costs and evaluates them in a single dispatch: each worker works
+ * through the partitions of the first cost, then of the second, and so on. Each cost keeps its own
+ * partitions, partial sums, scratch and model, so its linear system and cost are bit-identical to its own
+ * evaluation's, and the FusedCost adds them in the
  * order the costs were given. Added to an optimizer in place of its parts, it gives the same `x`, the
- * same iterations and the same final cost, bit for bit, with one launch per evaluation instead of one
+ * same iterations and the same final cost, bit for bit, with one dispatch per evaluation instead of one
  * per cost.
  *
  * `Costs` are ChunkedCost types (AnalyticalCost, NumericalCost*), all built on the same

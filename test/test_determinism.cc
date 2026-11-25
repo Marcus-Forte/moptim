@@ -1,5 +1,5 @@
 // The linear system and the cost of an analytical cost must not depend on how many threads the
-// execution context runs a launch on: the chunks are grouped in partitions that depend on the
+// execution context evaluates a cost on: the chunks are grouped in partitions that depend on the
 // problem only, and the partial sums are added in partition order. Every comparison here is bitwise.
 #include <gtest/gtest.h>
 

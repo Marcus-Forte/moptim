@@ -49,7 +49,7 @@ class NormalEquationsTest : public ::testing::Test {};
 using Scalars = ::testing::Types<double, float>;
 TYPED_TEST_SUITE(NormalEquationsTest, Scalars);
 
-// Every column count goes through its own kernel (fused, in one or more passes, up to a dozen
+// Every column count goes through its own routine (fused, in one or more passes, up to a dozen
 // columns on AArch64; dot products beyond), and the row counts cover the empty block, blocks
 // shorter than a SIMD vector and blocks with a remainder.
 TYPED_TEST(NormalEquationsTest, MatchesDenseProducts) {

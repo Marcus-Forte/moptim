@@ -7,7 +7,7 @@
 //   build/test/bench_moptim --speculative   # LM rows evaluate trial points with linear systems
 //
 // --threads N sets the threads of the default ExecutionContext (0, the default, is all hardware
-// threads; 1 runs every launch inline). The first line printed is `threads=<resolved> tbb=<on|off>`.
+// threads; 1 runs every evaluation on the calling thread). The first line printed is `threads=<resolved> tbb=<on|off>`.
 // Costs, linear systems and LM results are the same bits at every thread count; compare two runs with
 // test/compare_bench.py.
 //
@@ -150,7 +150,7 @@ void configureSolver(Solver& solver) {
   solver.setSpeculativeLinearSystems(g_speculative);
 }
 
-/// Kernel launches one `call()` issues on the default context.
+/// Evaluations one `call()` dispatches through the default context (`launches()`).
 template <class Call>
 unsigned long long launchesOf(Call&& call) {
   const std::shared_ptr<ExecutionContext> context = defaultContext();
@@ -262,7 +262,7 @@ void benchCloudCosts(const Report& report, size_t num_elements) {
 
   std::mt19937 rng(11);
   {
-    // Scalar weights and a Huber kernel: the per-element robust path.
+    // Scalar weights and a Huber loss: the per-element robust path.
     std::uniform_real_distribution<double> weight(0.5, 2.0);
     std::vector<double> weights(num_elements);
     for (double& w : weights) w = weight(rng);

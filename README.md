@@ -1,9 +1,9 @@
 # Moptim
 
 Non-linear least-squares library (Gauss-Newton and Levenberg-Marquardt) on Eigen, for the host CPU. The linear
-system of every iteration (`J^T J`, `J^T r` and the cost) is assembled by work-item functions over cache-sized
-chunks of elements; the partitions of a large cost run in parallel on a oneTBB arena owned by the
-`ExecutionContext`, and small costs run inline on the calling thread. The result never depends on the number of
+system of every iteration (`J^T J`, `J^T r` and the cost) is assembled chunk by chunk over cache-sized
+chunks of elements; the partitions of a large cost are evaluated in parallel on a oneTBB arena owned by the
+`ExecutionContext`, and small costs on the calling thread. The result never depends on the number of
 threads. The optimizers and the linear solve run on the calling thread. Parameters can be a plain vector or live
 on a manifold, and costs can use analytical or finite-difference Jacobians, per-element weights or information
 matrices, and robust losses. (Earlier versions had an optional SYCL backend; it was removed because it was a large
@@ -35,33 +35,34 @@ nothing but the include path and Eigen on to what links it, and adds no compiler
 
 ## Execution context
 
-Work is launched through an `ExecutionContext` (`moptim/ExecutionContext.hh`).
+Costs are evaluated through an `ExecutionContext` (`moptim/ExecutionContext.hh`), which decides how many threads
+an evaluation may use.
 
 - `ExecutionContext()` uses all hardware threads, `ExecutionContext(size_t threads)` at most `threads`.
   `threads()` / `setThreads()` read and change it (`0` means all hardware threads, `tbb::info::default_concurrency()`);
   `resolvedThreads()` is the number it resolves to (1 without oneTBB).
 - **The arena.** With oneTBB a context owns a `tbb::task_arena` whose maximum concurrency is `resolvedThreads()`. It
   is created in the constructor and re-created by `setThreads()`, never lazily, so there is no race on first use.
-  A launch of several work-items runs them as tasks of that arena, with the calling thread taking one slot, and
-  returns when they are all done. An exception thrown in a worker (a model's `residual`, say) reaches the caller
+  An evaluation on several threads runs one task per thread on that arena, with the calling thread taking one
+  slot, and returns when all partitions are done. An exception thrown in a worker (a model's `residual`, say) reaches the caller
   of the evaluation. The arena's threads belong to oneTBB's pool; `threads` limits how many of them one context
   uses, not how many exist in the process. Several contexts have independent arenas. Configure a context before
-  using it from several threads: `setThreads()` is not synchronized with launches, and a cost does not support
+  using it from several threads: `setThreads()` is not synchronized with evaluations, and a cost does not support
   concurrent evaluations of itself.
-- **Launch width.** `launchWidth(partitions, work)` is 1 (inline on the calling thread) below a minimum number of
+- **Number of threads of an evaluation.** `launchWidth(partitions, work)` is 1 (inline on the calling thread) below a minimum number of
   partitions, otherwise `min(resolvedThreads(), ceil(partitions / 2))`. The minimum is 6 partitions for a linear
-  system and 12 for a cost-only launch (`LaunchWork::LinearSystem` / `CostOnly`; the trial costs of
+  system and 12 for a cost-only evaluation (`LaunchWork::LinearSystem` / `CostOnly`; the trial costs of
   Levenberg-Marquardt are cost-only). Waking the arena's workers costs a few microseconds, and a cost-only
-  partition is about 15 times less work than a linear-system one, so a small launch is faster inline. The
+  partition is about 15 times less work than a linear-system one, so a small cost is faster inline. The
   minima were measured as the sizes where all threads stop being slower than one on the 28-thread development
   machine (`O = 3`, `P = 6`, double: a partition is 388 elements, so 6 partitions are about 2,300 elements and 12
   about 4,700); a machine with a different wake-up cost may prefer other values
   (`ExecutionContext::kMinPartitionsToGoWide`, `kMinPartitionsToGoWideCostOnly`). `threads == 1` is always inline;
-  without oneTBB the width is always 1. The width never changes a result.
+  without oneTBB the width (the number of threads) is always 1. The width never changes a result.
 - `ExecutionContext::parallelAvailable()` is true when moptim was built with oneTBB.
-- **`launches()`**: the number of launches issued so far. An evaluation of a cost is exactly one, whatever its
-  width and the number of elements, except for no elements at all (no launch, zeros out). A `FusedCost` evaluation
-  is one launch for all its costs.
+- **`launches()`**: the number of evaluations dispatched through the context so far. An evaluation of a cost is
+  exactly one, whatever its width and the number of elements, except for no elements at all (nothing is
+  dispatched, zeros out). A `FusedCost` evaluation is one for all its costs.
 
 `defaultContext()` is the process-wide instance (created on first use, with `threads == 0`) and
 `setDefaultContext()` replaces it. Every cost constructor takes a trailing
@@ -180,33 +181,33 @@ for each chunk of elements:
 Memory use and construction time do not grow with the number of elements, which matters when a cost is rebuilt
 for every new set of correspondences. A numerical cost runs a chunk through every finite-difference evaluation
 point while its inputs are still in cache, writing the residuals at a point straight into its Jacobian column.
-The accumulation (`detail/NormalEquationsKernel.hh`) is a fused SIMD kernel for small parameter counts (up to 12
+The accumulation (`detail/NormalEquationsKernel.hh`) is a fused SIMD routine for small parameter counts (up to 12
 active parameters on AArch64) and a dot-product loop beyond that.
 
 ### Chunked assembly
 
 `AnalyticalCost`, `NumericalCostForwardEuler` and `NumericalCostCentral` are one class template
-(`ChunkedCost`) with a Jacobian policy, and there is one assembly: the chunked one, in a single launch per evaluation.
+(`ChunkedCost`) with a Jacobian policy, and there is one assembly: the chunked one, one dispatch per evaluation.
 
 - The chunks are grouped into *partitions* of `max(4, ceil(chunks / 256))` consecutive chunks
   (`detail/Partitioning.hh`), a function of `(N, O, P_active, sizeof(T))` only.
-- The work-items of the launch claim partitions through an atomic counter (`std::atomic_ref`, relaxed), run the
+- The workers of the evaluation (one per thread) claim partitions through an atomic counter (`std::atomic_ref`, relaxed), run the
   chunk loop over them on their own scratch buffers, and write one partial (cost, `JTb`, lower triangle of `JTJ`)
   per partition.
 - The calling thread adds the partials in partition order, mirrors the triangle and zeroes everything outside the
   active block.
-- One work-item (width 1) is the plain sequential walk over the partitions, run inline with a plain counter; several
+- One worker (width 1) is the plain sequential walk over the partitions, run inline with a plain counter; several
   run on the context's oneTBB arena. A cost that fits in one partition (about 400 elements for `O = 3`, `P = 6`) is
   the plain sequential chunk loop. A numerical cost whose elements fit in one chunk and whose model is
   const-callable steps its one model from evaluation point to evaluation point instead of keeping a copy per point.
-- A model that is not const-callable and not copyable can only be used by one work-item, so its cost is always
+- A model that is not const-callable and not copyable can only be used by one worker, so its cost is always
   inline (width 1), whatever `threads` says.
 
 ### Determinism
 
 - The results are **bitwise identical across `threads` settings, core counts and runs**: partitions depend on the
-  problem only, never on the threads; each partition's partial is computed by one work-item in a fixed chunk order,
-  whichever work-item claims it, and the partials are added in partition order on the calling thread. A parallel
+  problem only, never on the threads; each partition's partial is computed by one worker in a fixed chunk order,
+  whichever worker claims it, and the partials are added in partition order on the calling thread. A parallel
   run therefore writes the same slots and sums them the same way as the inline one. `test/test_determinism.cc`
   compares contexts of 1, 2, 3, 5 and all threads bitwise (costs, linear systems, losses, weights, information
   matrices, manifolds), and the LM results of `bench_moptim` are the same bits at `--threads 1` and `--threads 0`.
@@ -222,8 +223,8 @@ active parameters on AArch64) and a dot-product loop beyond that.
 ### Buffers
 
 A cost allocates its buffers (the models, the copy of `x`, scratch slices, partials) on first use, as aligned heap
-memory, and reuses them; steady-state evaluations allocate nothing. Scratch has one slice per work-item and grows
-when the launch width grows. The caller's `input` and `observations` arrays are read in place at every evaluation
+memory, and reuses them; steady-state evaluations allocate nothing. Scratch has one slice per worker and grows
+when the number of threads grows. The caller's `input` and `observations` arrays are read in place at every evaluation
 and must stay valid while the cost uses them. Weights and information factors are copied by `setWeights()` /
 `setInformation()`.
 
@@ -240,25 +241,25 @@ struct MyModel {
 ```
 
 - `setState` precomputes whatever depends only on `x` (a rotation matrix, a transform). It runs on the calling
-  thread before the launch, so it may do anything (Eigen, heap allocation, trigonometry).
+  thread before the partitions are evaluated, so it may do anything (Eigen, heap allocation, trigonometry).
 - `jacobian` writes the transposed Jacobian of the element, `active_param_dim × observation_dim` in column-major
   order: `jac[j + active_param_dim * i] = ∂residual[i] / ∂delta[j]`, the derivative with respect to the step
   `delta` at `delta = 0`. For Euclidean parameters that is the ordinary `∂residual[i] / ∂x[j]`; on a manifold
   see [Manifolds](#manifolds).
 
 **Requirements.** There are none beyond ordinary C++: any compiler, any standard library, libm, Eigen, heap
-allocation inside `residual` and `jacobian` all work. What matters is threads: when a launch is wide, the work-items
+allocation inside `residual` and `jacobian` all work. What matters is threads: when an evaluation uses several threads, the workers
 call the model from several threads at once.
 
-- If `residual` and `jacobian` can be called on a `const` model, every work-item uses that one model in place, so
+- If `residual` and `jacobian` can be called on a `const` model, every worker uses that one model in place, so
   they must not write to it (no `mutable` state, no shared scratch) and anything it references must be safe to read
   from several threads. Declare them `const` whenever you can.
-- Otherwise each work-item copy-constructs its own model (the copy constructor must be safe to run concurrently on
-  the same source), uses it and destroys it before the launch ends: one copy per work-item and evaluation (all the
+- Otherwise each worker copy-constructs its own model (the copy constructor must be safe to run concurrently on
+  the same source), uses it and destroys it before the evaluation ends: one copy per worker and evaluation (all the
   models of a numerical cost for a linear system, the first for a cost alone).
-- A model that is neither const-callable nor copy-constructible is evaluated by one work-item, on the calling thread.
+- A model that is neither const-callable nor copy-constructible is evaluated by one worker, on the calling thread.
 - A model should not throw from `residual`/`jacobian`: an exception does reach the caller of the evaluation, but
-  that evaluation's partial sums are lost and the work-items not yet started are skipped. A cost is still usable
+  that evaluation's partial sums are lost and the workers not yet started are skipped. A cost is still usable
   afterwards.
 
 **Where the model lives.** The cost move-constructs it into its own storage on its first evaluation (it must be
@@ -338,9 +339,9 @@ solver.optimize(x);  // x: the 12 numbers of the pose, updated in place and stil
 `test/manifold_models.hh` has complete examples (a circle, SE(3), point-to-plane and point-to-point
 models) and `test/test_manifold.cc` the checks a consumer manifold should pass.
 
-## Noise model and robust kernels
+## Noise model and robust losses
 
-Every cost can weight its elements and apply a robust kernel (M-estimator):
+Every cost can weight its elements and apply a robust loss (M-estimator):
 
 ```cpp
 cost->setWeights(weights);          // one scalar weight per element, w = 1/sigma^2
@@ -355,32 +356,32 @@ removes either.
 
 **Losses are built-in only.** `LossFunction.hh` provides `HuberLoss`, `CauchyLoss`, `GemanMcClureLoss` and
 `TrivialLoss`, and `setLossFunction()` throws `std::invalid_argument` for a subclass of your own
-(`descriptor().kind == LossKind::Custom`). They are built-in because the work-items evaluate a loss from its
+(`descriptor().kind == LossKind::Custom`). They are built-in because the workers evaluate a loss from its
 plain-data `LossDescriptor` (`detail::evaluateLoss`, a `switch` on the kind, no virtual call in the hot loop); a
 custom `LossFunction::evaluate()` is virtual, and calling it from several worker threads would also make its thread
-safety part of the contract. This is a restriction left over from the removed backend, no longer a technical
+safety part of the contract. This is a restriction left over from the removed SYCL backend, no longer a technical
 need: with host threads only, custom losses could come back (a `Custom` descriptor kind that calls the virtual
 `evaluate()`, which must then be const and thread-safe), and `LossKind::Custom` is kept for that. The loss object is
 shared and its descriptor is read at every evaluation, so a scale changed with `setScale()` between iterations takes
 effect on the next.
 
-## Launch overhead and speculative linear systems
+## Per-evaluation overhead and speculative linear systems
 
-Every evaluation is a launch, and Levenberg-Marquardt makes about two per iteration (a linear system and a trial
-cost). An inline launch (width 1: a small cost, or `threads == 1`) is a function call. A launch on several
-threads pays a hand-off to the arena's workers, a few microseconds plus waiting for the slowest work-item, which is
-why a launch goes wide only from 6 partitions (linear system) or 12 (cost only), about 2,300 and 4,700 elements for
+Every evaluation has a fixed price, and Levenberg-Marquardt makes about two per iteration (a linear system and a
+trial cost). An evaluation on the calling thread (a small cost, or `threads == 1`) is a function call. One on several
+threads pays a hand-off to the arena's workers, a few microseconds plus waiting for the slowest worker, which is
+why a cost uses several threads only from 6 partitions (linear system) or 12 (cost only), about 2,300 and 4,700 elements for
 `O = 3`, `P = 6`; smaller costs stay inline. What helps for problems of a few hundred to a few thousand elements: put as much as possible in one
-cost rather than many small ones (each cost is a launch per evaluation), fuse costs, and turn on speculative linear
+cost rather than many small ones (each cost is dispatched separately in every evaluation), fuse costs, and turn on speculative linear
 systems. The context's `launches()` counter shows what a run costs.
 
 `LevenbergMarquardt::setSpeculativeLinearSystems(true)` (default off) evaluates each trial point with a full
 linear system instead of the cost alone. If the trial is accepted, the next iteration uses that system rather than
-assembling one at the new `x`, so an accepted iteration is one launch instead of two. x, the status, the
+assembling one at the new `x`, so an accepted iteration is one evaluation instead of two. x, the status, the
 iteration count and the final cost are identical bit for bit with and without it for the `ChunkedCost`-based costs
 (the cost of their linear system is `computeCost()` bitwise).
 
-Use it when most trials are accepted and the launch overhead matters (a handful of iterations on a problem of a few
+Use it when most trials are accepted and the per-evaluation overhead matters (a handful of iterations on a problem of a few
 thousand elements). It loses when many trials are rejected (a rejected trial costs a linear system instead of a
 cost) and on large problems where a linear system is much dearer than a cost, and the last accepted iteration of a
 run assembles a system that is never used. Do not use it with a custom `ICost` whose `computeLinearSystem()` cost
@@ -388,20 +389,20 @@ differs from its `computeCost()`. For observers, `onLinearSystem` still fires on
 used: an accepted trial's system is reported at the start of the iteration that uses it, and the systems of
 rejected trials are not reported.
 
-### Fusing costs: one launch per evaluation
+### Fusing costs: one dispatch per evaluation
 
-The launch price is per launch, not per cost, so a problem made of several costs pays it once per cost and
+The price above is per dispatch, not per cost, so a problem made of several costs pays it once per cost and
 evaluation. `FusedCost<T, Costs...>` (`moptim/FusedCost.hh`, or `makeFusedCost<T>(a, b, ...)`) is an `ICost` made
-of `ChunkedCost`-based costs (`AnalyticalCost`, `NumericalCost*`) that runs their work in one launch: every
-work-item works through the partitions of the first cost, then of the second, and so on. Each cost keeps its own
-partitions, partials, scratch and model, so its results are those of its own launch, and the fused cost adds them
+of `ChunkedCost`-based costs (`AnalyticalCost`, `NumericalCost*`) that evaluates them together in one dispatch: every
+worker works through the partitions of the first cost, then of the second, and so on. Each cost keeps its own
+partitions, partials, scratch and model, so its results are those of its own evaluation, and the fused cost adds them
 in the given order. Added to an optimizer instead of its parts it gives the same `x`, iterations and final cost bit
-for bit, with one launch per evaluation instead of one per cost; the linear-system cost still equals
-`computeCost()`, so speculative linear systems work on it. The launch is as wide as the widest of the costs. The costs
+for bit, with one dispatch per evaluation instead of one per cost; the linear-system cost still equals
+`computeCost()`, so speculative linear systems work on it. It uses as many threads as the widest of the costs. The costs
 must share their `ExecutionContext` and parameter space (the constructor throws `std::invalid_argument` otherwise),
 must not be added to the optimizer as well, and stay usable on their own. A scan registration with a point-to-plane
-cost and a one-element IMU factor goes from two launches per evaluation to one; with speculative linear systems a
-Levenberg-Marquardt iteration is then one launch.
+cost and a one-element IMU factor goes from two dispatches per evaluation to one; with speculative linear systems a
+Levenberg-Marquardt iteration is then one evaluation.
 
 ### Reusing a cost: `setData()` and `setModel()`
 
@@ -416,14 +417,14 @@ the new elements. The arrays are read at each evaluation, so they must stay vali
 ## Asynchronous evaluation
 
 `ICost` has `submitLinearSystem(x, JTJ, JTb, &cost)`, `submitCost(x, &cost)` and `wait()` next to the synchronous
-`computeLinearSystem()` / `computeCost()`. A submit reads `x` and starts the launch; the outputs are valid after
+`computeLinearSystem()` / `computeCost()`. A submit reads `x` and starts the evaluation; the outputs are valid after
 `wait()`, which also adds the partial results. The defaults call the synchronous functions, so a user subclass of
 `ICost` needs no change. A cost has at most one evaluation in flight: any call (compute or submit) on a cost with
 one pending completes it first. The optimizers submit every cost before waiting for the first and add the
 results in the order of the costs, so they give the same bits as evaluating the costs one after the other.
 
-**Nothing overlaps**: a launch runs inside the submit call (on the calling thread, or on the arena with the calling
-thread taking part, and it returns when all work-items are done), and `wait()` only does the host reduction (0.5 to
+**Nothing overlaps**: the evaluation runs inside the submit call (on the calling thread, or on the arena with the
+calling thread taking part, and it returns when all partitions are done), and `wait()` only adds up the partials (0.5 to
 2.5 microseconds). The API is there so that an `ICost` with truly asynchronous work can use it, and so that the
 optimizers' submit-all, wait-all structure is already in place.
 
@@ -506,7 +507,7 @@ point-to-plane cost plus a one-element numerical prior on the same pose).
 ```sh
 build/test/bench_moptim                      # everything, all hardware threads
 build/test/bench_moptim forward              # only the rows whose name contains "forward"
-build/test/bench_moptim --threads 1          # every launch inline on the calling thread
+build/test/bench_moptim --threads 1          # every evaluation on the calling thread
 build/test/bench_moptim --threads 4 --speculative lm_optimize
 ```
 
@@ -514,7 +515,7 @@ build/test/bench_moptim --threads 4 --speculative lm_optimize
 - `--threads N` sets the threads of the default `ExecutionContext` (`0`, the default, is all hardware threads).
 - `--speculative` turns on speculative linear systems for every Levenberg-Marquardt row.
 - Each row is the best time over several repetitions. Linear-system rows print the cost and the sums of `JTJ` and
-  `JTb`; Levenberg-Marquardt rows print the iterations and `launches=` (launches of one `optimize` call).
+  `JTb`; Levenberg-Marquardt rows print the iterations and `launches=` (the `launches()` count of one `optimize` call).
 - Benchmark a Release build, and compare minima over several interleaved runs: a loaded machine is noisy.
 
 `test/compare_bench.py DIR [--ref LABEL] [--tol 1e-12] [--tol-numerical 1e-8]` compares outputs named
@@ -522,17 +523,17 @@ build/test/bench_moptim --threads 4 --speculative lm_optimize
 largest relative difference of every `key=value` note (including `sum(JTJ)`), flagging differences above the
 tolerance (the numerical tolerance applies to `forward` and `central` rows). A label without a row prints `-`;
 notes the reference does not print are not compared. Between thread counts the notes must agree exactly
-(`--tol 0 --tol-numerical 0`); the timings show where the parallel launches pay.
+(`--tol 0 --tol-numerical 0`); the timings show where the parallel evaluations pay.
 
 ## Consumers (e.g. mslam)
 
 - Link `moptim::moptim` (or add moptim as a subproject). Nothing else is needed from the consumer: the public headers
   are valid C++20 and do not mention oneTBB. Build with `MOPTIM_WITH_TBB=ON` (the default) and TBB installed to get
-  parallel launches; without it everything runs on the calling thread with the same results.
+  parallel evaluation; without it everything runs on the calling thread with the same results.
 - Cost constructors take a trailing `std::shared_ptr<ExecutionContext> context = nullptr` argument; existing calls
   use the default context (all hardware threads). To keep a consumer single-threaded, pass a context with
   `threads == 1` or call `setDefaultContext(std::make_shared<ExecutionContext>(1))` once at start-up.
-- Models are called from several threads when a launch is wide: see the [model requirements](#models). Declare
+- Models are called from several threads when a cost uses several threads: see the [model requirements](#models). Declare
   `residual` and `jacobian` `const` where possible. Custom losses are not accepted (built-in losses only).
-- Results do not depend on the thread count. Per evaluation there is one launch: see
-  [Launch overhead](#launch-overhead-and-speculative-linear-systems).
+- Results do not depend on the thread count. Per evaluation there is one dispatch: see
+  [Per-evaluation overhead](#per-evaluation-overhead-and-speculative-linear-systems).

@@ -20,13 +20,13 @@ namespace moptim {
 //   A ResidualModel that can be copied. The cost keeps one copy of the model per finite-difference
 //   evaluation point (1 + P_active forward, 1 + 2 P_active central) and calls setState() on each with
 //   its own perturbed parameter vector, so copies must not share state that setState() or residual()
-//   write to. Only `residual` is called on them, in a kernel (see below).
+//   write to. Only `residual` is called on them, during an evaluation (see below).
 //
 // Where a model runs
-//   `residual` and `jacobian` run inside a launch of the ExecutionContext: inline on the calling thread
+//   `residual` and `jacobian` run during an evaluation through the ExecutionContext: inline on the calling thread
 //   for a small cost, otherwise on several threads of a oneTBB arena at once. A model must therefore be
 //   thread-safe in the sense below, and `residual`/`jacobian` must not throw (an exception of a worker
-//   does reach the caller of the evaluation, but the partial sums of that launch are lost).
+//   does reach the caller of the evaluation, but the partial sums of that evaluation are lost).
 //   `setState` is the exception: it runs on the calling thread, once before every evaluation, and may do
 //   anything (it is where an Eigen rotation or a transform is computed from `x`).
 //
@@ -35,11 +35,11 @@ namespace moptim {
 //   external matrix) must stay valid, and be safe to read from several threads.
 //
 //   If `residual` and `jacobian` can be called on a `const` model they are called on the one model
-//   from every work-item (thread), so they must not write to it (no `mutable` state). Otherwise each
-//   work-item copy-constructs the model and uses its own copy, which the copy constructor and destructor
-//   then run on that thread too (once per work-item per evaluation); a copy constructor must be safe to
+//   from every worker (thread), so they must not write to it (no `mutable` state). Otherwise each
+//   worker copy-constructs the model and uses its own copy, which the copy constructor and destructor
+//   then run on that thread too (once per worker per evaluation); a copy constructor must be safe to
 //   run concurrently on the same source. A model that is neither const-callable nor copy-constructible
-//   is evaluated by a single work-item, on one thread.
+//   is evaluated by a single worker, on one thread.
 //
 // AnalyticalModel<M, T>
 //   Required by AnalyticalCost.

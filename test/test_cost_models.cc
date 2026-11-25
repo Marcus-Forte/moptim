@@ -1,6 +1,6 @@
-// How AnalyticalCost treats the model it evaluates in a launch (possibly on several threads): const and
+// How AnalyticalCost treats the model it evaluates (possibly on several threads): const and
 // non-const member functions, move-only models, fixed-size Eigen members, references to host data, the
-// lifetime of the copies, and the launches an evaluation costs.
+// lifetime of the copies, and the evaluations an evaluation dispatches.
 #include <gtest/gtest.h>
 
 #include <Eigen/Dense>
@@ -78,12 +78,12 @@ void expectMatchesLine(Cost& cost, const Data& data, double a, double tolerance 
 }
 
 // Enough elements for many partitions (a chunk is a few hundred elements here, a partition 4 chunks): 15, so
-// that even a cost-only launch (wide from 12 partitions) is wide with three threads.
+// that even a cost-only evaluation (several threads from 12 partitions) uses three threads.
 constexpr size_t kManyElements = 40000;
 
 // ─── Non-const member functions ──────────────────────────────────────────────────────────────────
 
-// residual() and jacobian() are not const and the model writes to itself: every work-item must
+// residual() and jacobian() are not const and the model writes to itself: every worker must
 // work on its own copy.
 struct ScratchModel {
   double a = 1.0;
@@ -122,7 +122,7 @@ namespace {
 
 // ─── Move-only models ────────────────────────────────────────────────────────────────────────────
 
-// Not copyable, const-callable: shared in place by every work-item.
+// Not copyable, const-callable: shared in place by every worker.
 struct MoveOnlyConstModel {
   explicit MoveOnlyConstModel(double a) : a_(std::make_unique<double>(a)) {}
 
@@ -140,7 +140,7 @@ struct MoveOnlyConstModel {
   std::unique_ptr<double> a_;
 };
 
-// Not copyable and not const-callable: a single work-item uses it in place, however many threads the
+// Not copyable and not const-callable: a single worker uses it in place, however many threads the
 // context has.
 struct MoveOnlyMutableModel {
   explicit MoveOnlyMutableModel(double a) : a_(std::make_unique<double>(a)) {}
@@ -185,7 +185,7 @@ namespace {
 
 // ─── Fixed-size Eigen members ────────────────────────────────────────────────────────────────────
 
-// 4x4 and 4-vector members set from x on the host and read by the work-items.
+// 4x4 and 4-vector members set from x on the host and read by the workers.
 struct EigenMembersModel {
   Eigen::Matrix4d transform = Eigen::Matrix4d::Identity();
   Eigen::Vector4d offset = Eigen::Vector4d::Zero();
@@ -264,7 +264,7 @@ struct Counters {
   int destroyed = 0;
 };
 
-// The copies of a launch are made by several threads at once.
+// The copies of an evaluation are made by several threads at once.
 void bump(int& counter) {
   std::atomic_ref<int>(counter).fetch_add(1, std::memory_order_relaxed);
 }
@@ -311,7 +311,7 @@ TEST(CostModels, EveryConstructedModelIsDestroyedOnce) {
   const Data data = makeData(kManyElements);
   Counters counters;
   const auto context = makeContext(3);
-  // Work-items of the launch: kManyElements has many partitions, so three threads give three work-items
+  // Workers of the evaluation: kManyElements has many partitions, so three threads give three workers
   // (one without oneTBB).
   const int work_groups = ExecutionContext::parallelAvailable() ? 3 : 1;
   {
@@ -324,7 +324,7 @@ TEST(CostModels, EveryConstructedModelIsDestroyedOnce) {
 
     cost.computeLinearSystem(x, jtj, jtb, value);
     const int after_one = counters.copied;
-    // Each work-item copies the model once per launch.
+    // Each worker copies the model once per evaluation.
     EXPECT_EQ(after_one, work_groups);
     EXPECT_EQ(counters.destroyed, counters.constructed - 1) << "all the copies of the launch are gone, the model lives";
 
@@ -363,7 +363,7 @@ TEST(CostModels, ModelOfACostThatNeverEvaluatesIsDestroyed) {
   EXPECT_EQ(counters.destroyed, counters.constructed);
 }
 
-// ─── Launches, no elements, losses, strategy ─────────────────────────────────────────────────────
+// ─── Dispatch count, no elements, losses, strategy ─────────────────────────────────────────────────────
 
 namespace {
 
@@ -394,7 +394,7 @@ TEST(CostModels, OneLaunchPerEvaluation) {
     double jtb[kParams];
     double value = 0.0;
 
-    // The first evaluation allocates the buffers and checks the model's layout; neither is a launch.
+    // The first evaluation allocates the buffers and checks the model's layout; neither is dispatched.
     for (int repetition = 0; repetition < 3; ++repetition) {
       const uint64_t before = context->launches();
       cost.computeLinearSystem(x, jtj, jtb, value);
@@ -511,13 +511,13 @@ TEST(NumericalCostModels, ModelHoldingAReferenceToHostData) {
 }
 
 // A cost keeps 1 + P_active models (forward) or 1 + 2 P_active (central), built once; a model that is not
-// const-callable is also copied once per work-item and launch (all of them for a linear system, the
+// const-callable is also copied once per worker and evaluation (all of them for a linear system, the
 // first for the cost alone), and every copy is destroyed.
 template <template <class, class> class CostT, size_t kPointsPerParam>
 void checkModelCounts() {
   constexpr size_t kModels = 1 + kPointsPerParam * kParams;
   const auto context = makeContext(3);
-  // Work-items of a launch: three threads give three work-items for this many partitions (one without oneTBB).
+  // Workers of an evaluation: three threads give three workers for this many partitions (one without oneTBB).
   const int kWorkItems = ExecutionContext::parallelAvailable() ? 3 : 1;
   const Data data = makeData(kManyElements);
   Counters counters;

@@ -24,7 +24,7 @@ endif()
 find_package(Eigen3 REQUIRED)
 
 # oneTBB runs the partitions of large costs on several threads (src/ExecutionContext.cc only: no public
-# header names it). Without it, or with the option OFF, every launch runs on the calling thread.
+# header names it). Without it, or with the option OFF, every evaluation runs on the calling thread.
 option(MOPTIM_WITH_TBB "Run the partitions of large costs on oneTBB" ON)
 if(MOPTIM_WITH_TBB)
   # A parent project (mslam) may have found TBB already: its imported target is visible here.

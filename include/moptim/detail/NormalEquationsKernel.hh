@@ -1,6 +1,6 @@
 #pragma once
 
-// Normal-equation kernels: no Eigen, no exceptions, no virtuals, raw pointers with explicit strides
+// Normal-equation accumulation routines: no Eigen, no exceptions, no virtuals, raw pointers with explicit strides
 // (see src/NormalEquations.cc for the Eigen entry point).
 //
 // Everything is `H += J^T J` (lower triangle only) and `g += J^T r`, with J column-major.
@@ -28,7 +28,7 @@ struct Simd<float> {
   using Vector __attribute__((vector_size(16))) = float;
 };
 
-// The fused kernel below is only as good as the compiler's ability to keep its accumulators in
+// The fused routine below is only as good as the compiler's ability to keep its accumulators in
 // registers, so it is sized by the number of SIMD registers of the target. On AArch64 it was
 // measured faster than the dot products up to 16 columns with both GCC and Clang; the limit is
 // lower to bound the compile time and code size of the instantiations. The 16-register values are
@@ -68,7 +68,7 @@ constexpr int passWidth(int cols, int first) {
 }
 
 /**
- * Fused kernel for a compile-time number of jacobian columns. One pass down the rows updates every
+ * Fused accumulation for a compile-time number of jacobian columns. One pass down the rows updates every
  * entry of several columns of H (and of g) at once: each row is loaded once per jacobian column
  * instead of once per entry, and the accumulators are independent, so the loop runs at the
  * throughput of the multiply-adds rather than at the latency of one dot product at a time.
@@ -77,7 +77,7 @@ constexpr int passWidth(int cols, int first) {
  * and hands the rest to the next instantiation. Splitting matters: accumulators that do not fit in
  * registers are spilled to the stack, which costs more than a second pass over rows that are
  * already in the L1 cache and, on the Apple M3 at least, made the run time of the unsplit
- * six-column kernel vary by 45% from one process launch to the next.
+ * six-column version vary by 45% from one process start to the next.
  */
 template <int Cols, int First, class T>
 void accumulateFused(const T* jacobian, Index stride, const T* residuals, Index rows, T* hessian, Index hessian_stride,
@@ -145,7 +145,7 @@ void accumulateFused(const T* jacobian, Index stride, const T* residuals, Index 
   }
 }
 
-/// Calls the kernel instantiated for `cols` columns, one of 1..sizeof...(Is). Returns false for any
+/// Calls the fused routine instantiated for `cols` columns, one of 1..sizeof...(Is). Returns false for any
 /// other column count.
 template <class T, size_t... Is>
 bool dispatchFused(std::index_sequence<Is...> /*column_counts*/, Index cols, const T* jacobian, Index stride,
@@ -160,8 +160,8 @@ bool dispatchFused(std::index_sequence<Is...> /*column_counts*/, Index cols, con
 
 /**
  * Sum over `n` entries of `x[i] * y[i]` with four independent SIMD accumulators combined in a fixed
- * order, so the result depends only on `n` and the data, on the host and in a kernel alike. Used
- * where the fused kernel does not apply (more columns than kMaxFusedCols).
+ * order, so the result depends only on `n` and the data, wherever it is called from. Used
+ * where the fused routine does not apply (more columns than kMaxFusedCols).
  */
 template <class T>
 T dot(const T* x, const T* y, Index n) {
@@ -190,7 +190,7 @@ T dot(const T* x, const T* y, Index n) {
 }
 
 /// Sum of squares of `n` values: the one fixed-order SIMD reduction of the squared norm of a residual
-/// block, shared by the host and the kernels so that both round the same way.
+/// block, shared by all callers so that they round the same way.
 template <class T>
 T squaredNorm(const T* values, size_t n) {
   return dot(values, values, static_cast<Index>(n));
@@ -212,8 +212,8 @@ void accumulateByDotProducts(const T* jacobian, Index stride, const T* residuals
 /**
  * `H += J^T J` (lower triangle of the `cols` x `cols` matrix H, column stride `hessian_stride`) and
  * `g += J^T r` for the column-major `rows` x `cols` jacobian with column stride `stride`. The fused
- * kernel handles up to kMaxFusedCols columns; more columns take dot products, whose rounding differs
- * from the Eigen dot products this fallback used before the fused kernels.
+ * fused routine handles up to kMaxFusedCols columns; more columns take dot products, whose rounding differs
+ * from the Eigen dot products this fallback used before the fused routine.
  */
 template <class T>
 void accumulateNormalEquationsRaw(const T* jacobian, Index stride, const T* residuals, Index rows, Index cols,

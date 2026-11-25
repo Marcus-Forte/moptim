@@ -1,13 +1,13 @@
 #pragma once
 
-// The work-item function of a chunked cost: no Eigen, no virtual calls, no exceptions, raw pointers
-// into the cost's buffers. A launch runs it on several work-items; each one claims partitions (runs of whole chunks,
-// see Partitioning.hh) and runs the chunk loop over them on its own scratch slice:
+// The per-thread chunk loop of a chunked cost: no Eigen, no virtual calls, no exceptions, raw pointers
+// into the cost's buffers. An evaluation runs it on one worker per thread; each worker claims partitions
+// (runs of whole chunks, see Partitioning.hh) and runs the chunk loop over them on its own scratch slice:
 //
 //   residuals of the chunk -> jacobian rows -> whiten / robustify -> J^T J, J^T r and the cost
 //
 // The result of a partition is one partial (cost, J^T r, J^T J) written in its own slot, so what a
-// partition holds does not depend on which work-item computed it.
+// partition holds does not depend on which worker computed it.
 #include <algorithm>
 #include <cstddef>
 #include <new>
@@ -19,14 +19,14 @@
 
 namespace moptim::detail {
 
-/// Byte offsets of the buffers of one work-item's scratch slice. Every offset is a multiple of the
-/// cache line (and of the model's alignment), so slices of different work-items never share a line.
+/// Byte offsets of the buffers of one worker's scratch slice. Every offset is a multiple of the
+/// cache line (and of the model's alignment), so slices of different workers never share a line.
 struct SliceLayout {
   size_t residuals = 0;
   size_t scales = 0;
   size_t jacobian = 0;
   size_t aux = 0;     ///< Policy scratch (the element's transposed jacobian, backward residuals, ...).
-  size_t model = 0;   ///< Room for copies of the models, if the work-items copy them.
+  size_t model = 0;   ///< Room for copies of the models, if the workers copy them.
   size_t stride = 0;  ///< Size of a slice.
 };
 
@@ -57,8 +57,8 @@ constexpr SliceLayout makeSliceLayout(size_t value_bytes, size_t chunk_rows, siz
 
 constexpr size_t sliceAlignment(size_t model_align) { return std::max(model_align, kCacheLine); }
 
-/// Everything a launch reads or writes, as plain data (pointers into the cost's buffers). It is refreshed by the
-/// host before each launch and read by every work-item.
+/// Everything an evaluation reads or writes, as plain data (pointers into the cost's buffers). It is refreshed
+/// on the calling thread before each evaluation and read by every worker.
 template <class T>
 struct KernelArgs {
   // The problem.
@@ -76,16 +76,16 @@ struct KernelArgs {
   // entries) of the jacobian; `inv_span` is 1 / the distance between the points of a parameter.
   const T* points = nullptr;
   T inv_span = T{0};
-  size_t model_count = 1;  ///< Models in the array the work-items use (1 + points).
+  size_t model_count = 1;  ///< Models in the array the workers use (1 + points).
 
-  // Noise model and robust kernel. Null / false when not set.
+  // Noise model and robust loss. Null / false when not set.
   const T* weights = nullptr;                ///< One weight per element.
   const T* information_factors = nullptr;    ///< Per element, the column-major lower Cholesky factor (O x O).
   LossDescriptor<T> loss;
   bool has_loss = false;
 
-  // Buffers of the launch.
-  unsigned char* scratch = nullptr;  ///< One slice per work-item.
+  // Buffers of the evaluation.
+  unsigned char* scratch = nullptr;  ///< One slice per worker.
   SliceLayout slice;
   T* partials = nullptr;             ///< One slot per partition: cost, J^T r (params), J^T J (params x params).
   size_t partial_stride = 0;         ///< Entries of a slot.
@@ -98,11 +98,11 @@ constexpr size_t partialStride(size_t value_bytes, size_t params) {
   return roundUp(1 + params + params * params, kCacheLine / value_bytes);
 }
 
-/// How the work-items reach the model.
+/// How the workers reach the model.
 enum class ModelAccess {
-  Shared,             ///< Every work-item calls the one model through a const reference.
-  PerWorkItemCopy,    ///< The member functions are not const: each work-item copies the model into its slice.
-  Exclusive,          ///< Not const-callable and not copyable: one work-item uses the model in place.
+  Shared,             ///< Every worker calls the one model through a const reference.
+  PerWorkItemCopy,    ///< The member functions are not const: each worker copies the model into its slice.
+  Exclusive,          ///< Not const-callable and not copyable: one worker uses the model in place.
 };
 
 template <class Policy, class Model>
@@ -117,7 +117,7 @@ constexpr ModelAccess modelAccess() {
 }
 
 /// Evaluates the residuals of elements [first, first + count) into `residuals`. `residuals` is a
-/// buffer of the work-item that nothing else points into; declaring it so lets the compiler keep the
+/// buffer of the worker that nothing else points into; declaring it so lets the compiler keep the
 /// model's state in registers across the loop instead of reloading it after every residual is
 /// stored. The function is kept out of line because GCC (and clang, from a lambda) only honour that
 /// promise for the parameters of the function being compiled, not once the loop was inlined.
@@ -213,15 +213,15 @@ template <size_t kDim, class T>
 }
 
 /**
- * Applies the noise model and the robust kernel to a chunk in place and returns its cost.
+ * Applies the noise model and the robust loss to a chunk in place and returns its cost.
  *
  * With W_e the whitening of element e (sqrt of its weight, or L_e^T for an information matrix
  * L_e L_e^T) and s_e = ||W_e r_e||^2, the element costs rho(s_e), and its residual block and jacobian
- * rows become sqrt(rho'(s_e)) * W_e * (r_e, J_e): the first-order (IRLS) correction. Without a kernel
+ * rows become sqrt(rho'(s_e)) * W_e * (r_e, J_e): the first-order (IRLS) correction. Without a loss
  * rho(s) = s.
  *
  * `cols` = 0 computes only the cost (the residuals are left whitened but unscaled). The linear-system
- * and the cost-only launches both call this one function, so the cost of a chunk is bit-identical in
+ * and the cost-only evaluations both call this one function, so the cost of a chunk is bit-identical in
  * the two.
  */
 template <class T>
@@ -241,7 +241,7 @@ T robustifyChunk(const KernelArgs<T>& args, size_t first, size_t count, T* resid
   }
 }
 
-/// Fused accumulation of one chunk, out of line so the kernel stays small and every chunk loop calls
+/// Fused accumulation of one chunk, out of line so the chunk loop stays small and every chunk loop calls
 /// the same code: H (lower triangle) += J^T J and g += J^T r.
 template <class T>
 [[gnu::noinline]] void accumulateChunk(const T* jacobian, size_t jacobian_stride, const T* residuals, size_t rows,
@@ -250,7 +250,7 @@ template <class T>
                                   static_cast<Index>(cols), hessian, static_cast<Index>(cols), gradient);
 }
 
-/// The chunk loop over the partitions this work-item claims. `ModelRef` is `const Model&` or `Model&`.
+/// The chunk loop over the partitions this worker claims. `ModelRef` is `const Model&` or `Model&`.
 template <class Policy, bool kLinearSystem, class T, class ModelPtr, class Claim>
 void runPartitions(const KernelArgs<T>& args, ModelPtr models, T* residuals, T* scales, T* jacobian, T* aux,
                    Claim& claim) {
@@ -293,7 +293,7 @@ void runPartitions(const KernelArgs<T>& args, ModelPtr models, T* residuals, T* 
 
 /**
  * The evaluation-point models of a numerical policy as one model moved from point to point, for a
- * single work-item that visits each point once (all the elements in one chunk): `models[i]` sets the
+ * single worker that visits each point once (all the elements in one chunk): `models[i]` sets the
  * model's state to point `i` (0 is `x`, `i > 0` is row `i - 1` of `points`) when it is not there
  * already. Host code only, since `setState()` runs inside the walk.
  */
@@ -315,7 +315,7 @@ struct SteppedModels {
   Model& operator*() const { return (*this)[0]; }
 };
 
-/// The work-item function over models used in place: `models` is a model pointer or SteppedModels.
+/// The worker function over models used in place: `models` is a model pointer or SteppedModels.
 template <class Policy, bool kLinearSystem, class T, class ModelPtr, class Claim>
 void runWorkItemInPlace(const KernelArgs<T>& args, ModelPtr models, size_t worker, Claim& claim) {
   unsigned char* slice = args.scratch + worker * args.slice.stride;
@@ -327,13 +327,13 @@ void runWorkItemInPlace(const KernelArgs<T>& args, ModelPtr models, size_t worke
 }
 
 /**
- * The function every work-item of a launch runs. `claim()` returns the next unclaimed partition
+ * The function every worker of an evaluation runs. `claim()` returns the next unclaimed partition
  * (a value >= the number of partitions means there is none left); `worker` selects the scratch slice.
  *
  * `models` is the array of `args.model_count` models (the first is the one at `x`; a numerical policy
  * has one more per evaluation point). `Policy` supplies the jacobian rows (`kConstCallable` and
  * `evaluateJacobian()`, see AnalyticalCost.hh and NumericalCost.hh). With ModelAccess::PerWorkItemCopy the
- * work-item copy-constructs the models it needs (all of them for a linear system, the first for the cost
+ * worker copy-constructs the models it needs (all of them for a linear system, the first for the cost
  * alone) into its slice once, and destroys the copies before returning; otherwise it uses the shared
  * models in place.
  */

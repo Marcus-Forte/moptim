@@ -26,9 +26,9 @@ class LevenbergMarquardt : public IOptimizer<T> {
    * ChunkedCost-based costs (AnalyticalCost, NumericalCost*), so x, the status, the iteration count and
    * the final cost are the same bit for bit with and without it. When the trial is accepted the next
    * iteration uses that system instead of assembling a new one: an accepted iteration then costs one
-   * launch (one linear system) instead of two (a cost, then a linear system), and a rejected trial costs
+   * evaluation (one linear system) instead of two (a cost, then a linear system), and a rejected trial costs
    * a linear system instead of a cost, which is dearer. It pays when most trials are accepted and the
-   * launch overhead matters (small problems, few iterations); it loses when many are rejected, and the
+   * per-evaluation overhead matters (small problems, few iterations); it loses when many are rejected, and the
    * last accepted iteration of a run builds a system that is never used.
    *
    * Observers: onLinearSystem() fires once for each system that is used, as before, and not for the

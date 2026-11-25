@@ -187,7 +187,7 @@ TEST(ChunkedCost, AnalyticalMatchesDenseReference) {
   }
 }
 
-// Element counts that span many chunks and several partitions of the kernel (a partition is four
+// Element counts that span many chunks and several partitions of the chunk loop (a partition is four
 // chunks, 816 elements for this model), checked against the same dense reference.
 TEST(ChunkedCost, AnalyticalMatchesDenseReferenceOverManyPartitions) {
   const Eigen::VectorXd x = linearizationPoint();
@@ -356,7 +356,7 @@ class LinearFactor {
 
 }  // namespace
 
-// One element whose residual block is wider than the fused kernels handle, differentiated through
+// One element whose residual block is wider than the fused routines handle, differentiated through
 // copies of a model that cannot be assigned.
 TEST(ChunkedCost, SingleWideElementWithReferenceHoldingModel) {
   constexpr int kDim = LinearFactor::kDim;

@@ -4,7 +4,7 @@
 // is a function of the problem alone (number of elements, observation and active parameter
 // dimensions, size of the scalar), never of the number of threads: the partial sums
 // of a linear system are formed per partition and added in partition order, so the result is the same
-// whatever number of work-items computed the partitions.
+// whatever number of workers computed the partitions.
 #include <algorithm>
 #include <cstddef>
 

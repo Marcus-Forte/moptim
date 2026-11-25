@@ -29,7 +29,7 @@ namespace detail {
  */
 template <class Model, class T, DifferenceScheme Scheme>
 struct NumericalJacobian {
-  /// Only `residual` is called, so work-items can share the models if it is const-callable.
+  /// Only `residual` is called, so the workers can share the models if it is const-callable.
   static constexpr bool kConstCallable = ConstResidualModel<Model, T>;
 
   static constexpr size_t kPointsPerParam = Scheme == DifferenceScheme::Central ? 2 : 1;
@@ -46,7 +46,7 @@ struct NumericalJacobian {
   }
 
   /// Fills each column of the chunk's jacobian straight from the residuals at its evaluation points.
-  /// `residuals` are those of the chunk at `x`. The buffers are the work-item's own and nothing else
+  /// `residuals` are those of the chunk at `x`. The buffers are the worker's own and nothing else
   /// points into them (see evaluateResiduals() for why they are declared so and why this is not inlined).
   template <class ModelPtr>
   [[gnu::noinline]] static void evaluateJacobian(ModelPtr models, const KernelArgs<T>& args, size_t first,
@@ -86,11 +86,11 @@ struct NumericalJacobian {
  * data set per parameter.
  *
  * Every evaluation point has its own copy of the model, with its state set to the point before each
- * launch: `1 + P_active` models for the forward scheme and `1 + 2 P_active` for the central one, all
+ * evaluation: `1 + P_active` models for the forward scheme and `1 + 2 P_active` for the central one, all
  * copy-constructed from the model given, once, on the first evaluation that needs them (see
  * ChunkedCost). A cost whose elements fit in one chunk, with a const-callable
  * model, needs none: its one model goes from point to point. Copies must not share state that
- * `setState()` or `residual()` write to. Everything else (kernel, partitions,
+ * `setState()` or `residual()` write to. Everything else (chunk loop, partitions,
  * noise model, determinism) is ChunkedCost's; `residual` may run on several threads (IModel.hh).
  *
  * On a manifold the evaluation points are `x [+] (+h e_p)` and `x [+] (-h e_p)` for each active

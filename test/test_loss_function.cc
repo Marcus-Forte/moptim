@@ -67,7 +67,7 @@ TEST(LossFunction, GemanMcClureMatchesClosedForm) {
 
 TEST(LossFunction, LossesDownweightLargeResiduals) {
   // rho'(s) should shrink monotonically toward 0 as s grows, for every
-  // non-trivial kernel. Huber and Cauchy additionally start at rho'(0) = 1.
+  // non-trivial loss. Huber and Cauchy additionally start at rho'(0) = 1.
   HuberLoss<double> huber(1.0);
   CauchyLoss<double> cauchy(1.0);
 

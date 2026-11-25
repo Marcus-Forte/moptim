@@ -5,11 +5,11 @@
 
 namespace moptim {
 
-/// The built-in robust kernels, plus `Custom` for any other LossFunction subclass.
+/// The built-in robust losses, plus `Custom` for any other LossFunction subclass.
 enum class LossKind { Trivial, Huber, Cauchy, GemanMcClure, Custom };
 
 /**
- * @brief Plain-data description of a built-in loss, so that the cost's work-items can evaluate it
+ * @brief Plain-data description of a built-in loss, so that the cost's workers can evaluate it
  * without a virtual call (see detail::evaluateLoss()).
  *
  * | kind         | p0         | p1        |
@@ -108,7 +108,7 @@ void evaluateLoss(const LossDescriptor<T>& descriptor, T squared_norm, T out[3])
 }  // namespace detail
 
 /**
- * @brief Robust kernel (M-estimator) interface.
+ * @brief Robust loss (M-estimator) interface.
  *
  * Given the squared norm `s = ||r||^2` of a residual block, `evaluate` fills:
  *   out[0] = rho(s)

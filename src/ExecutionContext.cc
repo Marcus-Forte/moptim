@@ -18,13 +18,13 @@ namespace detail {
 
 #if MOPTIM_HAS_TBB
 /// The oneTBB arena of a context: its maximum concurrency is the context's resolved thread count, and
-/// the thread that launches takes one of the slots. Created (and initialized) with the context.
+/// the thread that starts an evaluation takes one of the slots. Created (and initialized) with the context.
 class HostExecutor {
  public:
   explicit HostExecutor(size_t threads) : arena_(static_cast<int>(threads)) { arena_.initialize(); }
 
   void run(size_t groups, void (*function)(void*, size_t), void* data) {
-    // One task per work-group (grain 1, simple partitioner): the work-items claim partitions
+    // One task per worker (grain 1, simple partitioner): the workers claim partitions
     // dynamically, so what each does does not matter for the result, but each must get a task of its own
     // or an idle thread would find a sibling's whole share already claimed.
     arena_.execute([&] {

@@ -18,7 +18,7 @@ namespace detail {
  */
 template <class Model, class T>
 struct AnalyticalJacobian {
-  /// Both member functions can be called on a const model, so work-items can share the one model.
+  /// Both member functions can be called on a const model, so the workers can share the one model.
   static constexpr bool kConstCallable = ConstResidualModel<Model, T> && ConstJacobianModel<Model, T>;
 
   /// Evaluation points besides `x` per active parameter: none, the model gives the jacobian.
@@ -96,7 +96,7 @@ struct AnalyticalJacobian {
  * jacobian with respect to `x`. With a manifold it is the jacobian with respect to the tangent
  * vector of `x [+] delta`, so a pose is differentiated in the convention of the manifold's `plus`.
  *
- * Residuals and jacobian are evaluated in one launch per call of the
+ * Residuals and jacobian are evaluated in one evaluation per call, through the
  * ExecutionContext (the process-wide default when none is given), possibly on several threads;
  * IModel.hh lists what a model may and may not do.
  */
