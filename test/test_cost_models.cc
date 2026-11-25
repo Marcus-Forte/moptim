@@ -610,3 +610,71 @@ TEST(NumericalCostModels, CustomLossIsRejected) {
                                                LineModel{}, 0, makeContext(1));
   EXPECT_THROW(cost.setLossFunction(std::make_shared<CustomLoss>()), std::invalid_argument);
 }
+
+// ─── The jacobian scatter of AnalyticalCost for each observation dimension ─────────────────────
+// AnalyticalJacobian::evaluateJacobian() has code instantiated for dimensions 1, 2 and 3 and a generic one for
+// the others: each is checked against the jacobian written out here, so a mixed-up row or column shows.
+
+// residual i of an element = obs[i] - ((i + 1) * x0 * in + (i + 2) * x1), `kDim` residuals, two parameters.
+template <int kDim>
+struct RowsModel {
+  void setState(const double* /*x*/) {}
+  void residual(const double* x, const double* input, const double* obs, double* res) const {
+    for (int i = 0; i < kDim; ++i) {
+      res[i] = obs[i] - ((i + 1) * x[0] * input[0] + (i + 2) * x[1]);
+    }
+  }
+  // The transposed jacobian: entry (p, i) at p + 2 * i.
+  void jacobian(const double* /*x*/, const double* input, const double* /*obs*/, double* jac) const {
+    for (int i = 0; i < kDim; ++i) {
+      jac[0 + 2 * i] = -(i + 1) * input[0];
+      jac[1 + 2 * i] = -(i + 2);
+    }
+  }
+};
+
+template <int kDim>
+void expectScatterMatchesReference(size_t elements) {
+  std::mt19937 rng(17);
+  std::uniform_real_distribution<double> value(-2.0, 2.0);
+  std::vector<double> input(elements);
+  std::vector<double> observations(elements * kDim);
+  for (double& v : input) v = value(rng);
+  for (double& v : observations) v = value(rng);
+
+  const double x[2] = {0.7, -0.3};
+  Eigen::Matrix2d expected_jtj = Eigen::Matrix2d::Zero();
+  Eigen::Vector2d expected_jtb = Eigen::Vector2d::Zero();
+  double expected_cost = 0.0;
+  for (size_t e = 0; e < elements; ++e) {
+    for (int i = 0; i < kDim; ++i) {
+      const double r = observations[e * kDim + i] - ((i + 1) * x[0] * input[e] + (i + 2) * x[1]);
+      const Eigen::Vector2d j(-(i + 1) * input[e], -(i + 2));
+      expected_jtj += j * j.transpose();
+      expected_jtb += j * r;
+      expected_cost += r * r;
+    }
+  }
+
+  AnalyticalCost<RowsModel<kDim>, double> cost(input.data(), observations.data(), elements, 1, kDim, 2,
+                                               RowsModel<kDim>{}, 0, makeContext(1));
+  Eigen::Matrix2d jtj;
+  Eigen::Vector2d jtb;
+  double actual_cost = 0.0;
+  cost.computeLinearSystem(x, jtj.data(), jtb.data(), actual_cost);
+
+  constexpr double kTolerance = 1e-10;
+  EXPECT_LE((jtj - expected_jtj).norm(), kTolerance * (1.0 + expected_jtj.norm())) << "dim " << kDim;
+  EXPECT_LE((jtb - expected_jtb).norm(), kTolerance * (1.0 + expected_jtb.norm())) << "dim " << kDim;
+  EXPECT_NEAR(actual_cost, expected_cost, kTolerance * (1.0 + expected_cost)) << "dim " << kDim;
+}
+
+TEST(AnalyticalJacobianScatter, MatchesReferenceForEveryObservationDimension) {
+  // 3000 elements: several chunks, and a last chunk that is not full.
+  expectScatterMatchesReference<1>(3000);
+  expectScatterMatchesReference<2>(3000);
+  expectScatterMatchesReference<3>(3000);
+  expectScatterMatchesReference<4>(3000);  // the generic path (dimension known at run time)
+  expectScatterMatchesReference<7>(3000);
+  expectScatterMatchesReference<2>(1);  // a single element
+}

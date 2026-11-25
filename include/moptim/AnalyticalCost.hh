@@ -32,17 +32,41 @@ struct AnalyticalJacobian {
   /// Writes the jacobian rows of elements [first, first + count): column `p` of the chunk (column
   /// stride `jacobian_stride`) holds the derivatives with respect to step entry `p`.
   ///
-  /// `transposed` and `jacobian` are buffers of the work-item that nothing else points into; see
-  /// evaluateResiduals() for why they are declared so and why this is not inlined. The call of the
-  /// model is forced inline: left to the heuristics, the compiler keeps the model's code out of the
-  /// loop and the scatter then reloads everything the model stored.
+  /// Dispatches on the observation dimension to evaluateJacobianOfDim(), which does the work. See
+  /// there for why the dimension is a template parameter, and evaluateResiduals() for why `transposed`
+  /// and `jacobian` are declared `__restrict__` and the loop is kept out of line.
   template <class ModelPtr>
-  [[gnu::noinline]] static void evaluateJacobian(ModelPtr models, const KernelArgs<T>& args, size_t first,
-                                                 size_t count, const T* /*residuals*/, T* __restrict__ transposed,
-                                                 T* __restrict__ jacobian, size_t jacobian_stride) {
+  static void evaluateJacobian(ModelPtr models, const KernelArgs<T>& args, size_t first, size_t count,
+                               const T* residuals, T* __restrict__ transposed, T* __restrict__ jacobian,
+                               size_t jacobian_stride) {
+    switch (args.observation_dim) {
+      case 1:
+        return evaluateJacobianOfDim<1>(models, args, first, count, residuals, transposed, jacobian, jacobian_stride);
+      case 2:
+        return evaluateJacobianOfDim<2>(models, args, first, count, residuals, transposed, jacobian, jacobian_stride);
+      case 3:
+        return evaluateJacobianOfDim<3>(models, args, first, count, residuals, transposed, jacobian, jacobian_stride);
+      default:
+        return evaluateJacobianOfDim<0>(models, args, first, count, residuals, transposed, jacobian, jacobian_stride);
+    }
+  }
+
+ private:
+  /// The body of evaluateJacobian() for `kDim` residuals per element (0: the dimension of `args`). The
+  /// arithmetic does not depend on `kDim`; a compile-time dimension lets the compiler unroll the scatter
+  /// of an element's rows, which for a dimension known at run time only costs more instructions than
+  /// the model itself.
+  ///
+  /// Kept out of line (the `__restrict__` promise only holds for the parameters of the function being
+  /// compiled). The call of the model is forced inline: left to the heuristics, the compiler keeps the
+  /// model's code out of the loop and the scatter then reloads everything the model stored.
+  template <size_t kDim, class ModelPtr>
+  [[gnu::noinline]] static void evaluateJacobianOfDim(ModelPtr models, const KernelArgs<T>& args, size_t first,
+                                                      size_t count, const T* /*residuals*/, T* __restrict__ transposed,
+                                                      T* __restrict__ jacobian, size_t jacobian_stride) {
     auto& model = *models;
     const size_t params = args.params;
-    const size_t dim = args.observation_dim;
+    const size_t dim = kDim != 0 ? kDim : args.observation_dim;
 
     for (size_t e = 0; e < count; ++e) {
 #if defined(__clang__)  // GCC ignores the attribute and warns about it
@@ -52,8 +76,8 @@ struct AnalyticalJacobian {
                      transposed);
 
       // The model writes the element's transposed jacobian; the chunk stores one column per parameter.
-      for (size_t p = 0; p < params; ++p) {
-        T* column = jacobian + p * jacobian_stride + e * dim;
+      T* column = jacobian + e * dim;
+      for (size_t p = 0; p < params; ++p, column += jacobian_stride) {
         for (size_t i = 0; i < dim; ++i) {
           column[i] = transposed[p + params * i];
         }
