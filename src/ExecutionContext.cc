@@ -42,6 +42,10 @@ class HostExecutor {
  private:
   tbb::task_arena arena_;
 };
+#else
+/// Without oneTBB there is no arena: the context's executor stays null, and runOnHost() runs everything
+/// inline. Defined anyway, so that the unique_ptr member's deleter sees a complete type.
+class HostExecutor {};
 #endif
 
 }  // namespace detail
